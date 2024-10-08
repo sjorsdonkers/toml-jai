@@ -1,33 +1,12 @@
 // Does not support:
 // - Quoted key, keys with `-`, keys starting with a number
-// - Basic literals (escaped strings)
+// - Basic strings (escaped strings)
 // - Multi-line strings
-// - Float values (incl, scientific notation)
+// - Float values
 // - Integers starting with +/-, hex, octal, binary
 // - Date / Time
 // - Arrays of tables
 // - Full toml validation like endlines in an inline table
-
-contents : string; // TODO
-print_issue:: (line_number: s32, char_number: s32) {
-    #import "Text_File_Handler";
-    success, lines := file_to_array(filename="toml.toml", do_trim=false, skip_blank_lines=false, use_data_from_memory=true, data_from_memory=contents);
-    if !success {
-        log_error("Failed to read file: toml.toml");
-        exit(1);
-    }
-    print("Line % Char %:\n", line_number, char_number);
-    print("%\n", lines[line_number - 1]);
-    // print ^^ under the char number
-
-    builder: String_Builder;
-    for 1..char_number-1 {
-        append(*builder, #char " ");
-    }
-    append(*builder, #char "^"); // Just 1 for now
-    pointing_string := builder_to_string(*builder);
-    print(pointing_string);
-}
 
 main :: () {
     contents = read_entire_file("toml.toml");
@@ -58,11 +37,6 @@ KeyValue :: struct {
     key        :  string;
     using value:  Value;
 }
-operator == :: inline (a: KeyValue, b: KeyValue) -> bool {
-    // Not a full comparison, just used for array_add_if_unique
-    // Consider poking it only where needed
-    return a.key == b.key;
-}
 
 // At top level we can expect (keys, [keys], [[keys]])
 parse :: (tokens: []TOML_Token) -> root_table:Value {
@@ -89,6 +63,11 @@ parse :: (tokens: []TOML_Token) -> root_table:Value {
     return root_table.value;
 }
 
+
+#scope_file
+
+contents : string; // TODO
+
 // parse key.key.key.etc =
 parse_key :: (parent: *KeyValue, tokens: []TOML_Token) -> root:KeyValue, leaf:*KeyValue { // Root is weird  if parent is set
     pos := 0;
@@ -98,7 +77,7 @@ parse_key :: (parent: *KeyValue, tokens: []TOML_Token) -> root:KeyValue, leaf:*K
     }
     if tokens[pos].type != Token_Type.KEY {
         log_error("Expected key, got %\n", tokens[pos].type);
-        print_issue(tokens[pos].first_line, tokens[pos].first_char);
+        print_issue(tokens[pos].line, tokens[pos].character);
         exit(1);
     }
     local_root : KeyValue;
@@ -120,12 +99,12 @@ parse_key :: (parent: *KeyValue, tokens: []TOML_Token) -> root:KeyValue, leaf:*K
         eat_expected(tokens, *pos, Token_Type.DOT);
         if pos == tokens.count {
             log_error("Key is not allowed to end with a dot");
-            print_issue(tokens[pos-1].first_line, tokens[pos-1].first_char);
+            print_issue(tokens[pos-1].line, tokens[pos-1].character);
             exit(1);
         }
         if tokens[pos].type != Token_Type.KEY {
             log_error("Expected key, got %\n", tokens[pos].type);
-            print_issue(tokens[pos].first_line, tokens[pos].first_char);
+            print_issue(tokens[pos].line, tokens[pos].character);
             exit(1);
         }
         if current_table.type != Value_Type.TABLE {
@@ -200,7 +179,7 @@ parse_literal :: (token: TOML_Token) -> Value {
     case .STRING;  return Value.{type=.STRING, string_value=token.string_value};
     case;
         log_error("Unexpected token %, expected a value", token.type);
-        print_issue(token.first_line, token.first_char);
+        print_issue(token.line, token.character);
         exit(1);
         return Value.{};
     }
@@ -213,7 +192,7 @@ make_scope_until :: (tokens: []TOML_Token, start_pos: int, scope_end: Token_Type
         }
     }
     log_error("Unexpected end of scope. Expected %", scope_end);
-    print_issue(tokens[start_pos].first_line, tokens[start_pos].first_char);
+    print_issue(tokens[start_pos].line, tokens[start_pos].character);
     exit(1);
     return tokens;
 }
@@ -221,7 +200,7 @@ make_scope_until :: (tokens: []TOML_Token, start_pos: int, scope_end: Token_Type
 eat_expected :: (tokens: []TOML_Token, pos: *int, expected: Token_Type) {
     if tokens[<<pos].type != expected {
         log_error("Expected %, got %", expected, tokens[<<pos].type);
-        print_issue(tokens[<<pos].first_line, tokens[<<pos].first_char);
+        print_issue(tokens[<<pos].line, tokens[<<pos].character);
         exit(1);
     }
     <<pos += 1;
@@ -253,7 +232,30 @@ eat_expected :: (tokens: []TOML_Token, pos: *int, expected: Token_Type) {
 //     path: string;
 // }
 
-#scope_file
+get_line :: (data: string, line_number: s32) -> line: string, found:bool {
+    line: string;
+    found: bool;
+    for 1..line_number { line, found = consume_next_line(*data); }
+    return line, found;
+}
+
+print_issue:: (line_number: s32, char_number: s32) {
+    #import "Text_File_Handler";
+    line, found := get_line(contents, line_number);
+    if !found {
+        log_error("Failed to read line % from file", line_number);
+        exit(1);
+    }
+
+    log_error("Line % Char %:", line_number, char_number);
+    log_error(line);
+
+    // print ^^ under the char number
+    builder: String_Builder;
+    for 1..char_number-1 { append(*builder, #char " "); }
+    append(*builder, #char "^");
+    log_error(builder_to_string(*builder));
+}
 
 print_value :: (value : Value, indent:="") {
     if value.type == {
@@ -287,6 +289,12 @@ print_value :: (value : Value, indent:="") {
             }
         }
     }
+}
+
+operator == :: inline (a: KeyValue, b: KeyValue) -> bool {
+    // Not a full comparison, just used for array_add_if_unique
+    // Consider poking it only where needed
+    return a.key == b.key;
 }
 
 #load "lexer.jai";

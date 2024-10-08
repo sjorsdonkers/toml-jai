@@ -1,25 +1,24 @@
 Token_Type :: enum u8 {
-    // utf8 controll characters are not allowed in TOML
-    KEY     :: 1;
-    BOOLEAN :: 2;
-    INTEGER :: 3;
-    STRING        :: #char "'";    // ASCII 39
-    COMMA         :: #char ",";    // ASCII 44
-    DOT           :: #char ".";    // ASCII 46
-    ASSIGN        :: #char "=";    // ASCII 61
-    SCOPE_BRACKET :: #char "[";    // ASCII 91  // Stores index to scope array
-    SCOPE_BRACE   :: #char "{";    // ASCII 123
+    KEY           :: 1;         // string_value
+    BOOLEAN       :: 2;         // bool_value
+    INTEGER       :: 3;         // int_value
+    STRING        :: #char "'"; // string_value
+    COMMA         :: #char ","; // -
+    DOT           :: #char "."; // -
+    ASSIGN        :: #char "="; // -
+    SCOPE_BRACKET :: #char "["; // scope
+    SCOPE_BRACE   :: #char "{"; // scope
 }
 
 TOML_Token :: struct {
     type: Token_Type;
     union {
-        bool_value : bool;
-        int_value  : s64;
+        bool_value  : bool;
+        int_value   : s64;
         string_value: string;
-        scope: []TOML_Token;
+        scope       : []TOML_Token;
     };
-    first_line, first_char: s32;
+    line, character: s32;
 }
 
 tokenize :: (data: string) -> tokens: [..]TOML_Token {
@@ -57,7 +56,7 @@ tokenize :: (data: string) -> tokens: [..]TOML_Token {
         // Check is boolean true and false
         if pos + 4 < data.count {
             if slice(data, pos, 4) == "true" {
-                token := TOML_Token.{type=.BOOLEAN, bool_value = true, first_line=line_number, first_char=char_number};
+                token := TOML_Token.{type=.BOOLEAN, bool_value = true, line=line_number, character=char_number};
                 array_add(*tokens, token);
                 pos += 4;
                 char_number += 4;
@@ -65,7 +64,7 @@ tokenize :: (data: string) -> tokens: [..]TOML_Token {
             }
             if pos + 5 < data.count
             && slice(data, pos, 5) == "false" {
-                token := TOML_Token.{type=.BOOLEAN, bool_value = false, first_line=line_number, first_char=char_number};
+                token := TOML_Token.{type=.BOOLEAN, bool_value = false, line=line_number, character=char_number};
                 array_add(*tokens, token);
                 pos += 5;
                 char_number += 5;
@@ -80,7 +79,7 @@ tokenize :: (data: string) -> tokens: [..]TOML_Token {
                 pos += 1;
                 char_number += 1;
             }
-            token := TOML_Token.{type=.KEY, string_value=slice(data, start, pos - start), first_line=line_number, first_char=char_number - cast(s32) (pos - start)};
+            token := TOML_Token.{type=.KEY, string_value=slice(data, start, pos - start), line=line_number, character=char_number - cast(s32) (pos - start)};
             array_add(*tokens, token);
             continue;
         }
@@ -98,7 +97,7 @@ tokenize :: (data: string) -> tokens: [..]TOML_Token {
                 pos += 1;
                 char_number += 1;
             }
-            token := TOML_Token.{type=.STRING, string_value=slice(data, start, pos - start), first_line=line_number, first_char=char_number - cast(s32) (pos - start)};
+            token := TOML_Token.{type=.STRING, string_value=slice(data, start, pos - start), line=line_number, character=char_number - cast(s32) (pos - start)};
             array_add(*tokens, token);
             pos += 1;
             char_number += 1;
@@ -118,7 +117,7 @@ tokenize :: (data: string) -> tokens: [..]TOML_Token {
                 pos += 1;
                 char_number += 1;
             }
-            token := TOML_Token.{type=.INTEGER, int_value = value, first_line=line_number, first_char=char_number - cast(s32) (pos - start)};
+            token := TOML_Token.{type=.INTEGER, int_value = value, line=line_number, character=char_number - cast(s32) (pos - start)};
             array_add(*tokens, token);
             continue;
         }
@@ -128,7 +127,7 @@ tokenize :: (data: string) -> tokens: [..]TOML_Token {
         || data[pos] == #char "[" {
             scope_index := tokens.count;
              // int_value is replaced by scope on scope closing, it does not include the scope tokens itself
-            token := TOML_Token.{type=cast(Token_Type) data[pos], int_value = scope_index + 1, first_line=line_number, first_char=char_number};
+            token := TOML_Token.{type=cast(Token_Type) data[pos], int_value = scope_index + 1, line=line_number, character=char_number};
             array_add(*tokens, token);
             array_add(*scope_stack, scope_index);
             pos += 1;
@@ -157,7 +156,7 @@ tokenize :: (data: string) -> tokens: [..]TOML_Token {
         if data[pos] == #char ","
         || data[pos] == #char "."
         || data[pos] == #char "=" {
-            token := TOML_Token.{type=cast(Token_Type) data[pos], first_line=line_number, first_char=char_number};
+            token := TOML_Token.{type=cast(Token_Type) data[pos], line=line_number, character=char_number};
             array_add(*tokens, token);
             pos += 1;
             char_number += 1;
