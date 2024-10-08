@@ -30,9 +30,9 @@ print_issue:: (line_number: s32, char_number: s32) {
 
 main :: () {
     contents = read_entire_file("toml.toml");
-    tokens  := lex_toml(contents);
-    root    := parse(tokens);
-    print_value(root);
+    tokens  := tokenize(contents);
+    toml    := parse(tokens);
+    print_value(toml);
 }
 
 Value_Type :: enum u8 {
@@ -98,12 +98,12 @@ parse_key :: (parent: *KeyValue, tokens: []TOML_Token) -> root:KeyValue, leaf:*K
         exit(1);
     }
     if tokens[pos].type != Token_Type.KEY {
-        log_error("Expected key, got % - %\n", tokens[pos].type, tokens[pos].slice);
+        log_error("Expected key, got %\n", tokens[pos].type);
         print_issue(tokens[pos].first_line, tokens[pos].first_char);
         exit(1);
     }
     local_root : KeyValue;
-    local_root.key = tokens[pos].slice;
+    local_root.key = tokens[pos].string_value;
     local_root.value = Value.{type=.TABLE};
     pos += 1;
 
@@ -125,7 +125,7 @@ parse_key :: (parent: *KeyValue, tokens: []TOML_Token) -> root:KeyValue, leaf:*K
             exit(1);
         }
         if tokens[pos].type != Token_Type.KEY {
-            log_error("Expected key, got % - %\n", tokens[pos].type, tokens[pos].slice);
+            log_error("Expected key, got %\n", tokens[pos].type);
             print_issue(tokens[pos].first_line, tokens[pos].first_char);
             exit(1);
         }
@@ -133,7 +133,7 @@ parse_key :: (parent: *KeyValue, tokens: []TOML_Token) -> root:KeyValue, leaf:*K
             log_error("Cannot use key as table it already has a value: %", current_table.type);
             exit(1);
         }
-        _, index := array_add_if_unique(*current_table.table, KeyValue.{tokens[pos].slice, Value.{type=.TABLE}});
+        _, index := array_add_if_unique(*current_table.table, KeyValue.{tokens[pos].string_value, Value.{type=.TABLE}});
         current_table = *current_table.table[index];
         pos += 1;
     }
@@ -199,7 +199,7 @@ parse_literal :: (token: TOML_Token) -> Value {
     case .BOOLEAN; return Value.{type=.BOOL, bool_value=token.bool_value};
     case .INTEGER; return Value.{type=.INT, int_value=token.int_value};
     case .FLOAT;   return Value.{type=.FLOAT, float_value=token.float_value};
-    case .STRING;  return Value.{type=.STRING, string_value=token.slice}; // TODO
+    case .STRING;  return Value.{type=.STRING, string_value=token.string_value};
     case;
         log_error("Unexpected token %, expected a value", token.type);
         print_issue(token.first_line, token.first_char);

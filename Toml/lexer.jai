@@ -4,7 +4,7 @@ Token_Type :: enum u8 {
     BOOLEAN :: 2;
     INTEGER :: 3;
     FLOAT   :: 4;
-    STRING        :: #char "\"";   // ASCII 34
+    STRING        :: #char "'";    // ASCII 39
     COMMA         :: #char ",";    // ASCII 44
     DOT           :: #char ".";    // ASCII 46
     ASSIGN        :: #char "=";    // ASCII 61
@@ -12,30 +12,22 @@ Token_Type :: enum u8 {
     SCOPE_BRACE   :: #char "{";    // ASCII 123
 }
 
-Quote :: enum u8 {
-    NONE;
-    SINGLE;
-    TRIPPLE;
-}
-
 TOML_Token :: struct {
     type: Token_Type;
-    slice: string;
     union {
         bool_value : bool;
         int_value  : s64;
         float_value: float64;
-        // string_value: string; // TODO
+        string_value: string;
         scope: []TOML_Token;
     };
     first_line, first_char: s32;
-    last_line, last_char: s32 = -1;
-    // quoting: Quote = Quote.NONE;
 }
 
-lex_toml :: (data: string) -> tokens: [..]TOML_Token {
+tokenize :: (data: string) -> tokens: [..]TOML_Token {
     pos := 0;
     tokens : [..]TOML_Token;
+    array_reserve(*tokens, data.count / 2); // Rough estimate of token count
     line_number: s32 = 1;
     char_number: s32 = 1;
 
@@ -66,23 +58,20 @@ lex_toml :: (data: string) -> tokens: [..]TOML_Token {
 
         // Check is boolean true and false
         if pos + 4 < data.count {
-            next4 := slice(data, pos, 4);
-            if next4 == "true" {
-                token := TOML_Token.{type=.BOOLEAN, slice=next4, bool_value = true, first_line=line_number, first_char=char_number, last_line=line_number, last_char=char_number + 3};
+            if slice(data, pos, 4) == "true" {
+                token := TOML_Token.{type=.BOOLEAN, bool_value = true, first_line=line_number, first_char=char_number};
                 array_add(*tokens, token);
                 pos += 4;
                 char_number += 4;
                 continue;
             }
-            if pos + 5 < data.count {
-                next5 := slice(data, pos, 5);
-                if next5 == "false" {
-                    token := TOML_Token.{type=.BOOLEAN, slice=next5, bool_value = false, first_line=line_number, first_char=char_number, last_line=line_number, last_char=char_number + 4};
-                    array_add(*tokens, token);
-                    pos += 5;
-                    char_number += 5;
-                    continue;
-                }
+            if pos + 5 < data.count
+            && slice(data, pos, 5) == "false" {
+                token := TOML_Token.{type=.BOOLEAN, bool_value = false, first_line=line_number, first_char=char_number};
+                array_add(*tokens, token);
+                pos += 5;
+                char_number += 5;
+                continue;
             }
         }
 
@@ -93,25 +82,33 @@ lex_toml :: (data: string) -> tokens: [..]TOML_Token {
                 pos += 1;
                 char_number += 1;
             }
-            token := TOML_Token.{type=.KEY, slice=slice(data, start, pos - start), first_line=line_number, first_char=char_number - cast(s32) (pos - start), last_line=line_number, last_char=char_number - 1};
+            token := TOML_Token.{type=.KEY, string_value=slice(data, start, pos - start), first_line=line_number, first_char=char_number - cast(s32) (pos - start)};
             array_add(*tokens, token);
             continue;
         }
 
-        // String
-        if data[pos] == #char "\"" { // No multi-line yet / No string literals
+        // Literal string
+        if data[pos] == #char "'" { // No multi-line yet / No basic string
+            if pos + 3 < data.count && slice(data, pos, 3) == "'''" {
+                log_error("Multi-line literal strings are not supported yet. Use single line strings only. %:%", line_number, char_number);
+                exit(1);
+            }
             pos += 1;
             char_number += 1;
             start := pos;
-            while pos < data.count && (data[pos] != #char "\"" || data[pos-1] == #char "\\") {
+            while pos < data.count && (data[pos] != #char "'") {
                 pos += 1;
                 char_number += 1;
             }
-            token := TOML_Token.{type=.STRING, slice=slice(data, start, pos - start), first_line=line_number, first_char=char_number - cast(s32) (pos - start), last_line=line_number, last_char=char_number - 1};
+            token := TOML_Token.{type=.STRING, string_value=slice(data, start, pos - start), first_line=line_number, first_char=char_number - cast(s32) (pos - start)};
             array_add(*tokens, token);
             pos += 1;
             char_number += 1;
             continue;
+        }
+        if data[pos] == #char "\"" {
+            log_error("Basic strings are not supported yet. Use single quotes for literal strings. %:%", line_number, char_number);
+            exit(1);
         }
 
         // Integer
@@ -123,7 +120,7 @@ lex_toml :: (data: string) -> tokens: [..]TOML_Token {
                 pos += 1;
                 char_number += 1;
             }
-            token := TOML_Token.{type=.INTEGER, slice=slice(data, start, pos - start), int_value = value, first_line=line_number, first_char=char_number - cast(s32) (pos - start), last_line=line_number, last_char=char_number - 1};
+            token := TOML_Token.{type=.INTEGER, int_value = value, first_line=line_number, first_char=char_number - cast(s32) (pos - start)};
             array_add(*tokens, token);
             continue;
         }
@@ -132,13 +129,8 @@ lex_toml :: (data: string) -> tokens: [..]TOML_Token {
         if data[pos] == #char "{"
         || data[pos] == #char "[" {
             scope_index := tokens.count;
-            token := TOML_Token.{
-                type=cast(Token_Type) data[pos],
-                slice=slice(data, pos, 1),   // To be updated on scope close
-                int_value = scope_index + 1, // To be replaced by scope on scope close
-                first_line=line_number,
-                first_char=char_number,
-            };
+             // int_value is replaced by scope on scope closing, it does not include the scope tokens itself
+            token := TOML_Token.{type=cast(Token_Type) data[pos], int_value = scope_index + 1, first_line=line_number, first_char=char_number};
             array_add(*tokens, token);
             array_add(*scope_stack, scope_index);
             pos += 1;
@@ -156,9 +148,7 @@ lex_toml :: (data: string) -> tokens: [..]TOML_Token {
                 log_error("Mismatched scope closure. Scope Opened with: % Attempt to close with: %", tokens[removed_idx].type, data[pos]); // TODO more info
                 exit(1);
             }
-            char_count := pos - (tokens[removed_idx].slice.data - data.data) + 1;
-            tokens[removed_idx].slice.count = char_count;
-            scope_count := tokens.count - tokens[removed_idx].int_value; // -1
+            scope_count := tokens.count - tokens[removed_idx].int_value;
             tokens[removed_idx].scope = array_view(tokens, tokens[removed_idx].int_value, scope_count);
             pos += 1;
             char_number += 1;
@@ -169,7 +159,7 @@ lex_toml :: (data: string) -> tokens: [..]TOML_Token {
         if data[pos] == #char ","
         || data[pos] == #char "."
         || data[pos] == #char "=" {
-            token := TOML_Token.{type=cast(Token_Type) data[pos], slice=slice(data, pos, 1), first_line=line_number, first_char=char_number};
+            token := TOML_Token.{type=cast(Token_Type) data[pos], first_line=line_number, first_char=char_number};
             array_add(*tokens, token);
             pos += 1;
             char_number += 1;
