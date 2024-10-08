@@ -5,7 +5,6 @@
 // - Float values
 // - Integers starting with +/-, hex, octal, binary
 // - Date / Time
-// - Arrays of tables
 // - Full toml validation like endlines in an inline table
 
 main :: () {
@@ -42,22 +41,17 @@ KeyValue :: struct {
 parse :: (tokens: []TOML_Token) -> root_table:Value {
     pos := 0;
     // We use a Root instead of just an array to make sure overlapping keys are handled in parse_key
-    root_table := KeyValue.{"*ROOT*", Value.{type=.TABLE}}; // TODO root name should be something not possible in TOML
-    current_table := *root_table;
+    root_table := KeyValue.{"*ROOT*", Value.{type=.TABLE}}; // root name should be something not possible in TOML
+    current_table := *root_table.value;
     while pos < tokens.count {
         if tokens[pos].type == Token_Type.SCOPE_BRACKET {
-            if pos + 1 < tokens.count && tokens[pos+1].type == Token_Type.SCOPE_BRACKET{
-                // TODO handle array of tables
-                log_error("Arrays of tables are not supported");
-                exit(1);
-            }
-            _, current_table = parse_key(*root_table, tokens[pos].scope);
+            current_table = parse_header(*root_table.value, tokens[pos].scope);
             pos += tokens[pos].scope.count + 1;
         } else { // Parse key value pair
             keys_scope := make_scope_until(tokens, pos, Token_Type.ASSIGN);
-            _, leaf_key := parse_key(current_table, keys_scope);
+            _, leaf_value := parse_key(current_table, keys_scope);
             pos += keys_scope.count + 1;
-            leaf_key.value, pos = parse_value(leaf_key, tokens, pos);
+            <<leaf_value, pos = parse_value(leaf_value, tokens, pos);
         }
     }
     return root_table.value;
@@ -68,8 +62,41 @@ parse :: (tokens: []TOML_Token) -> root_table:Value {
 
 contents : string; // TODO
 
+parse_header :: (root_table: *Value, tokens: []TOML_Token) -> *Value {
+    if tokens.count == 0 || tokens[0].type != Token_Type.SCOPE_BRACKET{
+        // Parse table header
+        _, current_table, is_new := parse_key(root_table, tokens);
+        if !is_new && current_table.type != Value_Type.TABLE {
+        log_error("Cannot use key as Tables as it already has a value: %", current_table.type);
+        print_issue(tokens[tokens.count-1].line, tokens[tokens.count-1].character);
+        exit(1);
+    }
+        return current_table;
+    }
+    // Parse array of tables header
+    aot_tokens := tokens[0].scope;
+    if tokens.count > aot_tokens.count + 1 {
+        error_token:= tokens[1 + aot_tokens.count];
+        log_error("Unexpected % in Array of Tables header", error_token.type);
+        print_issue(error_token.line, error_token.character);
+        exit(1);
+    }
+
+    _, current_table, is_new := parse_key(root_table, aot_tokens);
+    if !is_new && current_table.type != Value_Type.ARRAY {
+        log_error("Cannot use key as Array of Tables as it already has a value: %", current_table.type);
+        print_issue(aot_tokens[aot_tokens.count-1].line, aot_tokens[aot_tokens.count-1].character);
+        exit(1);
+    }
+
+    current_table.type = Value_Type.ARRAY;
+    array_add(*current_table.array, Value.{type=.TABLE});
+    return *current_table.array[current_table.array.count-1];
+}
+
+
 // parse key.key.key.etc =
-parse_key :: (parent: *KeyValue, tokens: []TOML_Token) -> root:KeyValue, leaf:*KeyValue { // Root is weird  if parent is set
+parse_key :: (parent: *Value, tokens: []TOML_Token) -> root:KeyValue, leaf:*Value, leaf_is_new:bool { // Root is weird  if parent is set
     pos := 0;
     if pos >= tokens.count {
         log_error("Unexpected end of scope while parsing key"); // todo simplify
@@ -85,14 +112,15 @@ parse_key :: (parent: *KeyValue, tokens: []TOML_Token) -> root:KeyValue, leaf:*K
     local_root.value = Value.{type=.TABLE};
     pos += 1;
 
-    current_table := *local_root;
+    current_table := *local_root.value;
+    current_is_new := true;
     if parent != null {
         if parent.type != Value_Type.TABLE {
             log_error("Cannot use key as table as it already has a value: %", parent.type);
             exit(1);
         }
-        _, index := array_add_if_unique(*parent.table, local_root);
-        current_table = *parent.table[index];
+        current_is_new =, index := array_add_if_unique(*parent.table, local_root);
+        current_table = *parent.table[index].value;
     }
 
     while pos < tokens.count {
@@ -111,14 +139,14 @@ parse_key :: (parent: *KeyValue, tokens: []TOML_Token) -> root:KeyValue, leaf:*K
             log_error("Cannot use key as table it already has a value: %", current_table.type);
             exit(1);
         }
-        _, index := array_add_if_unique(*current_table.table, KeyValue.{tokens[pos].string_value, Value.{type=.TABLE}});
-        current_table = *current_table.table[index];
+        current_is_new, index := array_add_if_unique(*current_table.table, KeyValue.{tokens[pos].string_value, Value.{type=.TABLE}});
+        current_table = *current_table.table[index].value;
         pos += 1;
     }
-    return local_root, current_table;
+    return local_root, current_table, current_is_new;
 }
 
-parse_value :: (current_key: *KeyValue, tokens: []TOML_Token, pos: s64) -> value:Value, pos:s64 { // TODO only assign value if key is empty table
+parse_value :: (current_table: *Value, tokens: []TOML_Token, pos: s64) -> value:Value, pos:s64 { // TODO only assign value if key is empty table
     if pos >= tokens.count {
         log_error("Unexpected end of file while parsing value");
         exit(1);
@@ -127,7 +155,7 @@ parse_value :: (current_key: *KeyValue, tokens: []TOML_Token, pos: s64) -> value
     token := tokens[pos];
     if token.type == {
     case .SCOPE_BRACE;
-        table := parse_inline_table(current_key, token.scope);
+        table := parse_inline_table(current_table, token.scope);
         pos += token.scope.count + 1;
         return table, pos;
     case .SCOPE_BRACKET;
@@ -141,23 +169,23 @@ parse_value :: (current_key: *KeyValue, tokens: []TOML_Token, pos: s64) -> value
     }
 }
 
-parse_inline_table :: (current_key: *KeyValue, tokens: []TOML_Token) -> table:Value { // TODO current_key does not need to be a pointer
+parse_inline_table :: (current_table: *Value, tokens: []TOML_Token) -> table:Value { // TODO current_table does not need to be a pointer
     // An inline table is either the right-hand side of an assignment to a key
     // or a value in an array. In case of the former it is important that we continue building
     // on the current key as a.b = {c.d = 1} is the same as in a.b.c.d = 1
     pos := 0;
     table_root := KeyValue.{"*TABLE_ROOT*", Value.{type=.TABLE}}; // TODO root name should be something not possible in TOML
-    if current_key == null { current_key = *table_root; }
+    if current_table == null { current_table = *table_root.value; }
     while pos < tokens.count {
         keys_scope := make_scope_until(tokens, pos, Token_Type.ASSIGN);
-        _, leaf_key := parse_key(current_key, keys_scope);
+        _, leaf_value := parse_key(current_table, keys_scope);
         pos += keys_scope.count + 1;
-        leaf_key.value, pos = parse_value(leaf_key, tokens, pos);
+        <<leaf_value, pos = parse_value(leaf_value, tokens, pos);
 
         // Inline tables are not allowed to have trailing commas
         if pos+1 < tokens.count { eat_expected(tokens, *pos, Token_Type.COMMA); } // TODO improve error message
     }
-    return current_key.value;
+    return <<current_table;
 }
 
 parse_array :: (tokens: []TOML_Token) -> array:Value {
@@ -206,32 +234,6 @@ eat_expected :: (tokens: []TOML_Token, pos: *int, expected: Token_Type) {
     <<pos += 1;
 }
 
-// //alternative data structures, but tables in arrays are awkward
-// Value :: struct {
-//     type: Value_Type;
-//     union {
-//         bool_value : bool;
-//         int_value  : s64;
-//         float_value: float64;
-//         string_value: string;
-//         // date / time
-//         array_value: [..]int;
-//     };
-// }
-// TOML_data :: struct {
-//     values: [..]Value;
-//     keys: [..][..]string;
-//     arrays: [..]struct { start: int; end: int; };
-// }
-
-// Module_Info :: struct {
-//     alias: string;
-//     git: string;
-//     branch: string;
-//     commit: string;
-//     path: string;
-// }
-
 get_line :: (data: string, line_number: s32) -> line: string, found:bool {
     line: string;
     found: bool;
@@ -259,35 +261,28 @@ print_issue:: (line_number: s32, char_number: s32) {
 
 print_value :: (value : Value, indent:="") {
     if value.type == {
-    case .STRING; print("%\n", value.string_value);
-    case .INT; print("%\n", value.int_value);
-    case .BOOL; print("%\n", value.bool_value);
+    case .STRING; print("%", value.string_value);
+    case .INT; print("%", value.int_value);
+    case .BOOL; print("%", value.bool_value);
     case .ARRAY;
         print("[\n");
         new_indent := tprint("%  ", indent);
         for val: value.array {
-            if val.type == .TABLE {
-                print_value(val, new_indent);
-            }
-            else {
-                print("%", new_indent);
-                print_value(val, new_indent);
-            }
+            print("%", new_indent);
+            print_value(val, new_indent);
+            print(",\n");
         }
-        print("%]\n", indent);
+        print("%]", indent);
     case .TABLE;
+        print("{\n");
         new_indent := tprint("%  ", indent);
         for keyval: value.table {
-            print("%0%", indent, keyval.key);
-            if keyval.type == .TABLE {
-                print("\n");
-                print_value(keyval.value, new_indent);
-            }
-            else {
-                print(" = ");
-                print_value(keyval.value, indent);
-            }
+            print("%0% ", new_indent, keyval.key);
+            if keyval.type != .TABLE { print("= "); }
+            print_value(keyval.value, new_indent);
+            print("\n");
         }
+        print("%}", indent);
     }
 }
 
