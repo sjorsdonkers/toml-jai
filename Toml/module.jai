@@ -1,11 +1,12 @@
-// Does note support:
+// Does not support:
+// - Quoted key, keys with `-`, keys starting with a number
+// - Basic literals (escaped strings)
 // - Multi-line strings
-// - String literals
-// - Escaped characters in strings
-// - Float, Hex, octal, binary, scientific notation, +-ints
+// - Float values (incl, scientific notation)
+// - Integers starting with +/-, hex, octal, binary
 // - Date / Time
 // - Arrays of tables
-// - Proper toml validation like endlines in an inline table
+// - Full toml validation like endlines in an inline table
 
 contents : string; // TODO
 print_issue:: (line_number: s32, char_number: s32) {
@@ -38,7 +39,6 @@ main :: () {
 Value_Type :: enum u8 {
     BOOL;
     INT;
-    FLOAT;
     STRING;
     ARRAY;
     TABLE;
@@ -49,7 +49,6 @@ Value :: struct {
     union {
         bool_value  : bool;
         int_value   : s64;
-        float_value : float64;
         string_value: string;
         array       : [..]Value;
         table       : [..]KeyValue;
@@ -198,7 +197,6 @@ parse_literal :: (token: TOML_Token) -> Value {
     if token.type == {
     case .BOOLEAN; return Value.{type=.BOOL, bool_value=token.bool_value};
     case .INTEGER; return Value.{type=.INT, int_value=token.int_value};
-    case .FLOAT;   return Value.{type=.FLOAT, float_value=token.float_value};
     case .STRING;  return Value.{type=.STRING, string_value=token.string_value};
     case;
         log_error("Unexpected token %, expected a value", token.type);
@@ -261,7 +259,6 @@ print_value :: (value : Value, indent:="") {
     if value.type == {
     case .STRING; print("%\n", value.string_value);
     case .INT; print("%\n", value.int_value);
-    case .FLOAT; print("%\n", value.float_value);
     case .BOOL; print("%\n", value.bool_value);
     case .ARRAY;
         print("[\n");

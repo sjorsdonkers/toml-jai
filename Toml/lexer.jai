@@ -3,7 +3,6 @@ Token_Type :: enum u8 {
     KEY     :: 1;
     BOOLEAN :: 2;
     INTEGER :: 3;
-    FLOAT   :: 4;
     STRING        :: #char "'";    // ASCII 39
     COMMA         :: #char ",";    // ASCII 44
     DOT           :: #char ".";    // ASCII 46
@@ -17,7 +16,6 @@ TOML_Token :: struct {
     union {
         bool_value : bool;
         int_value  : s64;
-        float_value: float64;
         string_value: string;
         scope: []TOML_Token;
     };
@@ -76,7 +74,7 @@ tokenize :: (data: string) -> tokens: [..]TOML_Token {
         }
 
         // Key
-        if is_alpha(data[pos]) || data[pos] == #char "_" { // No quotes, No `-`, no numbers
+        if is_alpha(data[pos]) || data[pos] == #char "_" { // No quotes, No `-`, no starting numbers
             start := pos;
             while pos < data.count && (is_alnum(data[pos])) {
                 pos += 1;
