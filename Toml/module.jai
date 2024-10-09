@@ -118,7 +118,7 @@ parse_key :: (parent: *Value, scope: Scope) -> root:KeyValue, leaf:*Value, leaf_
     current_is_new := true;
     if parent != null {
         if parent.type != Value_Type.TABLE {
-            log_error("Cannot use key as table as it already has a value: %", parent.type);
+            log_error("Cannot use key as table as it already has a value: %", parent.type); // TODO print_value
             exit(1);
         }
         current_is_new =, index := array_add_if_unique(*parent.table, local_root);
@@ -126,11 +126,6 @@ parse_key :: (parent: *Value, scope: Scope) -> root:KeyValue, leaf:*Value, leaf_
     }
 
     while has_next(scope) {
-        if current_table.type != Value_Type.TABLE {
-            log_error("Cannot use key as table it already has a value: %", current_table.type);
-            exit(1);
-        }
-
         token = eat_next_for_keys(*scope);
         if token.type != Token_Type.DOT {
             log_error("Expected DOT, got %", token.type);
@@ -150,6 +145,10 @@ parse_key :: (parent: *Value, scope: Scope) -> root:KeyValue, leaf:*Value, leaf_
             exit(1);
         }
 
+        if current_table.type != Value_Type.TABLE {
+            log_error("Cannot use key as table it already has a value: %", current_table.type);
+            exit(1);
+        }
         current_is_new, index := array_add_if_unique(*current_table.table, KeyValue.{token.str, Value.{type=.TABLE}});
         current_table = *current_table.table[index].value;
     }
@@ -180,7 +179,7 @@ parse_value :: (current_table: *Value, scope: *Scope) -> value:Value { // TODO o
     }
 }
 
-parse_inline_table :: (current_table: *Value, scope: Scope) -> table:Value { // TODO current_table does not need to be a pointer
+parse_inline_table :: (current_table: *Value, scope: Scope) -> table:Value {
     // log("parse_inline_table");
     // An inline table is either the right-hand side of an assignment to a key
     // or a value in an array. In case of the former it is important that we continue building
@@ -221,7 +220,6 @@ parse_literal :: (token: TOML_Token) -> Value {
         if begins_with(token.str, "0x") {
             advance(*clean_str, 2);
             hex_value, success, remainder := string_to_int(clean_str, 16, s64);
-            print("% % %\n", hex_value, success, remainder.count);
             if success && remainder.count == 0 { return Value.{type=.INT, int_value=hex_value}; }
         } else if begins_with(token.str, "0b") {
             advance(*clean_str, 2);
