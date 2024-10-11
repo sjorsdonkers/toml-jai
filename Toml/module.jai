@@ -1,7 +1,6 @@
 // Does not support:
 // - Basic strings (escaped strings)
 // - Multi-line strings
-// - Float values
 // - Date / Time
 // - Values may not overwrite previous ones
 // - Full toml validation like endlines in an inline table
@@ -18,6 +17,7 @@ main :: () {
 Value_Type :: enum u8 {
     BOOL;
     INT;
+    FLOAT;
     STRING;
     ARRAY;
     TABLE;
@@ -28,6 +28,7 @@ Value :: struct {
     union {
         bool_value  : bool;
         int_value   : s64;
+        float_value : float64;
         string_value: string;
         array       : [..]Value;
         table       : [..]KeyValue;
@@ -201,6 +202,15 @@ parse_literal :: (scope: *Scope) -> Value {
             if success && remainder.count == 0 { return Value.{type=.INT, int_value=int_value}; }
         }
 
+        // Parse float
+        // TODO detect illegal floats: .7  7.  3.e+20 ...
+        float_value, success, remainder := string_to_float64(clean_str);
+        if success && remainder.count == 0 { return Value.{type=.FLOAT, float_value=float_value}; }
+        if token.str == "inf" || token.str == "+inf"  { return Value.{type=.FLOAT, float_value=FLOAT64_INFINITY}; }
+        if token.str == "-inf"                        { return Value.{type=.FLOAT, float_value=-FLOAT64_INFINITY}; }
+        if token.str == "nan" || token.str == "+nan" { return Value.{type=.FLOAT, float_value=FLOAT64_NAN}; }
+        if token.str == "-nan"                        { return Value.{type=.FLOAT, float_value=-FLOAT64_NAN}; }
+
         // if date, check if next token is time seperated by single space: 1979-05-27 07:32:00Z
 
         exit_with_error_line(scope.source, token.loc, "Unable to parse literal %", token.str);
@@ -312,6 +322,7 @@ print_value :: (value : Value, indent:="") {
     if value.type == {
     case .STRING; print("%", value.string_value);
     case .INT; print("%", value.int_value);
+    case .FLOAT; print("%", value.float_value);
     case .BOOL; print("%", value.bool_value);
     case .ARRAY;
         print("[\n");
@@ -359,3 +370,4 @@ using Basic :: #import "Basic";
 #poke_name Basic operator==;
 #import "File";
 #import "String";
+#import "Math";
