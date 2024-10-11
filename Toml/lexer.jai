@@ -1,10 +1,8 @@
 Token_Type :: enum u8 {
-    KEY           :: 1;         // string_value
-    BOOLEAN       :: 2;         // bool_value
-    INTEGER       :: 3;         // int_value
-    STRING        :: #char "'"; // string_value
+    RAW           :: 1;         // str   // TODO now not using 0 as it's utf8 null, but we probably don't care. Minor perf improvement possible.
+    QUOTED        :: 2;         // str
     COMMA         :: #char ","; // -
-    DOT           :: #char "."; // -
+    DOT           :: #char "."; // -     // Not produced by lexer itself
     ASSIGN        :: #char "="; // -
     SCOPE_BRACKET :: #char "["; // scope
     SCOPE_BRACE   :: #char "{"; // scope
@@ -13,15 +11,13 @@ Token_Type :: enum u8 {
 TOML_Token :: struct {
     type: Token_Type;
     union {
-        bool_value  : bool;
-        int_value   : s64;
-        string_value: string;
-        scope       : []TOML_Token;
+        str  :   string;
+        scope: []TOML_Token;
     };
-    line, character: s32;
+    line, character: s32; // TODO Remove, instead always store string to data, in error case it is OK to recompute line and character
 }
 
-tokenize :: (data: string) -> tokens: [..]TOML_Token {
+tokenize :: (data: string) -> tokens: [..]TOML_Token { // TODO Change to streaming lexer once all requirements are in
     pos := 0;
     tokens : [..]TOML_Token;
     array_reserve(*tokens, data.count / 2); // Rough estimate of token count
@@ -53,33 +49,16 @@ tokenize :: (data: string) -> tokens: [..]TOML_Token {
             continue;
         }
 
-        // Check is boolean true and false
-        if pos + 4 < data.count {
-            if slice(data, pos, 4) == "true" {
-                token := TOML_Token.{type=.BOOLEAN, bool_value = true, line=line_number, character=char_number};
-                array_add(*tokens, token);
-                pos += 4;
-                char_number += 4;
-                continue;
-            }
-            if pos + 5 < data.count
-            && slice(data, pos, 5) == "false" {
-                token := TOML_Token.{type=.BOOLEAN, bool_value = false, line=line_number, character=char_number};
-                array_add(*tokens, token);
-                pos += 5;
-                char_number += 5;
-                continue;
-            }
-        }
 
-        // Key
-        if is_alpha(data[pos]) || data[pos] == #char "_" { // No quotes, No `-`, no starting numbers
+        // Raw
+        is_raw :: (c: u8) -> bool { return is_alnum(c) || c == #char "+" || c == #char "-" || c == #char "." || c == #char ":"; }
+        if is_raw(data[pos]) {
             start := pos;
-            while pos < data.count && (is_alnum(data[pos])) {
+            while pos < data.count && is_raw(data[pos]) {
                 pos += 1;
                 char_number += 1;
             }
-            token := TOML_Token.{type=.KEY, string_value=slice(data, start, pos - start), line=line_number, character=char_number - cast(s32) (pos - start)};
+            token := TOML_Token.{type=.RAW, str=slice(data, start, pos - start), line=line_number, character=char_number - cast(s32) (pos - start)};
             array_add(*tokens, token);
             continue;
         }
@@ -97,7 +76,7 @@ tokenize :: (data: string) -> tokens: [..]TOML_Token {
                 pos += 1;
                 char_number += 1;
             }
-            token := TOML_Token.{type=.STRING, string_value=slice(data, start, pos - start), line=line_number, character=char_number - cast(s32) (pos - start)};
+            token := TOML_Token.{type=.QUOTED, str=slice(data, start, pos - start), line=line_number, character=char_number - cast(s32) (pos - start)};
             array_add(*tokens, token);
             pos += 1;
             char_number += 1;
@@ -108,26 +87,12 @@ tokenize :: (data: string) -> tokens: [..]TOML_Token {
             exit(1);
         }
 
-        // Integer
-        if is_digit(data[pos]) || data[pos] == #char "-" || data[pos] == #char "+" { // no u64, No floats, no hex, no octal, no binary, no scientific
-            start := pos;
-            value : s64 = 0;
-            while pos < data.count && (is_digit(data[pos])) {
-                value = value * 10 + cast(s64) (data[pos] - #char "0");
-                pos += 1;
-                char_number += 1;
-            }
-            token := TOML_Token.{type=.INTEGER, int_value = value, line=line_number, character=char_number - cast(s32) (pos - start)};
-            array_add(*tokens, token);
-            continue;
-        }
-
         // Scopes
         if data[pos] == #char "{"
         || data[pos] == #char "[" {
             scope_index := tokens.count;
-             // int_value is replaced by scope on scope closing, it does not include the scope tokens itself
-            token := TOML_Token.{type=cast(Token_Type) data[pos], int_value = scope_index + 1, line=line_number, character=char_number};
+             // .scope is replaced by actual scope on scope closing, scope.count points to the slice token itself for now
+            token := TOML_Token.{type=cast(Token_Type) data[pos], scope = tokens, line=line_number, character=char_number};
             array_add(*tokens, token);
             array_add(*scope_stack, scope_index);
             pos += 1;
@@ -145,8 +110,8 @@ tokenize :: (data: string) -> tokens: [..]TOML_Token {
                 log_error("Mismatched scope closure. Scope Opened with: % Attempt to close with: %", tokens[removed_idx].type, data[pos]); // TODO more info
                 exit(1);
             }
-            scope_count := tokens.count - tokens[removed_idx].int_value;
-            tokens[removed_idx].scope = array_view(tokens, tokens[removed_idx].int_value, scope_count);
+            scope_count := tokens.count - tokens[removed_idx].scope.count - 1;
+            tokens[removed_idx].scope = array_view(tokens, tokens[removed_idx].scope.count+1, scope_count);
             pos += 1;
             char_number += 1;
             continue;
@@ -154,7 +119,6 @@ tokenize :: (data: string) -> tokens: [..]TOML_Token {
 
         // Others
         if data[pos] == #char ","
-        || data[pos] == #char "."
         || data[pos] == #char "=" {
             token := TOML_Token.{type=cast(Token_Type) data[pos], line=line_number, character=char_number};
             array_add(*tokens, token);
@@ -170,7 +134,7 @@ tokenize :: (data: string) -> tokens: [..]TOML_Token {
 }
 
 is_whitespace :: (c: u8) -> bool {
-    return c == #char " " || c == #char "\t" || c == #char "\r";
+    return c == #char " " || c == #char "\t" || c == #char "\r"; // \r only if next is \n
 }
 
 is_newline :: (c: u8) -> bool {

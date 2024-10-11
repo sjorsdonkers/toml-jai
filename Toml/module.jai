@@ -1,10 +1,9 @@
 // Does not support:
-// - Quoted key, keys with `-`, keys starting with a number
 // - Basic strings (escaped strings)
 // - Multi-line strings
 // - Float values
-// - Integers starting with +/-, hex, octal, binary
 // - Date / Time
+// - Values may not overwrite previous ones
 // - Full toml validation like endlines in an inline table
 // - Error propagation
 
@@ -40,7 +39,7 @@ KeyValue :: struct {
 
 // At top level we can expect (keys, [keys], [[keys]])
 parse :: (tokens: []TOML_Token) -> root_table:Value {
-    scope := Scope.{tokens, 0};
+    scope := Scope.{tokens, 0, ""};
     // We use a Root instead of just an array to make sure overlapping keys are handled in parse_key
     root_table := KeyValue.{"*ROOT*", Value.{type=.TABLE}}; // root name should be something not possible in TOML
     current_table := *root_table.value;
@@ -104,21 +103,22 @@ parse_key :: (parent: *Value, scope: Scope) -> root:KeyValue, leaf:*Value, leaf_
         log_error("Unexpected end of scope while parsing key"); // todo simplify
         exit(1);
     }
-    token := eat_next(*scope);
-    if token.type != Token_Type.KEY {
-        log_error("Expected key, got %", token.type);
+    token := eat_next_for_keys(*scope);
+    if token.type != Token_Type.QUOTED {
+        log_error("Key cannot start with a %", token.type);
         print_issue(token.line, token.character);
         exit(1);
     }
+
     local_root : KeyValue;
-    local_root.key = token.string_value;
+    local_root.key = token.str;
     local_root.value = Value.{type=.TABLE};
 
     current_table := *local_root.value;
     current_is_new := true;
     if parent != null {
         if parent.type != Value_Type.TABLE {
-            log_error("Cannot use key as table as it already has a value: %", parent.type);
+            log_error("Cannot use key as table as it already has a value: %", parent.type); // TODO print_value
             exit(1);
         }
         current_is_new =, index := array_add_if_unique(*parent.table, local_root);
@@ -126,23 +126,30 @@ parse_key :: (parent: *Value, scope: Scope) -> root:KeyValue, leaf:*Value, leaf_
     }
 
     while has_next(scope) {
-        eat_expected(*scope, Token_Type.DOT);
+        token = eat_next_for_keys(*scope);
+        if token.type != Token_Type.DOT {
+            log_error("Expected DOT, got %", token.type);
+            print_issue(token.line, token.character);
+            exit(1);
+        }
+
         if !has_next(scope) {
             log_error("Key is not allowed to end with a dot");
             print_issue(last_eaten(scope).line, last_eaten(scope).character);
             exit(1);
         }
-        token = eat_next(*scope);
-        if token.type != Token_Type.KEY {
-            log_error("Expected key, got %\n", token.type);
+        token = eat_next_for_keys(*scope);
+        if token.type != Token_Type.QUOTED {
+            log_error("Expected KEY, got %", token.type);
             print_issue(token.line, token.character);
             exit(1);
         }
+
         if current_table.type != Value_Type.TABLE {
             log_error("Cannot use key as table it already has a value: %", current_table.type);
             exit(1);
         }
-        current_is_new, index := array_add_if_unique(*current_table.table, KeyValue.{token.string_value, Value.{type=.TABLE}});
+        current_is_new, index := array_add_if_unique(*current_table.table, KeyValue.{token.str, Value.{type=.TABLE}});
         current_table = *current_table.table[index].value;
     }
     return local_root, current_table, current_is_new;
@@ -167,12 +174,12 @@ parse_value :: (current_table: *Value, scope: *Scope) -> value:Value { // TODO o
         return array;
     case;
         literal := parse_literal(token);
-        eat_next(scope);
+        eat_next(scope); // Might be 2 if date time
         return literal;
     }
 }
 
-parse_inline_table :: (current_table: *Value, scope: Scope) -> table:Value { // TODO current_table does not need to be a pointer
+parse_inline_table :: (current_table: *Value, scope: Scope) -> table:Value {
     // log("parse_inline_table");
     // An inline table is either the right-hand side of an assignment to a key
     // or a value in an array. In case of the former it is important that we continue building
@@ -204,20 +211,49 @@ parse_array :: (scope: Scope) -> array:Value {
 parse_literal :: (token: TOML_Token) -> Value {
     // log("parse_literal %", token.type);
     if token.type == {
-    case .BOOLEAN; return Value.{type=.BOOL, bool_value=token.bool_value};
-    case .INTEGER; return Value.{type=.INT, int_value=token.int_value};
-    case .STRING;  return Value.{type=.STRING, string_value=token.string_value};
+    case .QUOTED;  return Value.{type=.STRING, string_value=token.str};
+    case .RAW;
+        // Parse boolean
+        if token.str == "true" { return Value.{type=.BOOL, bool_value=true}; }
+        if token.str == "false" { return Value.{type=.BOOL, bool_value=false}; }
+
+        // Parse integer
+        clean_str := replace(token.str, "_", ""); // TODO make number specific to check before and after _ is digit / hex etc
+        if begins_with(token.str, "0x") {
+            advance(*clean_str, 2);
+            hex_value, success, remainder := string_to_int(clean_str, 16, s64);
+            if success && remainder.count == 0 { return Value.{type=.INT, int_value=hex_value}; }
+        } else if begins_with(token.str, "0b") {
+            advance(*clean_str, 2);
+            bin_value, success, remainder := string_to_int(clean_str, 2, s64);
+            if success && remainder.count == 0 { return Value.{type=.INT, int_value=bin_value}; }
+        } else if begins_with(token.str, "0o") {
+            advance(*clean_str, 2);
+            oct_value, success, remainder := string_to_int(clean_str, 8, s64);
+            if success && remainder.count == 0 { return Value.{type=.INT, int_value=oct_value}; }
+        } else {
+            // TODO detect leading zeros error
+            int_value, success, remainder := string_to_int(clean_str, 10, s64);
+            if success && remainder.count == 0 { return Value.{type=.INT, int_value=int_value}; }
+        }
+
+        // if date, check if next token is time seperated by single space: 1979-05-27 07:32:00Z
+
+        log_error("Unable to parse literal %", token.str);
+        print_issue(token.line, token.character);
+        exit(1);
     case;
         log_error("Unexpected token %, expected a value", token.type);
         print_issue(token.line, token.character);
         exit(1);
-        return Value.{};
     }
+    return Value.{};
 }
 
 Scope :: struct {
     tokens: []TOML_Token;
     pos: s64 = 0;
+    remaining_key: string;
 }
 has_next :: (scope: Scope, count:=1) -> bool {
     return scope.pos + count -1 < scope.tokens.count;
@@ -230,6 +266,40 @@ eat_next :: (scope: *Scope) -> TOML_Token {
     scope.pos += 1; // Do we want to eat scope here?
     return token;
 }
+
+// .   -> `.`  ``
+// ab  -> `ab` ``
+//     -> ``   ``
+// .ab -> `.`  `ab`
+// a.b -> `a`  `.b`
+// ab. -> `ab` `.`
+split_from_left_incl :: (s: string, separator: u8) -> (left: string, right: string) {
+    index := inline find_index_from_left(s, separator);
+    if index == -1  return s, "";
+    if index == 0  index = 1;
+    return slice(s, 0, index), slice(s, index, s.count - index);
+}
+
+eat_next_for_keys :: (scope: *Scope) -> TOML_Token {
+    if scope.remaining_key.count == 0 {
+        token := peak_next(scope);
+        if token.type == {
+        case .QUOTED; return eat_next(scope);
+        case .RAW;    scope.remaining_key = token.str;
+        case;
+            log_error("Expected key, got %", token.type);
+            print_issue(token.line, token.character);
+            exit(1);
+        }
+    }
+    original := peak_next(scope);
+    char_num := cast(s32) inline find_index_from_right(original.str, scope.remaining_key);
+    next:, scope.remaining_key = split_from_left_incl(scope.remaining_key, #char ".");
+    if scope.remaining_key.count == 0 { eat_next(scope); }
+    if next == "." { return TOML_Token.{type=Token_Type.DOT, line=original.line, character=char_num}; }
+    else           { return TOML_Token.{type=Token_Type.QUOTED, str=next, line=original.line, character=char_num}; }
+}
+
 last_eaten :: (scope: Scope) -> TOML_Token {
     return scope.tokens[scope.pos-1];
 }
@@ -238,7 +308,7 @@ last :: (scope: Scope) -> TOML_Token {
 }
 sub :: (scope: Scope, tokens: []TOML_Token) -> Scope {
     // todo add contents string
-    return Scope.{tokens, 0};
+    return Scope.{tokens, 0, ""};
 }
 
 eat_scope :: (scope: *Scope, edible: TOML_Token) {
@@ -247,8 +317,8 @@ eat_scope :: (scope: *Scope, edible: TOML_Token) {
 }
 
 eat_expected :: (scope: *Scope, expected: Token_Type) {
-    if eat_next(scope).type != expected {
-        token := peak_next(scope);
+    token := eat_next(scope);
+    if token.type != expected {
         log_error("Expected %, got %", expected, token.type);
         print_issue(token.line, token.character);
         exit(1);
@@ -260,7 +330,7 @@ eat_scope_until :: (scope: *Scope, scope_end: Token_Type) -> sub_scope:Scope {
     start_pos := scope.pos;
     while has_next(scope) { // TODO impl for for Scope
         if eat_next(scope).type == scope_end {
-            return Scope.{array_view(scope.tokens, start_pos, scope.pos - start_pos - 1), 0};
+            return Scope.{array_view(scope.tokens, start_pos, scope.pos - start_pos - 1), 0, ""};
         }
     }
     log_error("Unexpected end of scope. Expected %", scope_end);
