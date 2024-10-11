@@ -133,7 +133,7 @@ parse_key :: (parent: *Value, scope: Scope) -> root:KeyValue, leaf:*Value, leaf_
             exit(1);
         }
 
-        if !has_next_key(scope) {
+        if !has_next(scope) {
             log_error("Key is not allowed to end with a dot");
             print_issue(last_eaten(scope).line, last_eaten(scope).character);
             exit(1);
@@ -213,9 +213,11 @@ parse_literal :: (token: TOML_Token) -> Value {
     if token.type == {
     case .QUOTED;  return Value.{type=.STRING, string_value=token.str};
     case .RAW;
+        // Parse boolean
         if token.str == "true" { return Value.{type=.BOOL, bool_value=true}; }
         if token.str == "false" { return Value.{type=.BOOL, bool_value=false}; }
 
+        // Parse integer
         clean_str := replace(token.str, "_", ""); // TODO make number specific to check before and after _ is digit / hex etc
         if begins_with(token.str, "0x") {
             advance(*clean_str, 2);
@@ -265,15 +267,6 @@ eat_next :: (scope: *Scope) -> TOML_Token {
     return token;
 }
 
-has_next_key :: (scope: Scope) -> bool {
-    if scope.remaining_key.count > 0 true;
-    if has_next(scope) {
-        type := peak_next(scope).type;
-        return type == Token_Type.RAW || type == Token_Type.QUOTED;
-    }
-    return false;
-}
-
 // .   -> `.`  ``
 // ab  -> `ab` ``
 //     -> ``   ``
@@ -291,25 +284,20 @@ eat_next_for_keys :: (scope: *Scope) -> TOML_Token {
     if scope.remaining_key.count == 0 {
         token := peak_next(scope);
         if token.type == {
-            case .QUOTED; return eat_next(scope);
-            case .RAW;
-                scope.remaining_key = token.str;
-            case;
-                log_error("Expected key, got %", token.type);
-                print_issue(token.line, token.character);
-                exit(1);
+        case .QUOTED; return eat_next(scope);
+        case .RAW;    scope.remaining_key = token.str;
+        case;
+            log_error("Expected key, got %", token.type);
+            print_issue(token.line, token.character);
+            exit(1);
         }
     }
-
     original := peak_next(scope);
     char_num := cast(s32) inline find_index_from_right(original.str, scope.remaining_key);
     next:, scope.remaining_key = split_from_left_incl(scope.remaining_key, #char ".");
     if scope.remaining_key.count == 0 { eat_next(scope); }
-    if next == "." {
-        return TOML_Token.{type=Token_Type.DOT, line=original.line, character=char_num};
-    } else {
-        return TOML_Token.{type=Token_Type.QUOTED, str=next, line=original.line, character=char_num};
-    }
+    if next == "." { return TOML_Token.{type=Token_Type.DOT, line=original.line, character=char_num}; }
+    else           { return TOML_Token.{type=Token_Type.QUOTED, str=next, line=original.line, character=char_num}; }
 }
 
 last_eaten :: (scope: Scope) -> TOML_Token {
@@ -329,8 +317,8 @@ eat_scope :: (scope: *Scope, edible: TOML_Token) {
 }
 
 eat_expected :: (scope: *Scope, expected: Token_Type) {
-    if eat_next(scope).type != expected {
-        token := peak_next(scope); // TODO looks wrong
+    token := eat_next(scope);
+    if token.type != expected {
         log_error("Expected %, got %", expected, token.type);
         print_issue(token.line, token.character);
         exit(1);

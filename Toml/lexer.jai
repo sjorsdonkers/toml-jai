@@ -1,5 +1,5 @@
 Token_Type :: enum u8 {
-    RAW           :: 1;         // str
+    RAW           :: 1;         // str   // TODO now not using 0 as it's utf8 null, but we probably don't care. Minor perf improvement possible.
     QUOTED        :: 2;         // str
     COMMA         :: #char ","; // -
     DOT           :: #char "."; // -     // Not produced by lexer itself
@@ -14,10 +14,10 @@ TOML_Token :: struct {
         str  :   string;
         scope: []TOML_Token;
     };
-    line, character: s32;
+    line, character: s32; // TODO Remove, instead always store string to data, in error case it is OK to recompute line and character
 }
 
-tokenize :: (data: string) -> tokens: [..]TOML_Token {
+tokenize :: (data: string) -> tokens: [..]TOML_Token { // TODO Change to streaming lexer once all requirements are in
     pos := 0;
     tokens : [..]TOML_Token;
     array_reserve(*tokens, data.count / 2); // Rough estimate of token count
@@ -51,11 +51,10 @@ tokenize :: (data: string) -> tokens: [..]TOML_Token {
 
 
         // Raw
-        is_raw_start :: (c: u8) -> bool { return is_alnum(c) || c == #char "+" || c == #char "-" || c == #char "."; }
-        is_raw_char  :: (c: u8) -> bool { return is_alnum(c) || c == #char "+" || c == #char "-" || c == #char "." || c == #char ":"; }
-        if is_raw_start(data[pos]) {
+        is_raw :: (c: u8) -> bool { return is_alnum(c) || c == #char "+" || c == #char "-" || c == #char "." || c == #char ":"; }
+        if is_raw(data[pos]) {
             start := pos;
-            while pos < data.count && is_raw_char(data[pos]) {
+            while pos < data.count && is_raw(data[pos]) {
                 pos += 1;
                 char_number += 1;
             }
@@ -135,7 +134,7 @@ tokenize :: (data: string) -> tokens: [..]TOML_Token {
 }
 
 is_whitespace :: (c: u8) -> bool {
-    return c == #char " " || c == #char "\t" || c == #char "\r";
+    return c == #char " " || c == #char "\t" || c == #char "\r"; // \r only if next is \n
 }
 
 is_newline :: (c: u8) -> bool {
