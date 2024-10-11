@@ -8,9 +8,10 @@
 // - Error propagation
 
 main :: () {
-    contents = read_entire_file("toml.toml");
+    contents := read_entire_file("toml.toml");
     tokens  := tokenize(contents);
-    toml    := parse(tokens);
+    scope  := Scope.{contents, tokens, 0, ""};
+    toml    := parse(scope);
     print_value(toml);
 }
 
@@ -38,8 +39,7 @@ KeyValue :: struct {
 }
 
 // At top level we can expect (keys, [keys], [[keys]])
-parse :: (tokens: []TOML_Token) -> root_table:Value {
-    scope := Scope.{tokens, 0, ""};
+parse :: (scope: Scope) -> root_table:Value {
     // We use a Root instead of just an array to make sure overlapping keys are handled in parse_key
     root_table := KeyValue.{"*ROOT*", Value.{type=.TABLE}}; // root name should be something not possible in TOML
     current_table := *root_table.value;
@@ -60,8 +60,6 @@ parse :: (tokens: []TOML_Token) -> root_table:Value {
 
 #scope_file
 
-contents : string; // TODO
-
 parse_header :: (root_table: *Value, scope: Scope) -> *Value {
     // log("parse_header");
     if !has_next(scope) || peak_next(scope).type != Token_Type.SCOPE_BRACKET{
@@ -69,7 +67,7 @@ parse_header :: (root_table: *Value, scope: Scope) -> *Value {
         _, current_table, is_new := parse_key(root_table, scope);
         if !is_new && current_table.type != Value_Type.TABLE {
             log_error("Cannot use key as Tables as it already has a value: %", current_table.type);
-            print_issue(last(scope).line, last(scope).character);
+            print_issue(scope.source, last(scope).loc);
             exit(1);
         }
         return current_table;
@@ -79,14 +77,14 @@ parse_header :: (root_table: *Value, scope: Scope) -> *Value {
     if scope.tokens.count > aot_scope.tokens.count + 1 {
         error_token:= scope.tokens[1 + aot_scope.tokens.count];
         log_error("Unexpected % in Array of Tables header", error_token.type);
-        print_issue(error_token.line, error_token.character);
+        print_issue(scope.source, error_token.loc);
         exit(1);
     }
 
     _, current_table, is_new := parse_key(root_table, aot_scope);
     if !is_new && current_table.type != Value_Type.ARRAY {
         log_error("Cannot use key as Array of Tables as it already has a value: %", current_table.type);
-        print_issue(last(aot_scope).line, last(aot_scope).character);
+        print_issue(aot_scope.source, last(aot_scope).loc);
         exit(1);
     }
 
@@ -106,7 +104,7 @@ parse_key :: (parent: *Value, scope: Scope) -> root:KeyValue, leaf:*Value, leaf_
     token := eat_next_for_keys(*scope);
     if token.type != Token_Type.QUOTED {
         log_error("Key cannot start with a %", token.type);
-        print_issue(token.line, token.character);
+        print_issue(scope.source, token.loc);
         exit(1);
     }
 
@@ -129,19 +127,19 @@ parse_key :: (parent: *Value, scope: Scope) -> root:KeyValue, leaf:*Value, leaf_
         token = eat_next_for_keys(*scope);
         if token.type != Token_Type.DOT {
             log_error("Expected DOT, got %", token.type);
-            print_issue(token.line, token.character);
+            print_issue(scope.source, token.loc);
             exit(1);
         }
 
         if !has_next(scope) {
             log_error("Key is not allowed to end with a dot");
-            print_issue(last_eaten(scope).line, last_eaten(scope).character);
+            print_issue(scope.source, last_eaten(scope).loc);
             exit(1);
         }
         token = eat_next_for_keys(*scope);
         if token.type != Token_Type.QUOTED {
             log_error("Expected KEY, got %", token.type);
-            print_issue(token.line, token.character);
+            print_issue(scope.source, token.loc);
             exit(1);
         }
 
@@ -173,7 +171,7 @@ parse_value :: (current_table: *Value, scope: *Scope) -> value:Value { // TODO o
         eat_scope(scope, token);
         return array;
     case;
-        literal := parse_literal(token);
+        literal := parse_literal(scope);
         eat_next(scope); // Might be 2 if date time
         return literal;
     }
@@ -208,8 +206,9 @@ parse_array :: (scope: Scope) -> array:Value {
     return Value.{type=.ARRAY, array=values};
 }
 
-parse_literal :: (token: TOML_Token) -> Value {
+parse_literal :: (scope: *Scope) -> Value {
     // log("parse_literal %", token.type);
+    token := peak_next(scope);
     if token.type == {
     case .QUOTED;  return Value.{type=.STRING, string_value=token.str};
     case .RAW;
@@ -240,17 +239,18 @@ parse_literal :: (token: TOML_Token) -> Value {
         // if date, check if next token is time seperated by single space: 1979-05-27 07:32:00Z
 
         log_error("Unable to parse literal %", token.str);
-        print_issue(token.line, token.character);
+        print_issue(scope.source, token.loc);
         exit(1);
     case;
         log_error("Unexpected token %, expected a value", token.type);
-        print_issue(token.line, token.character);
+        print_issue(scope.source, token.loc);
         exit(1);
     }
     return Value.{};
 }
 
 Scope :: struct {
+    source: string;
     tokens: []TOML_Token;
     pos: s64 = 0;
     remaining_key: string;
@@ -288,7 +288,7 @@ eat_next_for_keys :: (scope: *Scope) -> TOML_Token {
         case .RAW;    scope.remaining_key = token.str;
         case;
             log_error("Expected key, got %", token.type);
-            print_issue(token.line, token.character);
+            print_issue(scope.source, token.loc);
             exit(1);
         }
     }
@@ -296,8 +296,8 @@ eat_next_for_keys :: (scope: *Scope) -> TOML_Token {
     char_num := cast(s32) inline find_index_from_right(original.str, scope.remaining_key);
     next:, scope.remaining_key = split_from_left_incl(scope.remaining_key, #char ".");
     if scope.remaining_key.count == 0 { eat_next(scope); }
-    if next == "." { return TOML_Token.{type=Token_Type.DOT, line=original.line, character=char_num}; }
-    else           { return TOML_Token.{type=Token_Type.QUOTED, str=next, line=original.line, character=char_num}; }
+    if next == "." { return TOML_Token.{type=Token_Type.DOT, loc=Location.{original.loc.line, char_num}}; }
+    else           { return TOML_Token.{type=Token_Type.QUOTED, str=next, loc=Location.{original.loc.line, char_num}}; }
 }
 
 last_eaten :: (scope: Scope) -> TOML_Token {
@@ -307,8 +307,7 @@ last :: (scope: Scope) -> TOML_Token {
     return scope.tokens[scope.tokens.count-1];
 }
 sub :: (scope: Scope, tokens: []TOML_Token) -> Scope {
-    // todo add contents string
-    return Scope.{tokens, 0, ""};
+    return Scope.{scope.source, tokens, 0, ""};
 }
 
 eat_scope :: (scope: *Scope, edible: TOML_Token) {
@@ -320,7 +319,7 @@ eat_expected :: (scope: *Scope, expected: Token_Type) {
     token := eat_next(scope);
     if token.type != expected {
         log_error("Expected %, got %", expected, token.type);
-        print_issue(token.line, token.character);
+        print_issue(scope.source, token.loc);
         exit(1);
     }
 }
@@ -330,11 +329,11 @@ eat_scope_until :: (scope: *Scope, scope_end: Token_Type) -> sub_scope:Scope {
     start_pos := scope.pos;
     while has_next(scope) { // TODO impl for for Scope
         if eat_next(scope).type == scope_end {
-            return Scope.{array_view(scope.tokens, start_pos, scope.pos - start_pos - 1), 0, ""};
+            return Scope.{scope.source, array_view(scope.tokens, start_pos, scope.pos - start_pos - 1), 0, ""};
         }
     }
     log_error("Unexpected end of scope. Expected %", scope_end);
-    print_issue(scope.tokens[start_pos].line, scope.tokens[start_pos].character);
+    print_issue(scope.source, scope.tokens[start_pos].loc);
     exit(1);
     return scope;
 }
@@ -346,20 +345,20 @@ get_line :: (data: string, line_number: s32) -> line: string, found:bool {
     return line, found;
 }
 
-print_issue:: (line_number: s32, char_number: s32) {
+print_issue :: (source: string, loc: Location) {
     #import "Text_File_Handler";
-    line, found := get_line(contents, line_number);
+    line, found := get_line(source, loc.line);
     if !found {
-        log_error("Failed to read line % from file", line_number);
+        log_error("Failed to read line % from file", loc.line);
         exit(1);
     }
 
-    log_error("Line % Char %:", line_number, char_number);
+    log_error("Line % Char %:", loc.line, loc.character);
     log_error(line);
 
     // print ^^ under the char number
     builder: String_Builder;
-    for 1..char_number-1 { append(*builder, #char " "); }
+    for 1..loc.character-1 { append(*builder, #char " "); }
     append(*builder, #char "^");
     log_error(builder_to_string(*builder));
 }

@@ -14,7 +14,11 @@ TOML_Token :: struct {
         str  :   string;
         scope: []TOML_Token;
     };
-    line, character: s32; // TODO Remove, instead always store string to data, in error case it is OK to recompute line and character
+    loc: Location; // TODO Remove, instead always store string to data, in error case it is OK to recompute line and character
+}
+
+Location :: struct {
+    line, character: s32;
 }
 
 tokenize :: (data: string) -> tokens: [..]TOML_Token { // TODO Change to streaming lexer once all requirements are in
@@ -58,7 +62,7 @@ tokenize :: (data: string) -> tokens: [..]TOML_Token { // TODO Change to streami
                 pos += 1;
                 char_number += 1;
             }
-            token := TOML_Token.{type=.RAW, str=slice(data, start, pos - start), line=line_number, character=char_number - cast(s32) (pos - start)};
+            token := TOML_Token.{type=.RAW, str=slice(data, start, pos - start), loc=Location.{line_number, char_number - cast(s32) (pos - start)}};
             array_add(*tokens, token);
             continue;
         }
@@ -76,7 +80,7 @@ tokenize :: (data: string) -> tokens: [..]TOML_Token { // TODO Change to streami
                 pos += 1;
                 char_number += 1;
             }
-            token := TOML_Token.{type=.QUOTED, str=slice(data, start, pos - start), line=line_number, character=char_number - cast(s32) (pos - start)};
+            token := TOML_Token.{type=.QUOTED, str=slice(data, start, pos - start), loc=Location.{line_number, char_number - cast(s32) (pos - start)}};
             array_add(*tokens, token);
             pos += 1;
             char_number += 1;
@@ -92,7 +96,7 @@ tokenize :: (data: string) -> tokens: [..]TOML_Token { // TODO Change to streami
         || data[pos] == #char "[" {
             scope_index := tokens.count;
              // .scope is replaced by actual scope on scope closing, scope.count points to the slice token itself for now
-            token := TOML_Token.{type=cast(Token_Type) data[pos], scope = tokens, line=line_number, character=char_number};
+            token := TOML_Token.{type=cast(Token_Type) data[pos], scope = tokens, loc=Location.{line_number, char_number}};
             array_add(*tokens, token);
             array_add(*scope_stack, scope_index);
             pos += 1;
@@ -120,7 +124,7 @@ tokenize :: (data: string) -> tokens: [..]TOML_Token { // TODO Change to streami
         // Others
         if data[pos] == #char ","
         || data[pos] == #char "=" {
-            token := TOML_Token.{type=cast(Token_Type) data[pos], line=line_number, character=char_number};
+            token := TOML_Token.{type=cast(Token_Type) data[pos], loc=Location.{line_number, char_number}};
             array_add(*tokens, token);
             pos += 1;
             char_number += 1;
