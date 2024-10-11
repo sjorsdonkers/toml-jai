@@ -80,6 +80,10 @@ tokenize :: (data: string) -> tokens: [..]TOML_Token { // TODO Change to streami
                 pos += 1;
                 char_number += 1;
             }
+            if pos == data.count {
+                log_error("Unterminated literal string. %:%", line_number, char_number);
+                exit(1);
+            }
             token := TOML_Token.{type=.QUOTED, str=slice(data, start, pos - start), loc=Location.{line_number, char_number - cast(s32) (pos - start)}};
             array_add(*tokens, token);
             pos += 1;

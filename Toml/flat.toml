@@ -1,8 +1,0 @@
-[modules.Do_A_Thing]
-git = "git@github.com:sjorsdonkers/modocil.git"
-commit = "21a0e57"
-path = "examples/assets/Do_A_Thing.jai"
-
-[modules.Do_Other_Thing]
-git = "git@github.com:sjorsdonkers/modocil.git"
-path = "examples/assets/Do_Other_Thing"

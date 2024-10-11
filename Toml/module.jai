@@ -66,9 +66,7 @@ parse_header :: (root_table: *Value, scope: Scope) -> *Value {
         // Parse table header
         _, current_table, is_new := parse_key(root_table, scope);
         if !is_new && current_table.type != Value_Type.TABLE {
-            log_error("Cannot use key as Tables as it already has a value: %", current_table.type);
-            print_issue(scope.source, last(scope).loc);
-            exit(1);
+            exit_with_error_line(scope.source, last(scope).loc, "Cannot use key as Tables as it already has a value: %", current_table.type);
         }
         return current_table;
     }
@@ -76,16 +74,12 @@ parse_header :: (root_table: *Value, scope: Scope) -> *Value {
     aot_scope := sub(scope, eat_next(*scope).scope);
     if scope.tokens.count > aot_scope.tokens.count + 1 {
         error_token:= scope.tokens[1 + aot_scope.tokens.count];
-        log_error("Unexpected % in Array of Tables header", error_token.type);
-        print_issue(scope.source, error_token.loc);
-        exit(1);
+        exit_with_error_line(scope.source, error_token.loc, "Unexpected % in Array of Tables header", error_token.type);
     }
 
     _, current_table, is_new := parse_key(root_table, aot_scope);
     if !is_new && current_table.type != Value_Type.ARRAY {
-        log_error("Cannot use key as Array of Tables as it already has a value: %", current_table.type);
-        print_issue(aot_scope.source, last(aot_scope).loc);
-        exit(1);
+        exit_with_error_line(aot_scope.source, last(aot_scope).loc, "Cannot use key as Array of Tables as it already has a value: %", current_table.type);
     }
 
     current_table.type = Value_Type.ARRAY;
@@ -97,16 +91,9 @@ parse_header :: (root_table: *Value, scope: Scope) -> *Value {
 // parse key.key.key.etc =
 parse_key :: (parent: *Value, scope: Scope) -> root:KeyValue, leaf:*Value, leaf_is_new:bool {
     // log("parse_key");
-    if !has_next(scope) {
-        log_error("Unexpected end of scope while parsing key"); // todo simplify
-        exit(1);
-    }
+    if !has_next(scope) { exit_with_error("Unexpected end of scope while parsing key"); }
     token := eat_next_for_keys(*scope);
-    if token.type != Token_Type.QUOTED {
-        log_error("Key cannot start with a %", token.type);
-        print_issue(scope.source, token.loc);
-        exit(1);
-    }
+    if token.type != Token_Type.QUOTED { exit_with_error_line(scope.source, token.loc, "Key cannot start with a %", token.type); }
 
     local_root : KeyValue;
     local_root.key = token.str;
@@ -115,38 +102,19 @@ parse_key :: (parent: *Value, scope: Scope) -> root:KeyValue, leaf:*Value, leaf_
     current_table := *local_root.value;
     current_is_new := true;
     if parent != null {
-        if parent.type != Value_Type.TABLE {
-            log_error("Cannot use key as table as it already has a value: %", parent.type); // TODO print_value
-            exit(1);
-        }
+        if parent.type != Value_Type.TABLE { exit_with_error("Cannot use key as table as it already has a value: %", parent.type); } // TODO print_value
         current_is_new =, index := array_add_if_unique(*parent.table, local_root);
         current_table = *parent.table[index].value;
     }
 
     while has_next(scope) {
         token = eat_next_for_keys(*scope);
-        if token.type != Token_Type.DOT {
-            log_error("Expected DOT, got %", token.type);
-            print_issue(scope.source, token.loc);
-            exit(1);
-        }
-
-        if !has_next(scope) {
-            log_error("Key is not allowed to end with a dot");
-            print_issue(scope.source, last_eaten(scope).loc);
-            exit(1);
-        }
+        if token.type != Token_Type.DOT { exit_with_error_line(scope.source, token.loc, "Expected DOT, got %", token.type); }
+        if !has_next(scope) { exit_with_error_line(scope.source, last_eaten(scope).loc, "Key is not allowed to end with a dot"); }
         token = eat_next_for_keys(*scope);
-        if token.type != Token_Type.QUOTED {
-            log_error("Expected KEY, got %", token.type);
-            print_issue(scope.source, token.loc);
-            exit(1);
-        }
+        if token.type != Token_Type.QUOTED { exit_with_error_line(scope.source, token.loc, "Expected KEY, got %", token.type); }
 
-        if current_table.type != Value_Type.TABLE {
-            log_error("Cannot use key as table it already has a value: %", current_table.type);
-            exit(1);
-        }
+        if current_table.type != Value_Type.TABLE { exit_with_error("Cannot use key as table it already has a value: %", current_table.type); }
         current_is_new, index := array_add_if_unique(*current_table.table, KeyValue.{token.str, Value.{type=.TABLE}});
         current_table = *current_table.table[index].value;
     }
@@ -155,10 +123,7 @@ parse_key :: (parent: *Value, scope: Scope) -> root:KeyValue, leaf:*Value, leaf_
 
 parse_value :: (current_table: *Value, scope: *Scope) -> value:Value { // TODO only assign value if key is empty table
     // log("parse_value");
-    if !has_next(scope) {
-        log_error("Unexpected end of file while parsing value");
-        exit(1);
-    }
+    if !has_next(scope) { exit_with_error("Unexpected end of file while parsing value"); }
 
     token := peak_next(scope);
     if token.type == {
@@ -238,13 +203,9 @@ parse_literal :: (scope: *Scope) -> Value {
 
         // if date, check if next token is time seperated by single space: 1979-05-27 07:32:00Z
 
-        log_error("Unable to parse literal %", token.str);
-        print_issue(scope.source, token.loc);
-        exit(1);
+        exit_with_error_line(scope.source, token.loc, "Unable to parse literal %", token.str);
     case;
-        log_error("Unexpected token %, expected a value", token.type);
-        print_issue(scope.source, token.loc);
-        exit(1);
+        exit_with_error_line(scope.source, token.loc, "Unexpected token %, expected a value", token.type);
     }
     return Value.{};
 }
@@ -267,29 +228,13 @@ eat_next :: (scope: *Scope) -> TOML_Token {
     return token;
 }
 
-// .   -> `.`  ``
-// ab  -> `ab` ``
-//     -> ``   ``
-// .ab -> `.`  `ab`
-// a.b -> `a`  `.b`
-// ab. -> `ab` `.`
-split_from_left_incl :: (s: string, separator: u8) -> (left: string, right: string) {
-    index := inline find_index_from_left(s, separator);
-    if index == -1  return s, "";
-    if index == 0  index = 1;
-    return slice(s, 0, index), slice(s, index, s.count - index);
-}
-
 eat_next_for_keys :: (scope: *Scope) -> TOML_Token {
     if scope.remaining_key.count == 0 {
         token := peak_next(scope);
         if token.type == {
         case .QUOTED; return eat_next(scope);
         case .RAW;    scope.remaining_key = token.str;
-        case;
-            log_error("Expected key, got %", token.type);
-            print_issue(scope.source, token.loc);
-            exit(1);
+        case;         exit_with_error_line(scope.source, token.loc, "Expected key, got %", token.type);
         }
     }
     original := peak_next(scope);
@@ -317,11 +262,7 @@ eat_scope :: (scope: *Scope, edible: TOML_Token) {
 
 eat_expected :: (scope: *Scope, expected: Token_Type) {
     token := eat_next(scope);
-    if token.type != expected {
-        log_error("Expected %, got %", expected, token.type);
-        print_issue(scope.source, token.loc);
-        exit(1);
-    }
+    if token.type != expected { exit_with_error_line(scope.source, token.loc, "Expected %, got %", expected, token.type); }
 }
 
 // * sub_scope does not contain the scope_end token
@@ -332,9 +273,7 @@ eat_scope_until :: (scope: *Scope, scope_end: Token_Type) -> sub_scope:Scope {
             return Scope.{scope.source, array_view(scope.tokens, start_pos, scope.pos - start_pos - 1), 0, ""};
         }
     }
-    log_error("Unexpected end of scope. Expected %", scope_end);
-    print_issue(scope.source, scope.tokens[start_pos].loc);
-    exit(1);
+    exit_with_error_line(scope.source, scope.tokens[start_pos].loc, "Unexpected end of scope. Expected %", scope_end);
     return scope;
 }
 
@@ -345,15 +284,19 @@ get_line :: (data: string, line_number: s32) -> line: string, found:bool {
     return line, found;
 }
 
-print_issue :: (source: string, loc: Location) {
+exit_with_error :: (format: string, arguments: .. Any) {
+    log_error(format, ..arguments);
+    exit(1);
+}
+exit_with_error_line :: (source: string, loc: Location, format: string, arguments: .. Any) {
     #import "Text_File_Handler";
     line, found := get_line(source, loc.line);
     if !found {
         log_error("Failed to read line % from file", loc.line);
         exit(1);
     }
-
-    log_error("Line % Char %:", loc.line, loc.character);
+    message := tprint(format, ..arguments);
+    log_error("Line % Char %: %", loc.line, loc.character, message);
     log_error(line);
 
     // print ^^ under the char number
@@ -361,6 +304,8 @@ print_issue :: (source: string, loc: Location) {
     for 1..loc.character-1 { append(*builder, #char " "); }
     append(*builder, #char "^");
     log_error(builder_to_string(*builder));
+
+    exit(1);
 }
 
 print_value :: (value : Value, indent:="") {
@@ -388,6 +333,19 @@ print_value :: (value : Value, indent:="") {
         }
         print("%}", indent);
     }
+}
+
+// .   -> `.`  ``
+// ab  -> `ab` ``
+//     -> ``   ``
+// .ab -> `.`  `ab`
+// a.b -> `a`  `.b`
+// ab. -> `ab` `.`
+split_from_left_incl :: (s: string, separator: u8) -> (left: string, right: string) {
+    index := inline find_index_from_left(s, separator);
+    if index == -1  return s, "";
+    if index == 0  index = 1;
+    return slice(s, 0, index), slice(s, index, s.count - index);
 }
 
 operator == :: inline (a: KeyValue, b: KeyValue) -> bool {
