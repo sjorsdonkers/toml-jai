@@ -186,12 +186,8 @@ newline_chars :: (data: string, pos: s64) -> u8 {
 }
 
 matching_open :: (close: u8) -> open: u8 {
-    if close == #char "}" {
-        return #char "{";
-    }
-    if close == #char "]" {
-        return #char "[";
-    }
+    if close == #char "}" { return #char "{"; }
+    if close == #char "]" { return #char "["; }
     log_error("No matching open for %", close);
     exit(1);
     return 0;

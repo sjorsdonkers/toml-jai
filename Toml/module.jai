@@ -1,8 +1,8 @@
 // Does not support:
 // - Basic strings (escaped strings)
-// - Multi-line strings
 // - Date / Time
-// - Values may not overwrite / append to previous ones
+// - Rejecting all control characters
+// - Rejecting values that overwrite / append to previous ones
 // - Full toml validation like endlines in an inline table
 // - Error propagation
 
@@ -210,10 +210,10 @@ parse_literal :: (scope: *Scope) -> Value {
         // TODO detect illegal floats: .7  7.  3.e+20 ... leading zeros
         float_value, success, remainder := string_to_float64(clean_str);
         if success && remainder.count == 0 { return Value.{type=.FLOAT, float_value=float_value}; }
-        if token.str == "inf" || token.str == "+inf"  { return Value.{type=.FLOAT, float_value=FLOAT64_INFINITY}; }
-        if token.str == "-inf"                        { return Value.{type=.FLOAT, float_value=-FLOAT64_INFINITY}; }
+        if token.str == "inf" || token.str == "+inf" { return Value.{type=.FLOAT, float_value=FLOAT64_INFINITY}; }
+        if token.str == "-inf"                       { return Value.{type=.FLOAT, float_value=-FLOAT64_INFINITY}; }
         if token.str == "nan" || token.str == "+nan" { return Value.{type=.FLOAT, float_value=FLOAT64_NAN}; }
-        if token.str == "-nan"                        { return Value.{type=.FLOAT, float_value=-FLOAT64_NAN}; }
+        if token.str == "-nan"                       { return Value.{type=.FLOAT, float_value=-FLOAT64_NAN}; }
 
         // if date, check if next token is time seperated by single space: 1979-05-27 07:32:00Z
 
@@ -292,6 +292,7 @@ eat_scope_until :: (scope: *Scope, scope_end: Token_Type) -> sub_scope:Scope {
 }
 
 get_line :: (data: string, line_number: s32) -> line: string, found:bool {
+    #import "Text_File_Handler";
     line: string;
     found: bool;
     for 1..line_number { line, found = consume_next_line(*data); }
@@ -303,7 +304,6 @@ exit_with_error :: (format: string, arguments: .. Any) {
     exit(1);
 }
 exit_with_error_line :: (source: string, loc: Location, format: string, arguments: .. Any) {
-    #import "Text_File_Handler";
     line, found := get_line(source, loc.line);
     if !found {
         log_error("Failed to read line % from file", loc.line);
