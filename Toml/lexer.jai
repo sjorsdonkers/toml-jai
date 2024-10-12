@@ -31,14 +31,15 @@ tokenize :: (data: string) -> tokens: [..]TOML_Token { // TODO Change to streami
     scope_stack: [..]int; // Indexes into tokens
 
     while pos < data.count {
-        if is_whitespace(data[pos]) {
+        if data[pos] == #char " " || data[pos] == #char "\t" {
             pos += 1;
             char_number += 1;
             continue;
         }
 
-        if is_newline(data[pos]) {
-            pos += 1;
+        nl_chars := newline_chars(data, pos); // TODO eat_newline might be nicer once there is a lexer struct
+        if nl_chars > 0 {
+            pos += nl_chars;
             char_number = 1;
             line_number += 1;
             continue;
@@ -46,7 +47,7 @@ tokenize :: (data: string) -> tokens: [..]TOML_Token { // TODO Change to streami
 
         if data[pos] == #char "#" {
             start := pos;
-            while pos < data.count && !is_newline(data[pos]) {
+            while pos < data.count && data[pos] != #char "\n" {
                 pos += 1;
                 char_number += 1;
             }
@@ -69,14 +70,50 @@ tokenize :: (data: string) -> tokens: [..]TOML_Token { // TODO Change to streami
 
         // Literal string
         if data[pos] == #char "'" { // No multi-line yet / No basic string
-            if pos + 3 < data.count && slice(data, pos, 3) == "'''" {
-                log_error("Multi-line literal strings are not supported yet. Use single line strings only. %:%", line_number, char_number);
-                exit(1);
+            if pos + 2 < data.count && slice(data, pos, 3) == "'''" {
+                pos += 3;
+                char_number += 3;
+                /// Trim newline immediately following ''' if present
+                if pos < data.count {
+                    nl_chars := newline_chars(data, pos);
+                    if nl_chars > 0 {
+                        pos += nl_chars;
+                        char_number = 1;
+                        line_number += 1;
+                    }
+                }
+                start := pos;
+                while pos + 2 < data.count && slice(data, pos, 3) != "'''" {
+                    if data[pos] == #char "\n" {
+                        pos += 1;
+                        char_number = 1;
+                        line_number += 1;
+                    } else {
+                        pos += 1;
+                        char_number += 1;
+                    }
+                }
+                if pos == data.count {
+                    log_error("Unterminated multi-line literal string. %:%", line_number, char_number);
+                    exit(1);
+                }
+                // 1 or 2 quotes at the end are allowed
+                if pos + 3 < data.count && (data[pos+3] == #char "'") { pos += 1; char_number = + 1; }
+                if pos + 3 < data.count && (data[pos+3] == #char "'") { pos += 1; char_number = + 1; }
+                token := TOML_Token.{type=.QUOTED, str=slice(data, start, pos - start), loc=Location.{line_number, char_number - cast(s32) (pos - start)}};
+                array_add(*tokens, token);
+                pos += 3;
+                char_number += 3;
+                continue;
             }
             pos += 1;
             char_number += 1;
             start := pos;
             while pos < data.count && (data[pos] != #char "'") {
+                if data[pos] == #char "\n" {
+                    log_error("Newline in literal string. Use a '''multi-line literal string''' instead.  %:%", line_number, char_number);
+                    exit(1);
+                }
                 pos += 1;
                 char_number += 1;
             }
@@ -141,12 +178,11 @@ tokenize :: (data: string) -> tokens: [..]TOML_Token { // TODO Change to streami
     return tokens;
 }
 
-is_whitespace :: (c: u8) -> bool {
-    return c == #char " " || c == #char "\t" || c == #char "\r"; // \r only if next is \n
-}
-
-is_newline :: (c: u8) -> bool {
-    return c == #char "\n";
+newline_chars :: (data: string, pos: s64) -> u8 {
+    c := data[pos];
+    if c == #char "\n"                                                      { return 1; }
+    if c == #char "\r" && pos + 1 < data.count && data[pos+1] == #char "\n" { return 2; }
+    return 0;
 }
 
 matching_open :: (close: u8) -> open: u8 {

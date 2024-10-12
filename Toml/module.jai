@@ -2,7 +2,7 @@
 // - Basic strings (escaped strings)
 // - Multi-line strings
 // - Date / Time
-// - Values may not overwrite previous ones
+// - Values may not overwrite / append to previous ones
 // - Full toml validation like endlines in an inline table
 // - Error propagation
 
