@@ -115,8 +115,12 @@ parse_key :: (parent: *Value, scope: Scope) -> root:KeyValue, leaf:*Value, leaf_
         token = eat_next_for_keys(*scope);
         if token.type != Token_Type.QUOTED { exit_with_error_line(scope.source, token.loc, "Expected KEY, got %", token.type); }
 
+        if current_table.type == Value_Type.ARRAY { // This is an Array of Tables header that we are going to add into
+            assert(current_table.array.count > 0); // How would this be possible
+            current_table = *current_table.array[current_table.array.count-1];
+        }
         if current_table.type != Value_Type.TABLE { exit_with_error("Cannot use key as table it already has a value: %", current_table.type); }
-        current_is_new, index := array_add_if_unique(*current_table.table, KeyValue.{token.str, Value.{type=.TABLE}});
+        current_is_new=, index := array_add_if_unique(*current_table.table, KeyValue.{token.str, Value.{type=.TABLE}});
         current_table = *current_table.table[index].value;
     }
     return local_root, current_table, current_is_new;
@@ -203,7 +207,7 @@ parse_literal :: (scope: *Scope) -> Value {
         }
 
         // Parse float
-        // TODO detect illegal floats: .7  7.  3.e+20 ...
+        // TODO detect illegal floats: .7  7.  3.e+20 ... leading zeros
         float_value, success, remainder := string_to_float64(clean_str);
         if success && remainder.count == 0 { return Value.{type=.FLOAT, float_value=float_value}; }
         if token.str == "inf" || token.str == "+inf"  { return Value.{type=.FLOAT, float_value=FLOAT64_INFINITY}; }
