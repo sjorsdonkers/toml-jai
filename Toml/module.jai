@@ -39,15 +39,14 @@ KeyValue :: struct {
     using value:  Value;
 }
 
-// At top level we can expect (keys, [keys], [[keys]])
 parse :: (scope: Scope) -> root_table:Value {
-    // We use a Root instead of just an array to make sure overlapping keys are handled in parse_key
-    root_table := KeyValue.{"*ROOT*", Value.{type=.TABLE}}; // root name should be something not possible in TOML
-    current_table := *root_table.value;
+    // At top level we can expect (keys, [keys], [[keys]])
+    root_table := Value.{type=.TABLE}; // TODO How to set `table` to an empty array?
+    current_table := *root_table;
     while has_next(scope) {
         token := peak_next(scope);
         if token.type == Token_Type.SCOPE_BRACKET {
-            current_table = parse_header(*root_table.value, sub(scope, token.scope));
+            current_table = parse_header(*root_table, sub(scope, token.scope));
             eat_scope(*scope, token);
         } else { // Parse key value pair
             keys_scope := eat_scope_until(*scope, Token_Type.ASSIGN);
@@ -55,14 +54,13 @@ parse :: (scope: Scope) -> root_table:Value {
             <<leaf_value = parse_value(leaf_value, *scope);
         }
     }
-    return root_table.value;
+    return root_table;
 }
 
 
 #scope_file
 
 parse_header :: (root_table: *Value, scope: Scope) -> *Value {
-    // log("parse_header");
     if !has_next(scope) || peak_next(scope).type != Token_Type.SCOPE_BRACKET{
         // Parse table header
         _, current_table, is_new := parse_key(root_table, scope);
@@ -70,36 +68,33 @@ parse_header :: (root_table: *Value, scope: Scope) -> *Value {
             exit_with_error_line(scope.source, last(scope).loc, "Cannot use key as Tables as it already has a value: %", current_table.type);
         }
         return current_table;
-    }
-    // Parse array of tables header
-    aot_scope := sub(scope, eat_next(*scope).scope);
-    if scope.tokens.count > aot_scope.tokens.count + 1 {
-        error_token:= scope.tokens[1 + aot_scope.tokens.count];
-        exit_with_error_line(scope.source, error_token.loc, "Unexpected % in Array of Tables header", error_token.type);
-    }
+    } else {
+        // Parse array of tables header
+        aot_scope := sub(scope, eat_next(*scope).scope);
+        if scope.tokens.count > aot_scope.tokens.count + 1 {
+            error_token:= scope.tokens[1 + aot_scope.tokens.count];
+            exit_with_error_line(scope.source, error_token.loc, "Unexpected % in Array of Tables header", error_token.type);
+        }
 
-    _, current_table, is_new := parse_key(root_table, aot_scope);
-    if !is_new && current_table.type != Value_Type.ARRAY {
-        exit_with_error_line(aot_scope.source, last(aot_scope).loc, "Cannot use key as Array of Tables as it already has a value: %", current_table.type);
-    }
+        _, current_table, is_new := parse_key(root_table, aot_scope);
+        if !is_new && current_table.type != Value_Type.ARRAY {
+            exit_with_error_line(aot_scope.source, last(aot_scope).loc, "Cannot use key as Array of Tables as it already has a value: %", current_table.type);
+        }
 
-    current_table.type = Value_Type.ARRAY;
-    array_add(*current_table.array, Value.{type=.TABLE});
-    return *current_table.array[current_table.array.count-1];
+        current_table.type = Value_Type.ARRAY;
+        array_add(*current_table.array, Value.{type=.TABLE});
+        return *current_table.array[current_table.array.count-1];
+    }
 }
 
 
-// parse key.key.key.etc =
+// parse key. key.`key`."etc"
 parse_key :: (parent: *Value, scope: Scope) -> root:KeyValue, leaf:*Value, leaf_is_new:bool {
-    // log("parse_key");
     if !has_next(scope) { exit_with_error("Unexpected end of scope while parsing key"); }
     token := eat_next_for_keys(*scope);
     if token.type != Token_Type.QUOTED { exit_with_error_line(scope.source, token.loc, "Key cannot start with a %", token.type); }
 
-    local_root : KeyValue;
-    local_root.key = token.str;
-    local_root.value = Value.{type=.TABLE};
-
+    local_root := KeyValue.{key=token.str, value=Value.{type=.TABLE}};
     current_table := *local_root.value;
     current_is_new := true;
     if parent != null {
@@ -127,7 +122,6 @@ parse_key :: (parent: *Value, scope: Scope) -> root:KeyValue, leaf:*Value, leaf_
 }
 
 parse_value :: (current_table: *Value, scope: *Scope) -> value:Value { // TODO only assign value if key is empty table
-    // log("parse_value");
     if !has_next(scope) { exit_with_error("Unexpected end of file while parsing value"); }
 
     token := peak_next(scope);
@@ -148,12 +142,11 @@ parse_value :: (current_table: *Value, scope: *Scope) -> value:Value { // TODO o
 }
 
 parse_inline_table :: (current_table: *Value, scope: Scope) -> table:Value {
-    // log("parse_inline_table");
     // An inline table is either the right-hand side of an assignment to a key
     // or a value in an array. In case of the former it is important that we continue building
     // on the current key as a.b = {c.d = 1} is the same as in a.b.c.d = 1
-    table_root := KeyValue.{"*TABLE_ROOT*", Value.{type=.TABLE}}; // root name should be something not possible in TOML
-    if current_table == null { current_table = *table_root.value; }
+    table_root := Value.{type=.TABLE};
+    if current_table == null { current_table = *table_root; }
     while has_next(scope) {
         keys_scope := eat_scope_until(*scope, Token_Type.ASSIGN);
         _, leaf_value := parse_key(current_table, keys_scope);
@@ -166,7 +159,6 @@ parse_inline_table :: (current_table: *Value, scope: Scope) -> table:Value {
 }
 
 parse_array :: (scope: Scope) -> array:Value {
-    // log("parse_array");
     values : [..]Value;
     while has_next(scope) {
         value := parse_value(null, *scope);
@@ -177,7 +169,6 @@ parse_array :: (scope: Scope) -> array:Value {
 }
 
 parse_literal :: (scope: *Scope) -> Value {
-    // log("parse_literal %", token.type);
     token := peak_next(scope);
     if token.type == {
     case .QUOTED;  return Value.{type=.STRING, string_value=token.str};
