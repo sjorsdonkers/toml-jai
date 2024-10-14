@@ -108,3 +108,4 @@ trimmed in raw strings.
 quot15 = '''Here are fifteen quotation marks: """""""""""""""'''
 # 'That,' she said, 'is still pointless.'
 str = ''''That,' she said, ''is still pointless.'''''
+# '''invalid''' = 'key'

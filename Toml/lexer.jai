@@ -1,6 +1,7 @@
 Token_Type :: enum u8 {
-    RAW           :: 1;         // str   // TODO now not using 0 as it's utf8 null, but we probably don't care. Minor perf improvement possible.
-    QUOTED        :: 2;         // str
+    RAW           :: 0;         // str
+    LITERAL       :: 1;         // str
+    LITERAL_MULTI :: 2;         // str   // Not using LITERAL as multi-line string cannot be keys
     COMMA         :: #char ","; // -
     DOT           :: #char "."; // -     // Not produced by lexer itself
     ASSIGN        :: #char "="; // -
@@ -87,7 +88,7 @@ tokenize :: (data: string) -> tokens: [..]TOML_Token { // TODO Change to streami
                 // 1 or 2 quotes at the end are allowed
                 if has_next(lexer, 4) && peak_char(lexer, 4) == #char "'" { eat_char(*lexer); }
                 if has_next(lexer, 4) && peak_char(lexer, 4) == #char "'" { eat_char(*lexer); }
-                token := TOML_Token.{ type=.QUOTED, str=slice(data, start, lexer.pos - start), loc=Location.{lexer.line_number, lexer.char_number - cast(s32) (lexer.pos - start)} };
+                token := TOML_Token.{ type=.LITERAL_MULTI, str=slice(data, start, lexer.pos - start), loc=Location.{lexer.line_number, lexer.char_number - cast(s32) (lexer.pos - start)} };
                 array_add(*lexer.tokens, token);
                 eat_char(*lexer, 3);
                 continue;
@@ -106,7 +107,7 @@ tokenize :: (data: string) -> tokens: [..]TOML_Token { // TODO Change to streami
                 log_error("Unterminated literal string. %:%", lexer.line_number, lexer.char_number);
                 exit(1);
             }
-            token := TOML_Token.{ type=.QUOTED, str=slice(data, start, lexer.pos - start), loc=Location.{lexer.line_number, lexer.char_number - cast(s32) (lexer.pos - start)} };
+            token := TOML_Token.{ type=.LITERAL, str=slice(data, start, lexer.pos - start), loc=Location.{lexer.line_number, lexer.char_number - cast(s32) (lexer.pos - start)} };
             array_add(*lexer.tokens, token);
             eat_char(*lexer);
             continue;
