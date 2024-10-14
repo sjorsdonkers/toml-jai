@@ -8,9 +8,7 @@
 
 main :: () {
     contents := read_entire_file("toml.toml");
-    tokens  := tokenize(contents);
-    scope  := Scope.{contents, tokens, 0, ""};
-    toml    := parse(scope);
+    toml     := parse(contents);
     print_value(toml);
 }
 
@@ -39,7 +37,10 @@ KeyValue :: struct {
     using value:  Value;
 }
 
-parse :: (scope: Scope) -> root_table:Value {
+parse :: (contents: string) -> root_table:Value {
+    tokens  := tokenize(contents);
+    scope  := Scope.{contents, tokens, 0, ""};
+
     // At top level we can expect (keys, [keys], [[keys]])
     root_table := Value.{type=.TABLE}; // TODO How to set `table` to an empty array?
     current_table := *root_table;
