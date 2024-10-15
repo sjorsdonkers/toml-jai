@@ -1,10 +1,11 @@
 // Does not support:
-// - Basic strings (escaped strings)
+// - Unescaping basic string (when? lexer, parser, when making permanent?)
 // - Date / Time
 // - Rejecting all control characters
 // - Rejecting values that overwrite / append to previous ones
 // - Full toml validation like endlines in an inline table
 // - Error propagation
+// - Make it easy to make data permanent / not 0 copy
 
 main :: () {
     contents := read_entire_file("toml.toml");
@@ -93,7 +94,7 @@ parse_header :: (root_table: *Value, scope: Scope) -> *Value {
 parse_key :: (parent: *Value, scope: Scope) -> root:KeyValue, leaf:*Value, leaf_is_new:bool {
     if !has_next(scope) { exit_with_error("Unexpected end of scope while parsing key"); }
     token := eat_next_for_keys(*scope);
-    if token.type != Token_Type.LITERAL { exit_with_error_line(scope.source, token.loc, "Key cannot start with a %", token.type); }
+    if token.type != Token_Type.QUOTED { exit_with_error_line(scope.source, token.loc, "Key cannot start with a %", token.type); }
 
     local_root := KeyValue.{key=token.str, value=Value.{type=.TABLE}};
     current_table := *local_root.value;
@@ -109,7 +110,7 @@ parse_key :: (parent: *Value, scope: Scope) -> root:KeyValue, leaf:*Value, leaf_
         if token.type != Token_Type.DOT { exit_with_error_line(scope.source, token.loc, "Expected DOT, got %", token.type); }
         if !has_next(scope) { exit_with_error_line(scope.source, last_eaten(scope).loc, "Key is not allowed to end with a dot"); }
         token = eat_next_for_keys(*scope);
-        if token.type != Token_Type.LITERAL { exit_with_error_line(scope.source, token.loc, "Expected KEY, got %", token.type); }
+        if token.type != Token_Type.QUOTED { exit_with_error_line(scope.source, token.loc, "Expected KEY, got %", token.type); }
 
         if current_table.type == Value_Type.ARRAY { // This is an Array of Tables header that we are going to add into
             assert(current_table.array.count > 0); // How would this be possible
@@ -172,8 +173,8 @@ parse_array :: (scope: Scope) -> array:Value {
 parse_literal :: (scope: *Scope) -> Value {
     token := peak_next(scope);
     if token.type == {
-    case .LITERAL;       #through;
-    case .LITERAL_MULTI; return Value.{type=.STRING, string_value=token.str};
+    case .QUOTED;       #through;
+    case .QUOTED_MULTI; return Value.{type=.STRING, string_value=token.str};
     case .RAW;
         // Parse boolean
         if token.str == "true" { return Value.{type=.BOOL, bool_value=true}; }
@@ -239,9 +240,9 @@ eat_next_for_keys :: (scope: *Scope) -> TOML_Token {
     if scope.remaining_key.count == 0 {
         token := peak_next(scope);
         if token.type == {
-        case .LITERAL; return eat_next(scope);
+        case .QUOTED; return eat_next(scope);
         case .RAW;    scope.remaining_key = token.str;
-        case .LITERAL_MULTI; exit_with_error_line(scope.source, token.loc, "Cannot use multi-line strings as key");
+        case .QUOTED_MULTI; exit_with_error_line(scope.source, token.loc, "Cannot use multi-line strings as key");
         case;                exit_with_error_line(scope.source, token.loc, "Expected key, got %", token.type);
         }
     }
@@ -250,7 +251,7 @@ eat_next_for_keys :: (scope: *Scope) -> TOML_Token {
     next:, scope.remaining_key = split_from_left_incl(scope.remaining_key, #char ".");
     if scope.remaining_key.count == 0 { eat_next(scope); }
     if next == "." { return TOML_Token.{type=Token_Type.DOT, loc=Location.{original.loc.line, char_num}}; }
-    else           { return TOML_Token.{type=Token_Type.LITERAL, str=next, loc=Location.{original.loc.line, char_num}}; }
+    else           { return TOML_Token.{type=Token_Type.QUOTED, str=next, loc=Location.{original.loc.line, char_num}}; }
 }
 
 last_eaten :: (scope: Scope) -> TOML_Token {

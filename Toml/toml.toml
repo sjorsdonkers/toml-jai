@@ -94,7 +94,7 @@ name = 'banana'
 name = 'plantain'
 [fruits.varieties.phys]  # subtable of nested array
 color = 'red'
-shape = 'round'
+shape = "round\""
 
 
 [mllstrings]
@@ -109,3 +109,11 @@ quot15 = '''Here are fifteen quotation marks: """""""""""""""'''
 # 'That,' she said, 'is still pointless.'
 str = ''''That,' she said, ''is still pointless.'''''
 # '''invalid''' = 'key'
+
+str4 = """Here are two quotation marks: "". Simple enough."""
+# str5 = """Here are three quotation marks: """."""  # INVALID
+str5 = """Here are three quotation marks: ""\"."""
+str6 = """Here are fifteen quotation marks: ""\"""\"""\"""\"""\"."""
+
+# "This," she said, "is just a pointless statement."
+str7 = """"This," she said, "is just a pointless statement.""""
