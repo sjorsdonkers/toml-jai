@@ -7,7 +7,18 @@ main :: () {
 THE_STRING :: #string DONE
 orange = 7
 banana = 23.3
+apple = {a =31, b = 2}
 DONE
+    MyStruct :: struct {
+        orange: s64;
+        banana: float64;
+        apple : Inner;
+    }
+    Inner :: struct {
+        a: s64;
+        b: s64;
+    }
+
     toml2 := parse(THE_STRING);
     print_value(toml2);
     my_struct := deserialize(toml2, MyStruct);
@@ -16,30 +27,53 @@ DONE
 
 deserialize :: (value: Value, $Target: Type) -> Target {
     target : Target;
-    info_enum := type_info(Target);
-    print("\n%\n", info_enum.name);
+    bytes := cast(*u8) *target;
+    info := type_info(Target);
+    deserialize(value, bytes, info);
+    return target;
+}
+
+deserialize :: (value: Value, target: *u8, info_enum: *Type_Info_Struct) {
+    // print("\n%\n", info_enum.name);
 
     for member: info_enum.members {
-        print("name: %\n", member.name);
+        // print("name: %\n", member.name);
+        found := false;
         for value.table {
             if it.key == member.name {
-                print("value: `%`\n", it.value);
-                slot := (cast(*u8) *target) + member.offset_in_bytes;
+                // TODO delay parsing literal till here for optimal conversions and making strings permanent
+                found = true;
+                // print("value: `%`\n", it.value);
+                slot := target + member.offset_in_bytes;
                  // TODO typecheck and range check
                  // Prob use Reflection.jai
-                memcpy(slot, (cast(*u8) *it.int_value), member.type.runtime_size);
+                member_info := member.type;
+                if it.type == {
+                case Value_Type.INT;
+                    // TODO checked narrowing conversions
+                    memcpy(slot, (cast(*u8) *it.int_value), member.type.runtime_size);
+                case Value_Type.FLOAT;
+                    // TODO checked narrowing conversion
+                    memcpy(slot, (cast(*u8) *it.float_value), member.type.runtime_size);
+                case Value_Type.TABLE;
+                    if member_info.type != .STRUCT {
+                        log_error("Error: field `%` is not a struct", member.name);
+                        exit(1);
+                    }
+                    // handle offset_into_constant_storage
+                    // handle flags
+                    // make length safe
+                    struct_member_info := cast(*Type_Info_Struct) member_info;
+                    deserialize(it.value, slot, struct_member_info);
+                }
                 break;
             }
         }
-        // return info_enum.names[it_index];
+        if !found {
+            log_error("Error: missing field `%` for struct `%`", member.name, info_enum.name);
+            exit(1);
+        }
     }
-    return target;
-    // return Target.{value=4};
-}
-
-MyStruct :: struct {
-    orange: s64;
-    banana: float64;
 }
 
 print_value :: (value : Value, indent:="") {
