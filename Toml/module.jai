@@ -7,16 +7,21 @@ main :: () {
 THE_STRING :: #string DONE
 orange = 7
 banana = 23.3
-apple = {a =31, b = 2}
+apple = {a =31, b = 2, c = 'Y'}
 DONE
-    MyStruct :: struct {
-        orange: s64;
-        banana: float64;
-        apple : Inner;
+    Hello :: enum {
+        X;
+        Y;
     }
     Inner :: struct {
         a: s64;
         b: s64;
+        c: Hello;
+    }
+    MyStruct :: struct {
+        orange: s64;
+        banana: float64;
+        apple : Inner;
     }
 
     toml2 := parse(THE_STRING);
@@ -48,15 +53,15 @@ deserialize :: (value: Value, target: *u8, info_enum: *Type_Info_Struct) {
                  // TODO typecheck and range check
                  // Prob use Reflection.jai
                 member_info := member.type;
-                if it.type == {
-                case Value_Type.INT;
+                if member_info.type == { // #complete
+                case .INTEGER;
                     // TODO checked narrowing conversions
                     memcpy(slot, (cast(*u8) *it.int_value), member.type.runtime_size);
-                case Value_Type.FLOAT;
+                case .FLOAT;
                     // TODO checked narrowing conversion
                     memcpy(slot, (cast(*u8) *it.float_value), member.type.runtime_size);
-                case Value_Type.TABLE;
-                    if member_info.type != .STRUCT {
+                case .STRUCT;
+                    if it.type != .TABLE {
                         log_error("Error: field `%` is not a struct", member.name);
                         exit(1);
                     }
@@ -65,6 +70,20 @@ deserialize :: (value: Value, target: *u8, info_enum: *Type_Info_Struct) {
                     // make length safe
                     struct_member_info := cast(*Type_Info_Struct) member_info;
                     deserialize(it.value, slot, struct_member_info);
+                case .ENUM;
+                    enum_member_info := cast(*Type_Info_Enum) member_info;
+                    if it.type == {
+                    case .STRING;
+                        success := enum_name_to_value(it.string_value, slot, enum_member_info);
+                        if !success {
+                            log_error("String % is not a variant of enum %", it.string_value, enum_member_info.name);
+                        }
+                    case .INT;
+                        // TODO range check
+                        set_enum_value(slot, enum_member_info, it.int_value);
+                    case;
+                        log_error("The value for enum % was a % instead of a string or int", enum_member_info.name, it.type);
+                    }
                 }
                 break;
             }
@@ -76,8 +95,18 @@ deserialize :: (value: Value, target: *u8, info_enum: *Type_Info_Struct) {
     }
 }
 
+enum_name_to_value :: (name: string, target: *u8, info: *Type_Info_Enum) -> bool {
+    for info.names {
+        if name == it {
+            set_enum_value(target, info, info.values[it_index]);
+            return true;
+        }
+    }
+    return false;
+}
+
 print_value :: (value : Value, indent:="") {
-    if value.type == {
+    if #complete value.type == {
     case .STRING; print("%", value.string_value);
     case .INT; print("%", value.int_value);
     case .FLOAT; print("%", value.float_value);
@@ -105,3 +134,4 @@ print_value :: (value : Value, indent:="") {
 }
 
 #load "parser.jai";
+#import "Reflection";
