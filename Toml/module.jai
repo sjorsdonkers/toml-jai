@@ -74,15 +74,18 @@ deserialize :: (value: Value, target: *u8, info_enum: *Type_Info_Struct) {
                     enum_member_info := cast(*Type_Info_Enum) member_info;
                     if it.type == {
                     case .STRING;
-                        success := enum_name_to_value(it.string_value, slot, enum_member_info);
-                        if !success {
+                        found, index := array_find(enum_member_info.names, it.string_value);
+                        if found set_enum_value(slot, enum_member_info, enum_member_info.values[index]);
+                        else {
                             log_error("String % is not a variant of enum %", it.string_value, enum_member_info.name);
+                            exit(1);
                         }
                     case .INT;
                         // TODO range check
                         set_enum_value(slot, enum_member_info, it.int_value);
                     case;
                         log_error("The value for enum % was a % instead of a string or int", enum_member_info.name, it.type);
+                        exit(1);
                     }
                 }
                 break;
@@ -93,16 +96,6 @@ deserialize :: (value: Value, target: *u8, info_enum: *Type_Info_Struct) {
             exit(1);
         }
     }
-}
-
-enum_name_to_value :: (name: string, target: *u8, info: *Type_Info_Enum) -> bool {
-    for info.names {
-        if name == it {
-            set_enum_value(target, info, info.values[it_index]);
-            return true;
-        }
-    }
-    return false;
 }
 
 print_value :: (value : Value, indent:="") {
