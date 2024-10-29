@@ -7,7 +7,7 @@ main :: () {
 THE_STRING :: #string DONE
 orange = false
 banana = 23.3
-apple = {a = 312, b = 'Y', c = 'Y'}
+apple = {a = 32, b = 'Y', c = 'Y'}
 DONE
     Hello :: enum {
         X;
@@ -20,7 +20,7 @@ DONE
     }
     MyStruct :: struct {
         orange: bool;
-        banana: float64;
+        banana: float;
         apple : Inner;
     }
 
@@ -39,10 +39,7 @@ deserialize :: (value: Value, $Target: Type) -> Target {
 }
 
 deserialize :: (value: Value, target: *u8, info_enum: *Type_Info_Struct) {
-    // print("\n%\n", info_enum.name);
-
     for member: info_enum.members {
-        // print("name: %\n", member.name);
         found := false;
         for value.table {
             if it.key == member.name {
@@ -50,12 +47,12 @@ deserialize :: (value: Value, target: *u8, info_enum: *Type_Info_Struct) {
                 found = true;
                 // print("value: `%`\n", it.value);
                 slot := target + member.offset_in_bytes;
-                 // TODO typecheck and range check
                  // Prob use Reflection.jai
                 member_info := member.type;
                 if member_info.type == { // #complete
                 case .INTEGER;
-                    // TODO delay parsing till here so we known wheter to parse signed or unsigned / or store u64 as well
+                    expect(it.type, .INT, info_enum.name, member.name);
+                    // TODO support u64, delay parsing till here so we known wheter to parse signed or unsigned / or store u64 as well
                     int_info := cast(*Type_Info_Integer)member_info;
                     valid, low, high := range_check_and_store(it.int_value, int_info, slot);
                     if !valid {
@@ -63,18 +60,22 @@ deserialize :: (value: Value, target: *u8, info_enum: *Type_Info_Struct) {
                         exit(1);
                     }
                 case .FLOAT;
-                    // TODO checked narrowing conversion
-                    <<cast(*float64) slot = it.float_value;
+                    expect(it.type, .FLOAT, info_enum.name, member.name);
+                    if member_info.runtime_size == 4 {
+                        <<cast(*float) slot = cast(float) it.float_value; // TODO not lossless, delay parsing
+                    } else {
+                        assert(member_info.runtime_size == 8);
+                        <<cast(*float64) slot = it.float_value;
+                    }
                 case .BOOL;
+                    expect(it.type, .BOOL, info_enum.name, member.name);
                     <<cast(*bool) slot = it.bool_value;
                 case .STRING;
+                    expect(it.type, .STRING, info_enum.name, member.name);
                     // TODO deepcopy to callers allocator
                     <<cast(*string) slot = it.string_value;
                 case .STRUCT;
-                    if it.type != .TABLE {
-                        log_error("Error: field `%` is not a struct", member.name);
-                        exit(1);
-                    }
+                    expect(it.type, .TABLE, info_enum.name, member.name);
                     // handle offset_into_constant_storage
                     // handle flags
                     // make length safe
@@ -91,10 +92,14 @@ deserialize :: (value: Value, target: *u8, info_enum: *Type_Info_Struct) {
                         }
                         set_enum_value(slot, enum_member_info, enum_member_info.values[index]);
                     case .INT;
-                        // TODO range check
+                        found := array_find(enum_member_info.values, it.int_value);
+                        if !found {
+                            log_error("Value % is not a variant of enum %", it.int_value, enum_member_info.name);
+                            exit(1);
+                        }
                         set_enum_value(slot, enum_member_info, it.int_value);
                     case;
-                        log_error("The value for enum % was a % instead of a string or int", enum_member_info.name, it.type);
+                        log_error("Wrong type for %.%, expected STRING or INT, got % ", info_enum.name, member.name, it.type);
                         exit(1);
                     }
                 case;
@@ -136,6 +141,13 @@ print_value :: (value : Value, indent:="") {
             print("\n");
         }
         print("%}", indent);
+    }
+}
+
+expect :: inline (given: Value_Type, expected: Value_Type, struct_name: string, member_name: string) {
+    if given != expected {
+        log_error("Wrong type for %.%, expected %, got % ", struct_name, member_name, expected, given);
+        exit(1);
     }
 }
 
