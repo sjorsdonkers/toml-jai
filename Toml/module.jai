@@ -7,15 +7,15 @@ main :: () {
 THE_STRING :: #string DONE
 orange = false
 banana = 23.3
-apple = {a =31, b = "Y", c = 'Y'}
+apple = {a = 312, b = 'Y', c = 'Y'}
 DONE
     Hello :: enum {
         X;
         Y;
     }
     Inner :: struct {
-        a: s64;
-        b: s64;
+        a: u8;
+        b: string;
         c: Hello;
     }
     MyStruct :: struct {
@@ -55,15 +55,21 @@ deserialize :: (value: Value, target: *u8, info_enum: *Type_Info_Struct) {
                 member_info := member.type;
                 if member_info.type == { // #complete
                 case .INTEGER;
-                    // TODO checked narrowing conversions
-                    memcpy(slot, (cast(*u8) *it.int_value), member.type.runtime_size);
+                    // TODO delay parsing till here so we known wheter to parse signed or unsigned / or store u64 as well
+                    int_info := cast(*Type_Info_Integer)member_info;
+                    valid, low, high := range_check_and_store(it.int_value, int_info, slot);
+                    if !valid {
+                        log_error("Value for %.% is out of range. Given % expected min % max %", info_enum.name, member.name, it.int_value, low, high);
+                        exit(1);
+                    }
                 case .FLOAT;
                     // TODO checked narrowing conversion
-                    memcpy(slot, (cast(*u8) *it.float_value), member.type.runtime_size);
+                    <<cast(*float64) slot = it.float_value;
                 case .BOOL;
-                    <<slot = cast(u8) it.bool_value;
-                // case .STRING;
-                //     <<slot = cast(u8) it.string_value;
+                    <<cast(*bool) slot = it.bool_value;
+                case .STRING;
+                    // TODO deepcopy to callers allocator
+                    <<cast(*string) slot = it.string_value;
                 case .STRUCT;
                     if it.type != .TABLE {
                         log_error("Error: field `%` is not a struct", member.name);
@@ -107,7 +113,7 @@ deserialize :: (value: Value, target: *u8, info_enum: *Type_Info_Struct) {
 
 print_value :: (value : Value, indent:="") {
     if #complete value.type == {
-    case .STRING; print("%", value.string_value);
+    case .STRING; print("'%'", value.string_value);
     case .INT; print("%", value.int_value);
     case .FLOAT; print("%", value.float_value);
     case .BOOL; print("%", value.bool_value);
