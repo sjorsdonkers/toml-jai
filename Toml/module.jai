@@ -43,11 +43,8 @@ deserialize :: (value: Value, target: *u8, info_enum: *Type_Info_Struct) {
         found := false;
         for value.table {
             if it.key == member.name {
-                // TODO delay parsing literal till here for optimal conversions and making strings permanent
                 found = true;
-                // print("value: `%`\n", it.value);
                 slot := target + member.offset_in_bytes;
-                 // Prob use Reflection.jai
                 member_info := member.type;
                 if member_info.type == { // #complete
                 case .INTEGER;
@@ -74,6 +71,8 @@ deserialize :: (value: Value, target: *u8, info_enum: *Type_Info_Struct) {
                     expect(it.type, .STRING, info_enum.name, member.name);
                     // TODO deepcopy to callers allocator
                     <<cast(*string) slot = it.string_value;
+                // case .POINTER; // hmm put in permanent memory and point to the value?
+                // case .VOID; // Do we want to allow this to be an empty table?
                 case .STRUCT;
                     expect(it.type, .TABLE, info_enum.name, member.name);
                     // handle offset_into_constant_storage
@@ -81,6 +80,8 @@ deserialize :: (value: Value, target: *u8, info_enum: *Type_Info_Struct) {
                     // make length safe
                     struct_member_info := cast(*Type_Info_Struct) member_info;
                     deserialize(it.value, slot, struct_member_info);
+                // case .ARRAY;
+                // case .ANY; // Probably similar to .POINTER
                 case .ENUM;
                     enum_member_info := cast(*Type_Info_Enum) member_info;
                     if it.type == {
@@ -102,8 +103,16 @@ deserialize :: (value: Value, target: *u8, info_enum: *Type_Info_Struct) {
                         log_error("Wrong type for %.%, expected STRING or INT, got % ", info_enum.name, member.name, it.type);
                         exit(1);
                     }
+                // case VARIANT recurse till real type see 180_type_variants get_one_step_inside(..)
+                // variant_info := cast(*Type_Info_Variant) info;
+                // recurse_into_this(variant_info.variant_of);
+                case .PROCEDURE;            #through;
+                case .OVERLOAD_SET;         #through;
+                case .POLYMORPHIC_VARIABLE; #through;
+                case .TYPE;                 #through;
+                case .CODE;                 #through;
                 case;
-                    log_error("Type % is not yet supported", member_info.type);
+                    log_error("Deserialization to type % is not supported", member_info.type);
                     exit(1);
                 }
                 break;
