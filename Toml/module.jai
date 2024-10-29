@@ -5,9 +5,9 @@ main :: () {
     print_value(toml);
 
 THE_STRING :: #string DONE
-orange = 7
+orange = false
 banana = 23.3
-apple = {a =31, b = 2, c = 'Y'}
+apple = {a =31, b = "Y", c = 'Y'}
 DONE
     Hello :: enum {
         X;
@@ -19,7 +19,7 @@ DONE
         c: Hello;
     }
     MyStruct :: struct {
-        orange: s64;
+        orange: bool;
         banana: float64;
         apple : Inner;
     }
@@ -60,6 +60,10 @@ deserialize :: (value: Value, target: *u8, info_enum: *Type_Info_Struct) {
                 case .FLOAT;
                     // TODO checked narrowing conversion
                     memcpy(slot, (cast(*u8) *it.float_value), member.type.runtime_size);
+                case .BOOL;
+                    <<slot = cast(u8) it.bool_value;
+                // case .STRING;
+                //     <<slot = cast(u8) it.string_value;
                 case .STRUCT;
                     if it.type != .TABLE {
                         log_error("Error: field `%` is not a struct", member.name);
@@ -75,11 +79,11 @@ deserialize :: (value: Value, target: *u8, info_enum: *Type_Info_Struct) {
                     if it.type == {
                     case .STRING;
                         found, index := array_find(enum_member_info.names, it.string_value);
-                        if found set_enum_value(slot, enum_member_info, enum_member_info.values[index]);
-                        else {
+                        if !found {
                             log_error("String % is not a variant of enum %", it.string_value, enum_member_info.name);
                             exit(1);
                         }
+                        set_enum_value(slot, enum_member_info, enum_member_info.values[index]);
                     case .INT;
                         // TODO range check
                         set_enum_value(slot, enum_member_info, it.int_value);
@@ -87,6 +91,9 @@ deserialize :: (value: Value, target: *u8, info_enum: *Type_Info_Struct) {
                         log_error("The value for enum % was a % instead of a string or int", enum_member_info.name, it.type);
                         exit(1);
                     }
+                case;
+                    log_error("Type % is not yet supported", member_info.type);
+                    exit(1);
                 }
                 break;
             }
