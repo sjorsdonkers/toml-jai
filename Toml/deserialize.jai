@@ -7,12 +7,14 @@ deserialize :: (value: Value, $Target: Type) -> Target {
     return target;
 }
 
-deserialize :: (toml: Value, slot: *u8, member_info: *Type_Info, parent_name:string="", name:string="") {
-    if member_info.type == { // #complete
+#scope_file
+
+deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="", name:string="") {
+    if info.type == { // #complete
     case .INTEGER;
         expect(toml.type, .INT, parent_name, name);
         // TODO support u64, delay parsing till here so we known wheter to parse signed or unsigned / or store u64 as well
-        int_info := cast(*Type_Info_Integer)member_info;
+        int_info := cast(*Type_Info_Integer)info;
         valid, low, high := range_check_and_store(toml.int_value, int_info, slot);
         if !valid {
             log_error("Value for %.% is out of range. Given % expected min % max %", parent_name, name, toml.int_value, low, high);
@@ -20,10 +22,10 @@ deserialize :: (toml: Value, slot: *u8, member_info: *Type_Info, parent_name:str
         }
     case .FLOAT;
         expect(toml.type, .FLOAT, parent_name, name);
-        if member_info.runtime_size == 4 {
+        if info.runtime_size == 4 {
             <<cast(*float) slot = cast(float) toml.float_value; // TODO not lossless, delay parsing
         } else {
-            assert(member_info.runtime_size == 8);
+            assert(info.runtime_size == 8);
             <<cast(*float64) slot = toml.float_value;
         }
     case .BOOL;
@@ -40,7 +42,7 @@ deserialize :: (toml: Value, slot: *u8, member_info: *Type_Info, parent_name:str
         // handle offset_into_constant_storage
         // handle flags
         // make length safe
-        struct_info := cast(*Type_Info_Struct) member_info;
+        struct_info := cast(*Type_Info_Struct) info;
         for member: struct_info.members {
             found := false;
             for toml.table {
@@ -58,7 +60,7 @@ deserialize :: (toml: Value, slot: *u8, member_info: *Type_Info, parent_name:str
         }
     case .ARRAY;
         expect(toml.type, .ARRAY, parent_name, name);
-        array_info := cast(*Type_Info_Array) member_info;
+        array_info := cast(*Type_Info_Array) info;
         element_type := array_info.element_type;
         if array_info.array_type == {
             case .FIXED;
@@ -85,36 +87,36 @@ deserialize :: (toml: Value, slot: *u8, member_info: *Type_Info, parent_name:str
         }
     // case .ANY; // Probably similar to .POINTER
     case .ENUM;
-        enum_member_info := cast(*Type_Info_Enum) member_info;
+        enum_info := cast(*Type_Info_Enum) info;
         if toml.type == {
         case .STRING;
-            found, index := array_find(enum_member_info.names, toml.string_value);
+            found, index := array_find(enum_info.names, toml.string_value);
             if !found {
-                log_error("String % is not a variant of enum %", toml.string_value, enum_member_info.name);
+                log_error("String % is not a variant of enum %", toml.string_value, enum_info.name);
                 exit(1);
             }
-            set_enum_value(slot, enum_member_info, enum_member_info.values[index]);
+            set_enum_value(slot, enum_info, enum_info.values[index]);
         case .INT;
-            found := array_find(enum_member_info.values, toml.int_value);
+            found := array_find(enum_info.values, toml.int_value);
             if !found {
-                log_error("Value % is not a variant of enum %", toml.int_value, enum_member_info.name);
+                log_error("Value % is not a variant of enum %", toml.int_value, enum_info.name);
                 exit(1);
             }
-            set_enum_value(slot, enum_member_info, toml.int_value);
+            set_enum_value(slot, enum_info, toml.int_value);
         case;
             log_error("Wrong type for %.%, expected STRING or INT, got % ", parent_name, name, toml.type);
             exit(1);
         }
     case .VARIANT; // This is a weak or strong alias
-        variant_info := cast(*Type_Info_Variant) member_info;
+        variant_info := cast(*Type_Info_Variant) info;
         deserialize(toml, slot, variant_info.variant_of, parent_name, name);
     case .PROCEDURE;            #through;
     case .OVERLOAD_SET;         #through;
     case .POLYMORPHIC_VARIABLE; #through;
     case .TYPE;                 #through;
-    case .CODE;                 #through;
+    case .CODE;                 #through; // Is this possible?
     case;
-        log_error("Deserialization to type % is not supported", member_info.type);
+        log_error("Deserialization to type % is not supported", info.type);
         exit(1);
     }
 }

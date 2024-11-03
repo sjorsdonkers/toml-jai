@@ -27,7 +27,7 @@ DONE
     Q :: struct {
         q: s16;
     }
-    Filename       :: #type,isa string;
+    Filename       :: #type,distinct string;
     MyStruct :: struct {
         orange: bool;
         banana: float;
