@@ -13,6 +13,7 @@ kiwi = [
     {q = -3},
     {q = 4},
 ]
+horse = "Mai"
 DONE
     Hello :: enum {
         X;
@@ -26,11 +27,13 @@ DONE
     Q :: struct {
         q: s16;
     }
+    Filename       :: #type,isa string;
     MyStruct :: struct {
         orange: bool;
         banana: float;
         apple : Inner;
         kiwi  : [..] Q;
+        horse :Filename;
     }
 
     toml2 := parse(THE_STRING);

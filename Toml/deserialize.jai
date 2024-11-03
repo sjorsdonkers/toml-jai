@@ -105,9 +105,9 @@ deserialize :: (toml: Value, slot: *u8, member_info: *Type_Info, parent_name:str
             log_error("Wrong type for %.%, expected STRING or INT, got % ", parent_name, name, toml.type);
             exit(1);
         }
-    // case VARIANT recurse till real type see 180_type_variants get_one_step_inside(..)
-    // variant_info := cast(*Type_Info_Variant) info;
-    // recurse_into_this(variant_info.variant_of);
+    case .VARIANT; // This is a weak or strong alias
+        variant_info := cast(*Type_Info_Variant) member_info;
+        deserialize(toml, slot, variant_info.variant_of, parent_name, name);
     case .PROCEDURE;            #through;
     case .OVERLOAD_SET;         #through;
     case .POLYMORPHIC_VARIABLE; #through;
