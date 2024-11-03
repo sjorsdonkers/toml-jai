@@ -8,6 +8,11 @@ THE_STRING :: #string DONE
 orange = false
 banana = 23.3
 apple = {a = 32, b = 'Y', c = 'Y'}
+kiwi = [
+    {q = 2},
+    {q = 3},
+    {q = 4},
+]
 DONE
     Hello :: enum {
         X;
@@ -18,10 +23,14 @@ DONE
         b: string;
         c: Hello;
     }
+    Q :: struct {
+        q: u8;
+    }
     MyStruct :: struct {
         orange: bool;
         banana: float;
         apple : Inner;
+        kiwi  : [3] Q;
     }
 
     toml2 := parse(THE_STRING);
@@ -80,7 +89,32 @@ deserialize :: (value: Value, target: *u8, info_enum: *Type_Info_Struct) {
                     // make length safe
                     struct_member_info := cast(*Type_Info_Struct) member_info;
                     deserialize(it.value, slot, struct_member_info);
-                // case .ARRAY;
+                case .ARRAY;
+                    expect(it.type, .ARRAY, info_enum.name, member.name);
+                    array_info := cast(*Type_Info_Array) member_info;
+                    element_type := array_info.element_type;
+                    if array_info.array_type == {
+                        case .FIXED;
+                            if it.array.count != array_info.array_count {
+                                log_error("Fixed array %.% expected % items, got %", info_enum.name, member.name, array_info.array_count, it.array.count);
+                                exit(1);
+                            }
+                            for idx: 0..array_info.array_count-1 {
+                                array_slot := slot + element_type.runtime_size * idx;
+                                assert(element_type.type == .STRUCT);
+                                fake := cast(*Type_Info_Struct) element_type; // TODO remove after refator
+                                deserialize(it.array[idx], array_slot, fake);
+                            }
+
+                        case .VIEW;
+                        // TODO Same as POINTER
+                        log_error("Deserialization to type ARRAY VIEW is not supported yet");
+                        exit(1);
+                        case .RESIZABLE;
+                        // TODO
+                        log_error("Deserialization to type ARRAY RESIZABLE is not supported yet");
+                        exit(1);
+                    }
                 // case .ANY; // Probably similar to .POINTER
                 case .ENUM;
                     enum_member_info := cast(*Type_Info_Enum) member_info;
