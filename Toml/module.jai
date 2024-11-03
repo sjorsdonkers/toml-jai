@@ -108,9 +108,7 @@ deserialize :: (toml: Value, slot: *u8, member_info: *Type_Info, parent_name:str
                 }
                 for idx: 0..array_info.array_count-1 {
                     array_slot := slot + element_type.runtime_size * idx;
-                    assert(element_type.type == .STRUCT);
-                    fake := cast(*Type_Info_Struct) element_type; // TODO remove after refator
-                    deserialize(toml.array[idx], array_slot, fake);
+                    deserialize(toml.array[idx], array_slot, element_type, name, "[item]");
                 }
 
             case .VIEW;
