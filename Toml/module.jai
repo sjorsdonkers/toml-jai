@@ -10,7 +10,7 @@ banana = 23.3
 apple = {a = 32, b = 'Y', c = 'Y'}
 kiwi = [
     {q = 2},
-    {q = 3},
+    {q = -3},
     {q = 4},
 ]
 DONE
@@ -24,25 +24,26 @@ DONE
         c: Hello;
     }
     Q :: struct {
-        q: u8;
+        q: s16;
     }
     MyStruct :: struct {
         orange: bool;
         banana: float;
         apple : Inner;
-        kiwi  : [3] Q;
+        kiwi  : [..] Q;
     }
 
     toml2 := parse(THE_STRING);
     print_value(toml2);
     my_struct := deserialize(toml2, MyStruct);
     print("MyStruct: %\n", my_struct);
+    print("kiwi count: %\n", my_struct.kiwi.count);
 }
 
 deserialize :: (value: Value, $Target: Type) -> Target {
     target : Target;
     bytes := cast(*u8) *target;
-    info := type_info(Target);
+    info :: type_info(Target);
     deserialize(value, bytes, info);
     return target;
 }
@@ -110,15 +111,18 @@ deserialize :: (toml: Value, slot: *u8, member_info: *Type_Info, parent_name:str
                     array_slot := slot + element_type.runtime_size * idx;
                     deserialize(toml.array[idx], array_slot, element_type, name, "[item]");
                 }
-
             case .VIEW;
-            // TODO Same as POINTER
-            log_error("Deserialization to type ARRAY VIEW is not supported yet");
-            exit(1);
+                // TODO Same as POINTER
+                log_error("Deserialization to type ARRAY VIEW is not supported yet");
+                exit(1);
             case .RESIZABLE;
-            // TODO
-            log_error("Deserialization to type ARRAY RESIZABLE is not supported yet");
-            exit(1);
+                array := cast(*[..] u8) slot; // We are unable to write the type here (needs to be constant), so just use u8 for now
+                array_reserve(array, toml.array.count * element_type.runtime_size);
+                for idx: 0..toml.array.count-1 {
+                    array_slot := array.data + element_type.runtime_size * idx;
+                    deserialize(toml.array[idx], array_slot, element_type, name, "[item]");
+                }
+                array.count = toml.array.count;
         }
     // case .ANY; // Probably similar to .POINTER
     case .ENUM;
