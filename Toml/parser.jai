@@ -7,8 +7,32 @@
 // - Error propagation
 // - Make it easy to make data permanent / not 0 copy
 
+Value :: struct {
+    Type :: enum u8 {
+        BOOL;
+        INT;
+        FLOAT;
+        STRING;
+        ARRAY;
+        TABLE;
+    }
+    type: Type;
+    union {
+        bool_value  : bool;
+        int_value   : s64;
+        float_value : float64;
+        string_value: string;
+        array       : [..]Value;
+        table       : [..]KeyValue;
+    };
+}
+KeyValue :: struct {
+    key        :  string;
+    using value:  Value;
+}
+
 parse :: (contents: string) -> root_table:Value {
-    tokens  := tokenize(contents);
+    tokens := tokenize(contents,, allocator = temp);
     scope  := Scope.{contents, tokens, 0, ""};
 
     // At top level we can expect (keys, [keys], [[keys]])
@@ -16,11 +40,11 @@ parse :: (contents: string) -> root_table:Value {
     current_table := *root_table;
     while has_next(scope) {
         token := peak_next(scope);
-        if token.type == Token_Type.SCOPE_BRACKET {
+        if token.type == Token.Type.SCOPE_BRACKET {
             current_table = parse_header(*root_table, sub(scope, token.scope));
             eat_scope(*scope, token);
         } else { // Parse key value pair
-            keys_scope := eat_scope_until(*scope, Token_Type.ASSIGN);
+            keys_scope := eat_scope_until(*scope, Token.Type.ASSIGN);
             _, leaf_value := parse_key(current_table, keys_scope);
             <<leaf_value = parse_value(leaf_value, *scope);
         }
@@ -32,10 +56,10 @@ parse :: (contents: string) -> root_table:Value {
 #scope_file
 
 parse_header :: (root_table: *Value, scope: Scope) -> *Value {
-    if !has_next(scope) || peak_next(scope).type != Token_Type.SCOPE_BRACKET{
+    if !has_next(scope) || peak_next(scope).type != Token.Type.SCOPE_BRACKET{
         // Parse table header
         _, current_table, is_new := parse_key(root_table, scope);
-        if !is_new && current_table.type != Value_Type.TABLE {
+        if !is_new && current_table.type != Value.Type.TABLE {
             exit_with_error_line(scope.source, last(scope).loc, "Cannot use key as Tables as it already has a value: %", current_table.type);
         }
         return current_table;
@@ -48,11 +72,11 @@ parse_header :: (root_table: *Value, scope: Scope) -> *Value {
         }
 
         _, current_table, is_new := parse_key(root_table, aot_scope);
-        if !is_new && current_table.type != Value_Type.ARRAY {
+        if !is_new && current_table.type != Value.Type.ARRAY {
             exit_with_error_line(aot_scope.source, last(aot_scope).loc, "Cannot use key as Array of Tables as it already has a value: %", current_table.type);
         }
 
-        current_table.type = Value_Type.ARRAY;
+        current_table.type = Value.Type.ARRAY;
         array_add(*current_table.array, Value.{type=.TABLE});
         return *current_table.array[current_table.array.count-1];
     }
@@ -63,29 +87,29 @@ parse_header :: (root_table: *Value, scope: Scope) -> *Value {
 parse_key :: (parent: *Value, scope: Scope) -> root:KeyValue, leaf:*Value, leaf_is_new:bool {
     if !has_next(scope) { exit_with_error("Unexpected end of scope while parsing key"); }
     token := eat_next_for_keys(*scope);
-    if token.type != Token_Type.QUOTED { exit_with_error_line(scope.source, token.loc, "Key cannot start with a %", token.type); }
+    if token.type != Token.Type.QUOTED { exit_with_error_line(scope.source, token.loc, "Key cannot start with a %", token.type); }
 
     local_root := KeyValue.{key=token.str, value=Value.{type=.TABLE}};
     current_table := *local_root.value;
     current_is_new := true;
     if parent != null {
-        if parent.type != Value_Type.TABLE { exit_with_error("Cannot use key as table as it already has a value: %", parent.type); } // TODO print_value
+        if parent.type != Value.Type.TABLE { exit_with_error("Cannot use key as table as it already has a value: %", parent.type); } // TODO print_value
         current_is_new =, index := array_add_if_unique(*parent.table, local_root);
         current_table = *parent.table[index].value;
     }
 
     while has_next(scope) {
         token = eat_next_for_keys(*scope);
-        if token.type != Token_Type.DOT { exit_with_error_line(scope.source, token.loc, "Expected DOT, got %", token.type); }
+        if token.type != Token.Type.DOT { exit_with_error_line(scope.source, token.loc, "Expected DOT, got %", token.type); }
         if !has_next(scope) { exit_with_error_line(scope.source, last_eaten(scope).loc, "Key is not allowed to end with a dot"); }
         token = eat_next_for_keys(*scope);
-        if token.type != Token_Type.QUOTED { exit_with_error_line(scope.source, token.loc, "Expected KEY, got %", token.type); }
+        if token.type != Token.Type.QUOTED { exit_with_error_line(scope.source, token.loc, "Expected KEY, got %", token.type); }
 
-        if current_table.type == Value_Type.ARRAY { // This is an Array of Tables header that we are going to add into
+        if current_table.type == Value.Type.ARRAY { // This is an Array of Tables header that we are going to add into
             assert(current_table.array.count > 0); // How would this be possible
             current_table = *current_table.array[current_table.array.count-1];
         }
-        if current_table.type != Value_Type.TABLE { exit_with_error("Cannot use key as table it already has a value: %", current_table.type); }
+        if current_table.type != Value.Type.TABLE { exit_with_error("Cannot use key as table it already has a value: %", current_table.type); }
         current_is_new=, index := array_add_if_unique(*current_table.table, KeyValue.{token.str, Value.{type=.TABLE}});
         current_table = *current_table.table[index].value;
     }
@@ -119,12 +143,12 @@ parse_inline_table :: (current_table: *Value, scope: Scope) -> table:Value {
     table_root := Value.{type=.TABLE};
     if current_table == null { current_table = *table_root; }
     while has_next(scope) {
-        keys_scope := eat_scope_until(*scope, Token_Type.ASSIGN);
+        keys_scope := eat_scope_until(*scope, Token.Type.ASSIGN);
         _, leaf_value := parse_key(current_table, keys_scope);
         <<leaf_value = parse_value(leaf_value, *scope);
 
         // Inline tables are not allowed to have trailing commas
-        if has_next(scope, 2) { eat_expected(*scope, Token_Type.COMMA); } // TODO improve error message
+        if has_next(scope, 2) { eat_expected(*scope, Token.Type.COMMA); } // TODO improve error message
     }
     return <<current_table;
 }
@@ -134,7 +158,7 @@ parse_array :: (scope: Scope) -> array:Value {
     while has_next(scope) {
         value := parse_value(null, *scope);
         array_add(*values, value);
-        if has_next(scope) { eat_expected(*scope, Token_Type.COMMA); }
+        if has_next(scope) { eat_expected(*scope, Token.Type.COMMA); }
     }
     return Value.{type=.ARRAY, array=values};
 }
@@ -189,23 +213,23 @@ parse_literal :: (scope: *Scope) -> Value {
 
 Scope :: struct {
     source: string;
-    tokens: []TOML_Token;
+    tokens: []Token;
     pos: s64 = 0;
     remaining_key: string;
 }
 has_next :: (scope: Scope, count:=1) -> bool {
     return scope.pos + count -1 < scope.tokens.count;
 }
-peak_next :: (scope: Scope) -> TOML_Token {
+peak_next :: (scope: Scope) -> Token {
     return scope.tokens[scope.pos];
 }
-eat_next :: (scope: *Scope) -> TOML_Token {
+eat_next :: (scope: *Scope) -> Token {
     token := peak_next(scope);
     scope.pos += 1; // Do we want to eat scope here?
     return token;
 }
 
-eat_next_for_keys :: (scope: *Scope) -> TOML_Token {
+eat_next_for_keys :: (scope: *Scope) -> Token {
     if scope.remaining_key.count == 0 {
         token := peak_next(scope);
         if token.type == {
@@ -219,32 +243,32 @@ eat_next_for_keys :: (scope: *Scope) -> TOML_Token {
     char_num := cast(s32) inline find_index_from_right(original.str, scope.remaining_key);
     next:, scope.remaining_key = split_from_left_incl(scope.remaining_key, #char ".");
     if scope.remaining_key.count == 0 { eat_next(scope); }
-    if next == "." { return TOML_Token.{type=Token_Type.DOT, loc=Location.{original.loc.line, char_num}}; }
-    else           { return TOML_Token.{type=Token_Type.QUOTED, str=next, loc=Location.{original.loc.line, char_num}}; }
+    if next == "." { return Token.{type=Token.Type.DOT, loc=Location.{original.loc.line, char_num}}; }
+    else           { return Token.{type=Token.Type.QUOTED, str=next, loc=Location.{original.loc.line, char_num}}; }
 }
 
-last_eaten :: (scope: Scope) -> TOML_Token {
+last_eaten :: (scope: Scope) -> Token {
     return scope.tokens[scope.pos-1];
 }
-last :: (scope: Scope) -> TOML_Token {
+last :: (scope: Scope) -> Token {
     return scope.tokens[scope.tokens.count-1];
 }
-sub :: (scope: Scope, tokens: []TOML_Token) -> Scope {
+sub :: (scope: Scope, tokens: []Token) -> Scope {
     return Scope.{scope.source, tokens, 0, ""};
 }
 
-eat_scope :: (scope: *Scope, edible: TOML_Token) {
+eat_scope :: (scope: *Scope, edible: Token) {
     assert(edible.type == .SCOPE_BRACE || edible.type == .SCOPE_BRACKET);
     scope.pos += edible.scope.count + 1;
 }
 
-eat_expected :: (scope: *Scope, expected: Token_Type) {
+eat_expected :: (scope: *Scope, expected: Token.Type) {
     token := eat_next(scope);
     if token.type != expected { exit_with_error_line(scope.source, token.loc, "Expected %, got %", expected, token.type); }
 }
 
 // * sub_scope does not contain the scope_end token
-eat_scope_until :: (scope: *Scope, scope_end: Token_Type) -> sub_scope:Scope {
+eat_scope_until :: (scope: *Scope, scope_end: Token.Type) -> sub_scope:Scope {
     start_pos := scope.pos;
     while has_next(scope) { // TODO impl for for Scope
         if eat_next(scope).type == scope_end {
@@ -274,12 +298,12 @@ exit_with_error_line :: (source: string, loc: Location, format: string, argument
         exit(1);
     }
     message := tprint(format, ..arguments);
-    log_error("Line % Char %: %", loc.line, loc.character, message);
+    log_error("Line % Char %: %", loc.line, loc.char, message);
     log_error(line);
 
     // print ^^ under the char number
     builder: String_Builder;
-    for 1..loc.character-1 { append(*builder, #char " "); }
+    for 1..loc.char-1 { append(*builder, #char " "); }
     append(*builder, #char "^");
     log_error(builder_to_string(*builder));
 
@@ -311,4 +335,3 @@ using Basic :: #import "Basic";
 #import "File";
 #import "String";
 #import "Math";
-#load "data.jai";

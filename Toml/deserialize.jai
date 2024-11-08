@@ -121,7 +121,7 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
     }
 }
 
-expect :: inline (given: Value_Type, expected: Value_Type, struct_name: string, member_name: string) {
+expect :: inline (given: Value.Type, expected: Value.Type, struct_name: string, member_name: string) {
     if given != expected {
         log_error("Wrong type for %.%, expected %, got % ", struct_name, member_name, expected, given);
         exit(1);

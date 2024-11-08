@@ -1,38 +1,41 @@
-Token_Type :: enum u8 {
-    RAW           :: 0;         // str
-    QUOTED        :: 1;         // str
-    QUOTED_MULTI  :: 2;         // str   // Not using QUOTED as multi-line string cannot be keys
-    COMMA         :: #char ","; // -
-    DOT           :: #char "."; // -     // Not produced by lexer itself
-    ASSIGN        :: #char "="; // -
-    SCOPE_BRACKET :: #char "["; // scope
-    SCOPE_BRACE   :: #char "{"; // scope
-}
+// This lexer does not parse keys or literals, it just determines scopes of chars or tokens.
+// NOTE: The keys and literals point into the input data string.
+// It is up to the caller to determine when is the best time to put them in a permnent location.
 
-TOML_Token :: struct {
-    type: Token_Type;
+Token :: struct {
+    Type :: enum u8 {
+        RAW           :: 0;         // str
+        QUOTED        :: 1;         // str
+        QUOTED_MULTI  :: 2;         // str   // Not using QUOTED as multi-line string cannot be keys
+        COMMA         :: #char ","; // -
+        DOT           :: #char "."; // -     // Not produced by lexer itself
+        ASSIGN        :: #char "="; // -
+        SCOPE_BRACKET :: #char "["; // scope
+        SCOPE_BRACE   :: #char "{"; // scope
+    }
+    type: Type;
     union {
-        str  :   string;
-        scope: []TOML_Token;
+        str  : string;  // View into `data`
+        scope: []Token; // View into `tokens` starting at the next token
     };
     loc: Location; // TODO Remove, instead always store string to data, in error case it is OK to recompute line and character
 }
 
 Location :: struct {
-    line, character: s32;
+    line, char: s32; // Line and column number, not index
 }
 
 Lexer :: struct {
-    data: string;
-    tokens: [..]TOML_Token;
-    pos: s64 = 0;
-    line_number: s32 = 1;
-    char_number: s32 = 1;
-    scope_stack: [..]int;
+    data: string;            // The original TOML input string
+    tokens: [..]Token;       // The lexed tokens to be returned
+    pos: s64 = 0;            // Index into data of the current char to be evaluated
+    loc: Location = .{1, 1}; // Location of the current char
+    scope_stack: [..]int;    // Indices into `tokens` for scopes that have not been closed yet `{` and `[`
 }
 
-tokenize :: (data: string) -> tokens: [..]TOML_Token { // TODO Change to streaming lexer once all requirements are in
+tokenize :: (data: string) -> tokens: [..]Token { // TODO Change to streaming lexer once all requirements are in
     lexer := Lexer.{data=data};
+    lexer.scope_stack.allocator = temp; // Deeply nested scopes are unlikely, so not expecting get large
     array_reserve(*lexer.tokens, data.count / 2); // Rough estimate of token count
 
     while has_next(lexer) {
@@ -59,7 +62,7 @@ tokenize :: (data: string) -> tokens: [..]TOML_Token { // TODO Change to streami
         if is_raw(c) {
             start := lexer.pos;
             while has_next(lexer) && is_raw(peak_char(lexer)) { eat_char(*lexer); }
-            token := TOML_Token.{ type=.RAW, str=slice(lexer.data, start, lexer.pos - start), loc=Location.{lexer.line_number, lexer.char_number - cast(s32) (lexer.pos - start)} };
+            token := Token.{ type=.RAW, str=slice(lexer.data, start, lexer.pos - start), loc=Location.{lexer.loc.line, lexer.loc.char - cast(s32) (lexer.pos - start)} };
             array_add(*lexer.tokens, token);
             continue;
         }
@@ -84,13 +87,13 @@ tokenize :: (data: string) -> tokens: [..]TOML_Token { // TODO Change to streami
                     else                              { eat_char(*lexer); }
                 }
                 if !has_next(lexer) {
-                    log_error("Unterminated multi-line string. %:%", lexer.line_number, lexer.char_number);
+                    log_error("Unterminated multi-line string. %:%", lexer.loc.line, lexer.loc.char);
                     exit(1);
                 }
                 // 1 or 2 quotes at the end are allowed
                 if has_next(lexer, 4) && peak_char(lexer, 4) == c { eat_char(*lexer); }
                 if has_next(lexer, 4) && peak_char(lexer, 4) == c { eat_char(*lexer); }
-                token := TOML_Token.{ type=.QUOTED_MULTI, str=slice(data, start, lexer.pos - start), loc=Location.{lexer.line_number, lexer.char_number - cast(s32) (lexer.pos - start)} };
+                token := Token.{ type=.QUOTED_MULTI, str=slice(data, start, lexer.pos - start), loc=Location.{lexer.loc.line, lexer.loc.char - cast(s32) (lexer.pos - start)} };
                 if c == #char "\"" {
                     // TODO replace token.str by unescaped string
                 }
@@ -104,16 +107,16 @@ tokenize :: (data: string) -> tokens: [..]TOML_Token { // TODO Change to streami
             while has_next(lexer) && peak_char(lexer) != c {
                 if c == #char "\"" && has_next(lexer, 2) && peak_slice(lexer, 2) == "\\\"" { eat_char(*lexer, 2); continue; }
                 if peak_char(lexer) == #char "\n" {
-                    log_error("Newline in string. Use a multi-line string (tripple quote) instead.  %:%", lexer.line_number, lexer.char_number);
+                    log_error("Newline in string. Use a multi-line string (tripple quote) instead.  %:%", lexer.loc.line, lexer.loc.char);
                     exit(1);
                 }
                 eat_char(*lexer);
             }
             if !has_next(lexer) {
-                log_error("Unterminated string. %:%", lexer.line_number, lexer.char_number);
+                log_error("Unterminated string. %:%", lexer.loc.line, lexer.loc.char);
                 exit(1);
             }
-            token := TOML_Token.{ type=.QUOTED, str=slice(data, start, lexer.pos - start), loc=Location.{lexer.line_number, lexer.char_number - cast(s32) (lexer.pos - start)} };
+            token := Token.{ type=.QUOTED, str=slice(data, start, lexer.pos - start), loc=Location.{lexer.loc.line, lexer.loc.char - cast(s32) (lexer.pos - start)} };
             if c == #char "\"" {
                 // TODO replace token.str by unescaped string
             }
@@ -127,7 +130,7 @@ tokenize :: (data: string) -> tokens: [..]TOML_Token { // TODO Change to streami
         || c == #char "[" {
             scope_index := lexer.tokens.count;
              // .scope is replaced by actual scope on scope closing, scope.count points to the slice token itself for now
-            token := TOML_Token.{ type=cast(Token_Type) c, scope = lexer.tokens, loc=Location.{lexer.line_number, lexer.char_number} };
+            token := Token.{ type=cast(Token.Type) c, scope = lexer.tokens, loc=Location.{lexer.loc.line, lexer.loc.char} };
             array_add(*lexer.tokens, token);
             array_add(*lexer.scope_stack, scope_index);
             eat_char(*lexer);
@@ -140,7 +143,7 @@ tokenize :: (data: string) -> tokens: [..]TOML_Token { // TODO Change to streami
                 exit(1);
             }
             removed_idx := pop(*lexer.scope_stack);
-            if lexer.tokens[removed_idx].type != cast(Token_Type) matching_open(c) {
+            if lexer.tokens[removed_idx].type != cast(Token.Type) matching_open(c) {
                 log_error("Mismatched scope closure. Scope Opened with: % Attempt to close with: %", lexer.tokens[removed_idx].type, c); // TODO more info
                 exit(1);
             }
@@ -153,13 +156,13 @@ tokenize :: (data: string) -> tokens: [..]TOML_Token { // TODO Change to streami
         // Others
         if c == #char ","
         || c == #char "=" {
-            token := TOML_Token.{ type=cast(Token_Type) c, loc=Location.{lexer.line_number, lexer.char_number} };
+            token := Token.{ type=cast(Token.Type) c, loc=Location.{lexer.loc.line, lexer.loc.char} };
             array_add(*lexer.tokens, token);
             eat_char(*lexer);
             continue;
         }
 
-        log_error("Invalid character % at %:%", c, lexer.line_number, lexer.char_number);
+        log_error("Invalid character % at %:%", c, lexer.loc.line, lexer.loc.char);
         exit(1);
     }
     return lexer.tokens;
@@ -178,12 +181,12 @@ peak_slice :: (lexer: Lexer, count:=1) -> string {
 }
 eat_char :: (lexer: *Lexer, count:s32=1) {
     lexer.pos += count;
-    lexer.char_number += count;
+    lexer.loc.char += count;
 }
 eat_newline :: (lexer: *Lexer) {
     lexer.pos += 1;
-    lexer.char_number = 1;
-    lexer.line_number += 1;
+    lexer.loc.char = 1;
+    lexer.loc.line += 1;
 }
 
 matching_open :: (close: u8) -> open: u8 {
