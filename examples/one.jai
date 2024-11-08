@@ -1,7 +1,10 @@
 
 main :: () {
     contents := read_entire_file("toml.toml");
-    toml     := Toml.parse(contents);
+    toml     := Toml.parse(contents); //,, allocator=temp
+    // for 0..contents.count-1 {
+    //     contents[it] = #char "p";
+    // }
     print_value(toml);
 
 THE_STRING :: #string DONE

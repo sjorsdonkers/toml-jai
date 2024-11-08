@@ -5,7 +5,7 @@
 // - Rejecting values that overwrite / append to previous ones
 // - Full toml validation like endlines in an inline table
 // - Error propagation
-// - Make it easy to make data permanent / not 0 copy
+// TODO make sure resizable array assignment to union is actually correct
 
 Value :: struct {
     Type :: enum u8 {
@@ -32,7 +32,7 @@ KeyValue :: struct {
 }
 
 parse :: (contents: string) -> root_table:Value {
-    tokens := tokenize(contents,, allocator = temp);
+    tokens := tokenize(contents,, allocator=temp);
     scope  := Scope.{contents, tokens, 0, ""};
 
     // At top level we can expect (keys, [keys], [[keys]])
@@ -94,14 +94,14 @@ parse_key :: (parent: *Value, scope: Scope) -> root:KeyValue, leaf:*Value, leaf_
     current_is_new := true;
     if parent != null {
         if parent.type != Value.Type.TABLE { exit_with_error("Cannot use key as table as it already has a value: %", parent.type); } // TODO print_value
-        current_is_new =, index := array_add_if_unique(*parent.table, local_root);
+        current_is_new =, index := array_add_copy_if_unique(*parent.table, local_root);
         current_table = *parent.table[index].value;
     }
 
     while has_next(scope) {
         token = eat_key_token(*scope);
         if token.type != Token.Type.DOT { exit_with_error_line(scope.source, token.loc, "Expected DOT, got %", token.type); }
-        if !has_next(scope) { exit_with_error_line(scope.source, last_eaten(scope).loc, "Key is not allowed to end with a dot"); }
+        if !has_next(scope) { exit_with_error_line(scope.source, last(scope).loc, "Key is not allowed to end with a dot"); }
         token = eat_key_token(*scope);
         if token.type != Token.Type.QUOTED { exit_with_error_line(scope.source, token.loc, "Expected KEY, got %", token.type); }
 
@@ -110,7 +110,7 @@ parse_key :: (parent: *Value, scope: Scope) -> root:KeyValue, leaf:*Value, leaf_
             current_table = *current_table.array[current_table.array.count-1];
         }
         if current_table.type != Value.Type.TABLE { exit_with_error("Cannot use key as table it already has a value: %", current_table.type); }
-        current_is_new=, index := array_add_if_unique(*current_table.table, KeyValue.{token.str, Value.{type=.TABLE}});
+        current_is_new=, index := array_add_copy_if_unique(*current_table.table, KeyValue.{token.str, Value.{type=.TABLE}});
         current_table = *current_table.table[index].value;
     }
     return local_root, current_table, current_is_new;
@@ -131,7 +131,6 @@ parse_value :: (current_table: *Value, scope: *Scope) -> value:Value { // TODO o
         return array;
     case;
         literal := parse_literal(scope);
-        eat_token(scope); // Might be 2 if date time
         return literal;
     }
 }
@@ -164,10 +163,10 @@ parse_array :: (scope: Scope) -> array:Value {
 }
 
 parse_literal :: (scope: *Scope) -> Value {
-    token := peak_token(scope);
+    token := eat_token(scope);
     if token.type == {
     case .QUOTED;       #through;
-    case .QUOTED_MULTI; return Value.{type=.STRING, string_value=token.str};
+    case .QUOTED_MULTI; return Value.{type=.STRING, string_value=copy_string(token.str)};
     case .RAW;
         // Parse boolean
         if token.str == "true" { return Value.{type=.BOOL, bool_value=true}; }
@@ -188,7 +187,7 @@ parse_literal :: (scope: *Scope) -> Value {
             oct_value, success, remainder := string_to_int(clean_str, 8, s64);
             if success && remainder.count == 0 { return Value.{type=.INT, int_value=oct_value}; }
         } else {
-            // TODO detect leading zeros error
+            // TODO detect leading zeros error, note 00 can be the start of a time
             int_value, success, remainder := string_to_int(clean_str, 10, s64);
             if success && remainder.count == 0 { return Value.{type=.INT, int_value=int_value}; }
         }
@@ -225,34 +224,26 @@ peak_token :: (scope: Scope) -> Token {
 }
 eat_token :: (scope: *Scope) -> Token {
     token := peak_token(scope);
-    scope.pos += 1; // Do we want to eat scope here?
+    scope.pos += 1;
     return token;
 }
 eat_key_token :: (scope: *Scope) -> Token {
+    original := peak_token(scope);
     if scope.remaining_key.count == 0 {
-        token := peak_token(scope);
-        if token.type == {
-        case .QUOTED; return eat_token(scope);
-        case .RAW;    scope.remaining_key = token.str;
-        case .QUOTED_MULTI; exit_with_error_line(scope.source, token.loc, "Cannot use multi-line strings as key");
-        case;                exit_with_error_line(scope.source, token.loc, "Expected key, got %", token.type);
+        if original.type == {
+        case .QUOTED; return eat_token(scope);            // A quoted token cannot have sub-keys
+        case .RAW;    scope.remaining_key = original.str; // A raw token may contain several dot separated keys
+        case .QUOTED_MULTI; exit_with_error_line(scope.source, original.loc, "Cannot use multi-line strings as key");
+        case .DOT;          assert(false, "Parser expected lexer to give `.` as RAW, not as DOT");
+        case;               exit_with_error_line(scope.source, original.loc, "Expected key, got %", original.type);
         }
     }
-    original := peak_token(scope);
+    // Handling potentially dot separated RAW key
     char_num := cast(s32) inline find_index_from_right(original.str, scope.remaining_key);
     next:, scope.remaining_key = split_from_left_incl(scope.remaining_key, #char ".");
     if scope.remaining_key.count == 0 { eat_token(scope); }
     if next == "." { return Token.{type=Token.Type.DOT, loc=Location.{original.loc.line, char_num}}; }
     else           { return Token.{type=Token.Type.QUOTED, str=next, loc=Location.{original.loc.line, char_num}}; }
-}
-last_eaten :: (scope: Scope) -> Token {
-    return scope.tokens[scope.pos-1];
-}
-last :: (scope: Scope) -> Token {
-    return scope.tokens[scope.tokens.count-1];
-}
-sub :: (scope: Scope, tokens: []Token) -> Scope {
-    return Scope.{scope.source, tokens, 0, ""};
 }
 eat_scope :: (scope: *Scope, edible: Token) {
     assert(edible.type == .SCOPE_BRACE || edible.type == .SCOPE_BRACKET);
@@ -273,6 +264,12 @@ eat_scope_until :: (scope: *Scope, scope_end: Token.Type) -> sub_scope:Scope {
     exit_with_error_line(scope.source, scope.tokens[start_pos].loc, "Unexpected end of scope. Expected %", scope_end);
     return scope;
 }
+sub :: (scope: Scope, tokens: []Token) -> Scope {
+    return Scope.{scope.source, tokens, 0, ""};
+}
+last :: (scope: Scope) -> Token {
+    return scope.tokens[scope.tokens.count-1];
+}
 
 get_line :: (data: string, line_number: s32) -> line: string, found:bool {
     #import "Text_File_Handler";
@@ -281,7 +278,6 @@ get_line :: (data: string, line_number: s32) -> line: string, found:bool {
     for 1..line_number { line, found = consume_next_line(*data); }
     return line, found;
 }
-
 exit_with_error :: (format: string, arguments: .. Any) {
     log_error(format, ..arguments);
     exit(1);
@@ -305,22 +301,27 @@ exit_with_error_line :: (source: string, loc: Location, format: string, argument
     exit(1);
 }
 
-// .   -> `.`  ``
-// ab  -> `ab` ``
-//     -> ``   ``
-// .ab -> `.`  `ab`
-// a.b -> `a`  `.b`
-// ab. -> `ab` `.`
+// .   -> `.`  ``   // .ab -> `.`  `ab`
+// ab  -> `ab` ``   // a.b -> `a`  `.b`
+//     -> ``   ``   // ab. -> `ab` `.`
 split_from_left_incl :: (s: string, separator: u8) -> (left: string, right: string) {
     index := inline find_index_from_left(s, separator);
     if index == -1  return s, "";
-    if index == 0  index = 1;
+    if index == 0  index = 1; // Starts with separator
     return slice(s, 0, index), slice(s, index, s.count - index);
 }
 
+array_add_copy_if_unique :: (array: *[..]KeyValue, item: KeyValue) -> is_new:bool, index:s64 {
+    found, index := array_find(<<array, item);
+    if found return false, index;
+
+    array_add(array, item);
+    (<<array)[array.count-1].key = copy_string(item.key);
+    return true, array.count-1;
+}
+
 operator == :: inline (a: KeyValue, b: KeyValue) -> bool {
-    // Not a full comparison, just used for array_add_if_unique
-    // Consider poking it only where needed
+    // Not a full comparison, just used for array_find
     return a.key == b.key;
 }
 
