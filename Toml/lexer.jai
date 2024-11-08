@@ -1,6 +1,6 @@
 // This lexer does not parse keys or literals, it just determines scopes of chars or tokens.
 // NOTE: The keys and literals point into the input data string.
-// It is up to the caller to determine when is the best time to put them in a permnent location.
+// It is up to the caller to determine when is the best time to put them in a permanent location.
 
 Token :: struct {
     Type :: enum u8 {
@@ -23,14 +23,6 @@ Token :: struct {
 
 Location :: struct {
     line, char: s32; // Line and column number, not index
-}
-
-Lexer :: struct {
-    data: string;            // The original TOML input string
-    tokens: [..]Token;       // The lexed tokens to be returned
-    pos: s64 = 0;            // Index into data of the current char to be evaluated
-    loc: Location = .{1, 1}; // Location of the current char
-    scope_stack: [..]int;    // Indices into `tokens` for scopes that have not been closed yet `{` and `[`
 }
 
 tokenize :: (data: string) -> tokens: [..]Token { // TODO Change to streaming lexer once all requirements are in
@@ -170,6 +162,13 @@ tokenize :: (data: string) -> tokens: [..]Token { // TODO Change to streaming le
 
 #scope_file
 
+Lexer :: struct {
+    data: string;            // The original TOML input string
+    tokens: [..]Token;       // The lexed tokens to be returned
+    pos: s64 = 0;            // Index into data of the current char to be evaluated
+    loc: Location = .{1, 1}; // Location of the current char
+    scope_stack: [..]int;    // Indices into `tokens` for scopes that have not been closed yet `{` and `[`
+}
 has_next :: (lexer: Lexer, count:=1) -> bool {
     return lexer.pos + count -1 < lexer.data.count;
 }
