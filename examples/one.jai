@@ -1,10 +1,9 @@
 
 main :: () {
     contents := read_entire_file("toml.toml");
-    toml     := Toml.parse(contents); //,, allocator=temp
-    // for 0..contents.count-1 {
-    //     contents[it] = #char "p";
-    // }
+    heap := create_heap(context.allocator);
+    defer destroy_heap(heap);
+    toml := Toml.parse(contents,, allocator=heap);
     print_value(toml);
 
 THE_STRING :: #string DONE
