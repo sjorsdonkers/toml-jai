@@ -36,7 +36,7 @@ parse :: (contents: string) -> root_table:Value {
     scope  := Scope.{contents, tokens, 0, ""};
 
     // At top level we can expect (keys, [keys], [[keys]])
-    root_table := Value.{type=.TABLE}; // TODO How to set `table` to an empty array?
+    root_table := Value.{type=.TABLE, array=resizable(Value.[])};
     current_table := *root_table;
     while has_next(scope) {
         token := peak_token(scope);
@@ -77,7 +77,7 @@ parse_header :: (root_table: *Value, scope: Scope) -> *Value {
         }
 
         current_table.type = Value.Type.ARRAY;
-        array_add(*current_table.array, Value.{type=.TABLE});
+        array_add(*current_table.array, Value.{type=.TABLE, array=resizable(Value.[])});
         return *current_table.array[current_table.array.count-1];
     }
 }
@@ -89,7 +89,7 @@ parse_key :: (parent: *Value, scope: Scope) -> root:KeyValue, leaf:*Value, leaf_
     token := eat_key_token(*scope);
     if token.type != Token.Type.QUOTED { exit_with_error_line(scope.source, token.loc, "Key cannot start with a %", token.type); }
 
-    local_root := KeyValue.{key=token.str, value=Value.{type=.TABLE}};
+    local_root := KeyValue.{key=token.str, value=Value.{type=.TABLE, array=resizable(Value.[])}};
     current_table := *local_root.value;
     current_is_new := true;
     if parent != null {
@@ -110,7 +110,7 @@ parse_key :: (parent: *Value, scope: Scope) -> root:KeyValue, leaf:*Value, leaf_
             current_table = *current_table.array[current_table.array.count-1];
         }
         if current_table.type != Value.Type.TABLE { exit_with_error("Cannot use key as table it already has a value: %", current_table.type); }
-        current_is_new=, index := array_add_copy_if_unique(*current_table.table, KeyValue.{token.str, Value.{type=.TABLE}});
+        current_is_new=, index := array_add_copy_if_unique(*current_table.table, KeyValue.{token.str, Value.{type=.TABLE, array=resizable(Value.[])}});
         current_table = *current_table.table[index].value;
     }
     return local_root, current_table, current_is_new;
@@ -139,7 +139,7 @@ parse_inline_table :: (current_table: *Value, scope: Scope) -> table:Value {
     // An inline table is either the right-hand side of an assignment to a key
     // or a value in an array. In case of the former it is important that we continue building
     // on the current key as a.b = {c.d = 1} is the same as in a.b.c.d = 1
-    table_root := Value.{type=.TABLE};
+    table_root := Value.{type=.TABLE, array=resizable(Value.[])};
     if current_table == null { current_table = *table_root; }
     while has_next(scope) {
         keys_scope := eat_scope_until(*scope, Token.Type.ASSIGN);
