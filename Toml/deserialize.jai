@@ -1,4 +1,9 @@
 
+deserialize :: (contents: string, $Target:Type=Value) -> Target {
+    value := parse(contents);
+    return deserialize(value, Target);
+}
+
 deserialize :: (value: Value, $Target: Type) -> Target {
     target : Target;
     bytes := cast(*u8) *target;
@@ -10,6 +15,12 @@ deserialize :: (value: Value, $Target: Type) -> Target {
 #scope_file
 
 deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="", name:string="") {
+    value_info :: type_info(Value);
+    if info == value_info {
+        <<cast(*Value) slot = toml;
+        return;
+    }
+
     if info.type == { // #complete
     case .INTEGER;
         expect(toml.type, .INT, parent_name, name);
@@ -128,4 +139,5 @@ expect :: inline (given: Value.Type, expected: Value.Type, struct_name: string, 
     }
 }
 
+#load "parser.jai";
 #import "Reflection";

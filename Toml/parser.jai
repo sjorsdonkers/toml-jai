@@ -5,7 +5,6 @@
 // - Rejecting values that overwrite / append to previous ones
 // - Full toml validation like endlines in an inline table
 // - Error propagation
-// TODO make sure resizable array assignment to union is actually correct
 
 Value :: struct {
     Type :: enum u8 {

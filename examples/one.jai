@@ -3,7 +3,7 @@ main :: () {
     contents := read_entire_file("toml.toml");
     heap := create_heap(context.allocator);
     defer destroy_heap(heap);
-    toml := Toml.parse(contents,, allocator=heap);
+    toml := Toml.deserialize(contents,, allocator=heap);
     print_value(toml);
 
 THE_STRING :: #string DONE
@@ -38,7 +38,7 @@ DONE
         horse :Filename;
     }
 
-    toml2 := Toml.parse(THE_STRING);
+    toml2 := Toml.deserialize(THE_STRING);
     print_value(toml2);
     print("\n");
     my_struct := Toml.deserialize(toml2, MyStruct);
