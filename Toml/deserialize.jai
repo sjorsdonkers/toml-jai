@@ -48,12 +48,16 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
         // TODO deepcopy to callers allocator
         <<cast(*string) slot = toml.string_value;
     // case .POINTER; // hmm put in permanent memory and point to the value?
-    // case .VOID; // Do we want to allow this to be an empty table?
+    case .VOID; // Not used for void in sum-types
+        expect(toml.type, .TABLE, parent_name, name);
+        if toml.table.count != 0 {
+            log_error("Expected empty table for %.%, got %", parent_name, name, toml.table.count);
+            exit(1);
+        }
     case .STRUCT;
         expect(toml.type, .TABLE, parent_name, name);
         // handle offset_into_constant_storage
         // handle flags
-        // make length safe
         struct_info := cast(*Type_Info_Struct) info;
         if struct_info.textual_flags & .UNION {
             log_error("Union are not supported unless they are in a sum-type (struct with enum tag and union where union.members.count == tag.values.count)");
@@ -74,9 +78,21 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
             if !union_info.textual_flags & .UNION return false;
             // It's a sum-type!
 
+            tag_slot   := slot + struct_info.members[tag_idx].offset_in_bytes;
+            union_slot := slot + struct_info.members[union_idx].offset_in_bytes;
             if union_info.members.count != tag_info.values.count {
                 log_error("Sum-type expects each enum variant to match a union variant 1-to-1 got % tags and % union variants for sum-type %", tag_info.values.count, union_info.members.count, struct_info.name);
                 exit(1);
+            }
+            if toml_table.count == 0 {
+                void_idx := -1;
+                for union_info.members { if it.type.type == .VOID { void_idx = it_index; break; }} // Picks the 1st void type
+                if void_idx == -1 {
+                    log_error("Sum-type % does not have an optional (void) variant", struct_info.name); // TODO name
+                    exit(1);
+                }
+                set_enum_value(tag_slot, tag_info, void_idx);
+                return true; // void does not have bytes to set
             }
             if toml_table.count != 1 {
                 log_error("Exactly 1 field expected for sum-type %, got %", struct_info.name, toml_table.count);
@@ -88,11 +104,8 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
                 exit(1);
             }
 
-            tag_slot   := slot + struct_info.members[tag_idx].offset_in_bytes;
             set_enum_value(tag_slot, tag_info, idx);
-
-            union_slot := slot + struct_info.members[union_idx].offset_in_bytes;
-            deserialize(toml_table[0].value, union_slot, union_info.members[idx].type, toml_table[0].key, union_info.members[idx].name); // TODO check parent_name
+            deserialize(toml_table[0].value, union_slot, union_info.members[idx].type, tag_info.names[idx], union_info.members[idx].name); // TODO check parent_name
             return true;
         }
         if sum_type(slot, struct_info, toml.table) return;
@@ -107,7 +120,7 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
                     break;
                 }
             }
-            if !found {
+            if !found && member.type.type != .VOID {
                 log_error("Missing field %.%", struct_info.name, member.name);
                 exit(1);
             }
