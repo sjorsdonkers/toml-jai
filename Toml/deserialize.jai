@@ -55,43 +55,47 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
         // handle flags
         // make length safe
         struct_info := cast(*Type_Info_Struct) info;
-
-        // Check if union and tag
-        // members.count == 2
-        // union count == 1
-        // tag count == 1
-        // union.members.count == tag.members.count
-        if struct_info.members.count == 2 {
-            if struct_info.members[0].type.type == .ENUM &&
-                struct_info.members[1].type.type == .STRUCT {
-                tag_info := cast(*Type_Info_Enum) struct_info.members[0].type;
-                union_info := cast(*Type_Info_Struct) struct_info.members[1].type;
-                if union_info.textual_flags & .UNION {
-                    if union_info.members.count == tag_info.values.count {
-                        if toml.table.count != 1 {
-                            log_error("Exactly 1 field expected for sum-type %, got %", struct_info.name, toml.table.count);
-                            exit(1);
-                        }
-
-                        found, idx := array_find(tag_info.names, toml.table[0].key);
-                        if !found {
-                            log_error("String % is not a variant of sum-type %", toml.table[0].key, struct_info.name);
-                            exit(1);
-                        }
-
-                        tag_slot   := slot + struct_info.members[0].offset_in_bytes;
-                        set_enum_value(tag_slot, tag_info, idx);
-
-                        union_slot := slot + struct_info.members[1].offset_in_bytes;
-                        deserialize(toml.table[0].value, union_slot, union_info.members[idx].type, struct_info.name, union_info.members[idx].name); // TODO check debug names
-                        return;
-                    }
-                }
-
-            }
+        if struct_info.textual_flags & .UNION {
+            log_error("Union are not supported unless they are in a sum-type (struct with enum tag and union where union.members.count == tag.values.count)");
+            exit(1);
         }
 
+        sum_type :: (slot: *u8, struct_info: Type_Info_Struct, toml_table: []KeyValue) -> is_sumtype:bool {
+            if struct_info.members.count != 2 return false;
 
+            tag_idx :s64=---;
+            if struct_info.members[0].type.type == .ENUM && struct_info.members[1].type.type == .STRUCT      then tag_idx = 0;
+            else if struct_info.members[0].type.type == .STRUCT && struct_info.members[1].type.type == .ENUM then tag_idx = 1;
+            else return false;
+            union_idx := 1 - tag_idx;
+
+            tag_info   := cast(*Type_Info_Enum)  struct_info.members[tag_idx].type;
+            union_info := cast(*Type_Info_Struct)struct_info.members[union_idx].type;
+            if !union_info.textual_flags & .UNION return false;
+            // It's a sum-type!
+
+            if union_info.members.count != tag_info.values.count {
+                log_error("Sum-type expects each enum variant to match a union variant 1-to-1 got % tags and % union variants for sum-type %", tag_info.values.count, union_info.members.count, struct_info.name);
+                exit(1);
+            }
+            if toml_table.count != 1 {
+                log_error("Exactly 1 field expected for sum-type %, got %", struct_info.name, toml_table.count);
+                exit(1);
+            }
+            found, idx := array_find(tag_info.names, toml_table[0].key);
+            if !found {
+                log_error("String % is not a variant of sum-type %", toml_table[0].key, struct_info.name);
+                exit(1);
+            }
+
+            tag_slot   := slot + struct_info.members[tag_idx].offset_in_bytes;
+            set_enum_value(tag_slot, tag_info, idx);
+
+            union_slot := slot + struct_info.members[union_idx].offset_in_bytes;
+            deserialize(toml_table[0].value, union_slot, union_info.members[idx].type, toml_table[0].key, union_info.members[idx].name); // TODO check parent_name
+            return true;
+        }
+        if sum_type(slot, struct_info, toml.table) return;
 
         for member: struct_info.members {
             found := false;
@@ -99,7 +103,7 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
                 if it.key == member.name {
                     found = true;
                     member_slot := slot + member.offset_in_bytes;
-                    deserialize(it.value, member_slot, member.type, struct_info.name, member.name);
+                    deserialize(it.value, member_slot, member.type, parent_name, member.name); // TODO check parent_name
                     break;
                 }
             }

@@ -48,13 +48,15 @@ SUM :: #string DONE
 Apple = {a = 32, b = 'Y'}
 DONE
     Guy :: struct {
-        tag: enum {
-            Apple;
-            Orange;
-        };
         union {
             Apple: struct { a: u8; b: string;};
             Orange: string;
+            Banana: void;
+        };
+        tag: enum {
+            Apple;
+            Orange;
+            Banana;
         };
     }
     toml3 := Toml.deserialize(SUM, Guy);
