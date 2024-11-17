@@ -1,9 +1,10 @@
 
-deserialize :: (contents: string, $Target:Type=Value) -> Target {
+deserialize :: (contents: string, $Target: Type) -> Target {
     value := parse(contents);
     return deserialize(value, Target);
 }
 
+// NOTE: Allocated objects will have shared ownership by the value and the target
 deserialize :: (value: Value, $Target: Type) -> Target {
     target : Target;
     bytes := cast(*u8) *target;
@@ -54,6 +55,44 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
         // handle flags
         // make length safe
         struct_info := cast(*Type_Info_Struct) info;
+
+        // Check if union and tag
+        // members.count == 2
+        // union count == 1
+        // tag count == 1
+        // union.members.count == tag.members.count
+        if struct_info.members.count == 2 {
+            if struct_info.members[0].type.type == .ENUM &&
+                struct_info.members[1].type.type == .STRUCT {
+                tag_info := cast(*Type_Info_Enum) struct_info.members[0].type;
+                union_info := cast(*Type_Info_Struct) struct_info.members[1].type;
+                if union_info.textual_flags & .UNION {
+                    if union_info.members.count == tag_info.values.count {
+                        if toml.table.count != 1 {
+                            log_error("Exactly 1 field expected for sum-type %, got %", struct_info.name, toml.table.count);
+                            exit(1);
+                        }
+
+                        found, idx := array_find(tag_info.names, toml.table[0].key);
+                        if !found {
+                            log_error("String % is not a variant of sum-type %", toml.table[0].key, struct_info.name);
+                            exit(1);
+                        }
+
+                        tag_slot   := slot + struct_info.members[0].offset_in_bytes;
+                        set_enum_value(tag_slot, tag_info, idx);
+
+                        union_slot := slot + struct_info.members[1].offset_in_bytes;
+                        deserialize(toml.table[0].value, union_slot, union_info.members[idx].type, struct_info.name, union_info.members[idx].name); // TODO check debug names
+                        return;
+                    }
+                }
+
+            }
+        }
+
+
+
         for member: struct_info.members {
             found := false;
             for toml.table {
@@ -65,7 +104,7 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
                 }
             }
             if !found {
-                log_error("Error: missing field %.%", struct_info.name, member.name);
+                log_error("Missing field %.%", struct_info.name, member.name);
                 exit(1);
             }
         }

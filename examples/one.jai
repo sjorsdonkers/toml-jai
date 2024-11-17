@@ -1,48 +1,65 @@
 
 main :: () {
-    contents := read_entire_file("toml.toml");
-    heap := create_heap(context.allocator);
-    defer destroy_heap(heap);
-    toml := Toml.deserialize(contents,, allocator=heap);
-    print_value(toml);
+//     contents := read_entire_file("toml.toml");
+//     heap := create_heap(context.allocator);
+//     defer destroy_heap(heap);
+//     toml := Toml.deserialize(contents, Toml.Value,, allocator=heap);
+//     print_value(toml);
 
-THE_STRING :: #string DONE
-orange = false
-banana = 23.3
-apple = {a = 32, b = 'Y', c = 'Y'}
-kiwi = [
-    {q = 2},
-    {q = -3},
-    {q = 4},
-]
-horse = "Mai"
+// THE_STRING :: #string DONE
+// orange = false
+// banana = 23.3
+// apple = {a = 32, b = 'Y', c = 'Y'}
+// kiwi = [
+//     {q = 2},
+//     {q = -3},
+//     {q = 4},
+// ]
+// horse = "Mai"
+// DONE
+//     Hello :: enum {
+//         X;
+//         Y;
+//     }
+//     Inner :: struct {
+//         a: u8;
+//         b: string;
+//         c: Hello;
+//     }
+//     Q :: struct {
+//         q: s16;
+//     }
+//     Filename :: #type,distinct string;
+//     MyStruct :: struct {
+//         orange: bool;
+//         banana: float;
+//         apple : Inner;
+//         kiwi  : [..] Q;
+//         horse :Filename;
+//     }
+
+//     toml2 := Toml.deserialize(THE_STRING, Toml.Value);
+//     print_value(toml2);
+//     print("\n");
+//     my_struct := Toml.deserialize(toml2, MyStruct);
+//     print("MyStruct: %\n", my_struct);
+
+SUM :: #string DONE
+Apple = {a = 32, b = 'Y'}
 DONE
-    Hello :: enum {
-        X;
-        Y;
+    Guy :: struct {
+        tag: enum {
+            Apple;
+            Orange;
+        };
+        union {
+            Apple: struct { a: u8; b: string;};
+            Orange: string;
+        };
     }
-    Inner :: struct {
-        a: u8;
-        b: string;
-        c: Hello;
-    }
-    Q :: struct {
-        q: s16;
-    }
-    Filename       :: #type,distinct string;
-    MyStruct :: struct {
-        orange: bool;
-        banana: float;
-        apple : Inner;
-        kiwi  : [..] Q;
-        horse :Filename;
-    }
-
-    toml2 := Toml.deserialize(THE_STRING);
-    print_value(toml2);
-    print("\n");
-    my_struct := Toml.deserialize(toml2, MyStruct);
-    print("MyStruct: %\n", my_struct);
+    toml3 := Toml.deserialize(SUM, Guy);
+    print("toml3: %\n", toml3);
+    print("toml3: %\n", toml3.Apple);
 }
 
 Toml :: #import, file "../Toml/module.jai";
