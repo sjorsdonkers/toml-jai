@@ -48,7 +48,7 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
         // TODO deepcopy to callers allocator
         <<cast(*string) slot = toml.string_value;
     // case .POINTER; // hmm put in permanent memory and point to the value?
-    case .VOID; // Not used for void in sum-types
+    case .VOID;
         expect(toml.type, .TABLE, parent_name, name);
         if toml.table.count != 0 {
             log_error("Expected empty table for %.%, got %", parent_name, name, toml.table.count);
@@ -63,69 +63,137 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
             log_error("Union are not supported unless they are in a sum-type (struct with enum tag and union where union.members.count == tag.values.count)");
             exit(1);
         }
+        collect_members :: (struct_members:*[..]Type_Info_Struct_Member, struct_info:*Type_Info_Struct) {
+            for member: struct_info.members {
+                if member.flags & .CONSTANT { continue; }
+                if member.flags & .USING {
+                    assert(member.type.type == .STRUCT);
+                    collect_members(struct_members, cast(*Type_Info_Struct) member.type);
+                } else { // Don't add the using itself
+                    array_add(struct_members, member);
+                }
+            }
+        }
+        struct_members: [..]Type_Info_Struct_Member;
+        collect_members(*struct_members, struct_info);
 
-        sum_type :: (slot: *u8, struct_info: Type_Info_Struct, toml_table: []KeyValue) -> is_sumtype:bool {
-            if struct_info.members.count != 2 return false;
+        sum_type :: (slot: *u8, struct_members: []Type_Info_Struct_Member, struct_name:string, toml: Value) -> is_sumtype:bool {
+            if struct_members.count != 2 return false;
 
             tag_idx :s64=---;
-            if struct_info.members[0].type.type == .ENUM && struct_info.members[1].type.type == .STRUCT      then tag_idx = 0;
-            else if struct_info.members[0].type.type == .STRUCT && struct_info.members[1].type.type == .ENUM then tag_idx = 1;
+            if struct_members[0].type.type == .ENUM && struct_members[1].type.type == .STRUCT      then tag_idx = 0;
+            else if struct_members[0].type.type == .STRUCT && struct_members[1].type.type == .ENUM then tag_idx = 1;
             else return false;
             union_idx := 1 - tag_idx;
 
-            tag_info   := cast(*Type_Info_Enum)  struct_info.members[tag_idx].type;
-            union_info := cast(*Type_Info_Struct)struct_info.members[union_idx].type;
+            tag_info   := cast(*Type_Info_Enum)  struct_members[tag_idx].type;
+            union_info := cast(*Type_Info_Struct)struct_members[union_idx].type;
             if !union_info.textual_flags & .UNION return false;
             // It's a sum-type!
 
-            tag_slot   := slot + struct_info.members[tag_idx].offset_in_bytes;
-            union_slot := slot + struct_info.members[union_idx].offset_in_bytes;
+            tag_slot   := slot + struct_members[tag_idx].offset_in_bytes;
+            union_slot := slot + struct_members[union_idx].offset_in_bytes;
             if union_info.members.count != tag_info.values.count {
-                log_error("Sum-type expects each enum variant to match a union variant 1-to-1 got % tags and % union variants for sum-type %", tag_info.values.count, union_info.members.count, struct_info.name);
+                log_error("Sum-type expects each enum variant to match a union variant 1-to-1 got % tags and % union variants for sum-type %", tag_info.values.count, union_info.members.count, struct_name);
                 exit(1);
             }
-            if toml_table.count == 0 {
-                void_idx := -1;
-                for union_info.members { if it.type.type == .VOID { void_idx = it_index; break; }} // Picks the 1st void type
-                if void_idx == -1 {
-                    log_error("Sum-type % does not have an optional (void) variant", struct_info.name); // TODO name
+
+            find_void_index ::(union_info:*Type_Info_Struct)-> found:bool, index:s64, is_wrapper_void:bool { // TODO ptrs
+                for union_info.members {
+                    if it.type.type == .VOID      // Picks the 1st void type
+                    || it.type.type == .STRUCT {  // Check if type wrapped void like Sum_Type.Option
+                        variant_info := cast(*Type_Info_Struct) it.type; // TODO assert members[0].name is value
+                        if variant_info.members.count == 1 && variant_info.members[0].type.type == .VOID return true, it_index, it.type.type == .STRUCT;
+                    }
+                }
+                return false, -1, false;
+            }
+
+            // if void with empty table it can be handled as normal void
+            if toml.type == .TABLE && toml.table.count == 0 { // TODO search void also if union_info.members.count == 2 handle as optional which does not introduce new names for some / none
+                found, void_idx := find_void_index(union_info);
+                if !found {
+                    log_error("Sum-type % does not have an optional (void) variant", struct_name); // TODO name
                     exit(1);
                 }
                 set_enum_value(tag_slot, tag_info, void_idx);
                 return true; // void does not have bytes to set
             }
-            if toml_table.count != 1 {
-                log_error("Exactly 1 field expected for sum-type %, got %", struct_info.name, toml_table.count);
+            if union_info.members.count == 2 { // Search void also if union_info.members.count == 2 handle as optional which does not introduce new names for some / none
+                found, void_idx, is_wrapped_void := find_void_index(union_info);
+                if found {
+                    some_idx : = 1 - void_idx;
+                    set_enum_value(tag_slot, tag_info, some_idx);
+                    if is_wrapped_void {
+                         if union_info.members[some_idx].type.type == .STRUCT {
+                            variant_info := cast(*Type_Info_Struct) union_info.members[some_idx].type;
+                            if variant_info.members.count == 1 { // TODO assert members[0].name is value
+                                deserialize(toml, union_slot, variant_info.members[0].type, tag_info.names[some_idx], union_info.members[some_idx].name); // TODO check parent_name
+                                return true;
+                            }
+                        } // Not sure what this is, just process asnormal instead
+                    } else {
+                        deserialize(toml, union_slot, union_info.members[some_idx].type, tag_info.names[some_idx], union_info.members[some_idx].name); // TODO check parent_name
+                        return true;
+                    }
+                }
+            }
+            log("toml: %", toml);
+            assert(toml.type == .TABLE); // I think always now
+            if toml.table.count != 1 {
+                log_error("Exactly 1 field expected for sum-type %, got %", struct_name, toml.table.count);
                 exit(1);
             }
-            found, idx := array_find(tag_info.names, toml_table[0].key);
+            found, idx := array_find(tag_info.names, toml.table[0].key);
             if !found {
-                log_error("String % is not a variant of sum-type %", toml_table[0].key, struct_info.name);
+                log_error("String % is not a variant of sum-type % %", toml.table[0].key, struct_name, tag_info.names);
                 exit(1);
             }
 
             set_enum_value(tag_slot, tag_info, idx);
-            deserialize(toml_table[0].value, union_slot, union_info.members[idx].type, tag_info.names[idx], union_info.members[idx].name); // TODO check parent_name
+            deserialize(toml.table[0].value, union_slot, union_info.members[idx].type, tag_info.names[idx], union_info.members[idx].name); // TODO check parent_name
             return true;
         }
-        if sum_type(slot, struct_info, toml.table) return;
+        if sum_type(slot, struct_members, struct_info.name, toml) return; // TODO handle using fields as normal fields
 
-        for member: struct_info.members {
-            found := false;
+        for member: struct_members {
+            found := false; // TODO handle using fields as normal fields
+            log("mamber: %", member.name);
             for toml.table {
+                log("it.key: %", it.key);
                 if it.key == member.name {
                     found = true;
                     member_slot := slot + member.offset_in_bytes;
+                    log("HEREoooo");
+                    if member.type.type == .STRUCT {
+                        member_struct_info := cast(*Type_Info_Struct) member.type;
+                        member_struct_members: [..]Type_Info_Struct_Member;
+                        collect_members(*member_struct_members, member_struct_info);
+
+                        if sum_type(member_slot, member_struct_members, member_struct_info.name, it.value) break; // TODO prob need to move up, make sure Some does not show up in toml
+                    }
+                    log("HEREoooo1");
+
                     deserialize(it.value, member_slot, member.type, parent_name, member.name); // TODO check parent_name
+                    log("HEREoooo3");
                     break;
                 }
             }
             if !found && member.type.type != .VOID {
+                if member.type.type == .STRUCT {
+                    member_struct_info := cast(*Type_Info_Struct) member.type;
+                    member_slot := slot + member.offset_in_bytes;
+                    member_struct_members: [..]Type_Info_Struct_Member;
+                    collect_members(*member_struct_members, member_struct_info);
+                    empty_table := Value.{type=.TABLE, array=resizable(Value.[])}; // TODO
+                    if sum_type(member_slot, member_struct_members, member_struct_info.name, empty_table) continue; // TODO prob need to move up, make sure Some does not show up in toml
+                }
+
                 log_error("Missing field %.%", struct_info.name, member.name);
                 exit(1);
             }
         }
-    case .ARRAY;
+    case .ARRAY; // TODO check array of options
         expect(toml.type, .ARRAY, parent_name, name);
         array_info := cast(*Type_Info_Array) info;
         element_type := array_info.element_type;
