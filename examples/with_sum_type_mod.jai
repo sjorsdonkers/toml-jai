@@ -8,6 +8,8 @@ main :: () {
     }
     none := Toml.deserialize("nom = 'Tim'", Expect);
     print("none: %\n", none);
+    explicit_none := Toml.deserialize("nom = 'Tim'\n[expected]", Expect);
+    print("none: %\n", explicit_none);
     some := Toml.deserialize("nom = 'Tim'\nexpected = 23", Expect);
     print("some: %\n", some);
     print("expected: %\n", Sum_Type.unwrap(some.expected)); // TODO how to print these nicely easily?

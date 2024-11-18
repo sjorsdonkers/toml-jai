@@ -56,8 +56,6 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
         }
     case .STRUCT;
         expect(toml.type, .TABLE, parent_name, name);
-        // handle offset_into_constant_storage
-        // handle flags
         struct_info := cast(*Type_Info_Struct) info;
         if struct_info.textual_flags & .UNION {
             log_error("Union are not supported unless they are in a sum-type (struct with enum tag and union where union.members.count == tag.values.count)");
@@ -68,10 +66,13 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
                 if member.flags & .CONSTANT { continue; }
                 if member.flags & .USING {
                     assert(member.type.type == .STRUCT);
-                    collect_members(struct_members, cast(*Type_Info_Struct) member.type);
-                } else { // Don't add the using itself
-                    array_add(struct_members, member);
+                    sub_member:= cast(*Type_Info_Struct) member.type;
+                    if !(sub_member.textual_flags & .UNION) { // Don't flatten unions
+                        collect_members(struct_members, sub_member);
+                        continue; // Don't add the using itself
+                    }
                 }
+                array_add(struct_members, member);
             }
         }
         struct_members: [..]Type_Info_Struct_Member;
@@ -89,36 +90,14 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
             tag_info   := cast(*Type_Info_Enum)  struct_members[tag_idx].type;
             union_info := cast(*Type_Info_Struct)struct_members[union_idx].type;
             if !union_info.textual_flags & .UNION return false;
-            // It's a sum-type!
-
-            tag_slot   := slot + struct_members[tag_idx].offset_in_bytes;
-            union_slot := slot + struct_members[union_idx].offset_in_bytes;
             if union_info.members.count != tag_info.values.count {
                 log_error("Sum-type expects each enum variant to match a union variant 1-to-1 got % tags and % union variants for sum-type %", tag_info.values.count, union_info.members.count, struct_name);
                 exit(1);
             }
+            // It's a sum-type!
 
-            // Flatten variants of the union, only needed for Sum_Type support
-            collect_union_members :: (union_info:*Type_Info_Struct) -> [..]Type_Info_Struct_Member {
-                union_members: [..]Type_Info_Struct_Member;
-                array_reserve(*union_members, union_info.members.count);
-                for member: union_info.members {
-                    if member.type.type == .STRUCT {  // Check if type is a wrapped Sum_Type variant
-                        variant_info := cast(*Type_Info_Struct) member.type; // TODO assert members[0].name is value
-                        if variant_info.members.count == 1 && variant_info.members[0].name == "value" {
-                            array_add(*union_members, variant_info.members[0]);
-                            continue;
-                        }
-                    }
-                    array_add(*union_members, member);
-                }
-                return union_members;
-            }
-            find_void_index ::(union_members: []Type_Info_Struct_Member)-> found:bool, index:s64 {
-                // Picks the 1st void type
-                for union_members {  if it.type.type == .VOID { return true, it_index; } }
-                return false, -1;
-            }
+            tag_slot   := slot + struct_members[tag_idx].offset_in_bytes;
+            union_slot := slot + struct_members[union_idx].offset_in_bytes;
             union_members := collect_union_members(union_info);
 
             // Handle empty table as void/none NOTE: if member was missing from toml an empty table is inserted
@@ -142,8 +121,10 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
                     return true;
                 }
             }
-            log("toml: %", toml);
-            assert(toml.type == .TABLE); // I think always now
+            if toml.type != .TABLE {
+                log_error("A value is provided without naming the variant first for sum-type %", struct_name); // TODO name
+                exit(1);
+            }
             if toml.table.count != 1 {
                 log_error("Exactly 1 field expected for sum-type %, got %", struct_name, toml.table.count);
                 exit(1);
@@ -162,24 +143,18 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
 
         for member: struct_members {
             found := false; // TODO handle using fields as normal fields
-            log("mamber: %", member.name);
             for toml.table {
-                log("it.key: %", it.key);
                 if it.key == member.name {
                     found = true;
                     member_slot := slot + member.offset_in_bytes;
-                    log("HEREoooo");
                     if member.type.type == .STRUCT {
                         member_struct_info := cast(*Type_Info_Struct) member.type;
                         member_struct_members: [..]Type_Info_Struct_Member;
                         collect_members(*member_struct_members, member_struct_info);
-
                         if sum_type(member_slot, member_struct_members, member_struct_info.name, it.value) break; // TODO prob need to move up, make sure Some does not show up in toml
                     }
-                    log("HEREoooo1");
 
                     deserialize(it.value, member_slot, member.type, parent_name, member.name); // TODO check parent_name
-                    log("HEREoooo3");
                     break;
                 }
             }
@@ -265,6 +240,28 @@ expect :: inline (given: Value.Type, expected: Value.Type, struct_name: string, 
         log_error("Wrong type for %.%, expected %, got % ", struct_name, member_name, expected, given);
         exit(1);
     }
+}
+
+// Flatten variants of the union, only needed for Sum_Type support
+collect_union_members :: (union_info:*Type_Info_Struct) -> [..]Type_Info_Struct_Member {
+    union_members: [..]Type_Info_Struct_Member;
+    array_reserve(*union_members, union_info.members.count);
+    for member: union_info.members {
+        if member.type.type == .STRUCT {  // Check if type is a wrapped Sum_Type variant
+            variant_info := cast(*Type_Info_Struct) member.type; // TODO assert members[0].name is value
+            if variant_info.members.count == 1 && variant_info.members[0].name == "value" {
+                array_add(*union_members, variant_info.members[0]);
+                continue;
+            }
+        }
+        array_add(*union_members, member);
+    }
+    return union_members;
+}
+find_void_index ::(union_members: []Type_Info_Struct_Member)-> found:bool, index:s64 {
+    // Picks the 1st void type
+    for union_members {  if it.type.type == .VOID { return true, it_index; } }
+    return false, -1;
 }
 
 #load "parser.jai";
