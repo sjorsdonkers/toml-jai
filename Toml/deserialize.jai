@@ -98,20 +98,32 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
                 exit(1);
             }
 
-            find_void_index ::(union_info:*Type_Info_Struct)-> found:bool, index:s64, is_wrapper_void:bool { // TODO ptrs
-                for union_info.members {
-                    if it.type.type == .VOID      // Picks the 1st void type
-                    || it.type.type == .STRUCT {  // Check if type wrapped void like Sum_Type.Option
-                        variant_info := cast(*Type_Info_Struct) it.type; // TODO assert members[0].name is value
-                        if variant_info.members.count == 1 && variant_info.members[0].type.type == .VOID return true, it_index, it.type.type == .STRUCT;
+            // Flatten variants of the union, only needed for Sum_Type support
+            collect_union_members :: (union_info:*Type_Info_Struct) -> [..]Type_Info_Struct_Member {
+                union_members: [..]Type_Info_Struct_Member;
+                array_reserve(*union_members, union_info.members.count);
+                for member: union_info.members {
+                    if member.type.type == .STRUCT {  // Check if type is a wrapped Sum_Type variant
+                        variant_info := cast(*Type_Info_Struct) member.type; // TODO assert members[0].name is value
+                        if variant_info.members.count == 1 && variant_info.members[0].name == "value" {
+                            array_add(*union_members, variant_info.members[0]);
+                            continue;
+                        }
                     }
+                    array_add(*union_members, member);
                 }
-                return false, -1, false;
+                return union_members;
             }
+            find_void_index ::(union_members: []Type_Info_Struct_Member)-> found:bool, index:s64 {
+                // Picks the 1st void type
+                for union_members {  if it.type.type == .VOID { return true, it_index; } }
+                return false, -1;
+            }
+            union_members := collect_union_members(union_info);
 
-            // if void with empty table it can be handled as normal void
-            if toml.type == .TABLE && toml.table.count == 0 { // TODO search void also if union_info.members.count == 2 handle as optional which does not introduce new names for some / none
-                found, void_idx := find_void_index(union_info);
+            // Handle empty table as void/none NOTE: if member was missing from toml an empty table is inserted
+            if toml.type == .TABLE && toml.table.count == 0 {
+                found, void_idx := find_void_index(union_members);
                 if !found {
                     log_error("Sum-type % does not have an optional (void) variant", struct_name); // TODO name
                     exit(1);
@@ -119,23 +131,15 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
                 set_enum_value(tag_slot, tag_info, void_idx);
                 return true; // void does not have bytes to set
             }
-            if union_info.members.count == 2 { // Search void also if union_info.members.count == 2 handle as optional which does not introduce new names for some / none
-                found, void_idx, is_wrapped_void := find_void_index(union_info);
+            // Special case for Option type defined as a sum-type with 2 members 1 being void.
+            // The TOML is not expected to contain the Option tags some/none.
+            if union_members.count == 2 { // Search void also if union_members.count == 2 handle as optional which does not introduce new names for some / none
+                found, void_idx := find_void_index(union_members);
                 if found {
                     some_idx : = 1 - void_idx;
                     set_enum_value(tag_slot, tag_info, some_idx);
-                    if is_wrapped_void {
-                         if union_info.members[some_idx].type.type == .STRUCT {
-                            variant_info := cast(*Type_Info_Struct) union_info.members[some_idx].type;
-                            if variant_info.members.count == 1 { // TODO assert members[0].name is value
-                                deserialize(toml, union_slot, variant_info.members[0].type, tag_info.names[some_idx], union_info.members[some_idx].name); // TODO check parent_name
-                                return true;
-                            }
-                        } // Not sure what this is, just process asnormal instead
-                    } else {
-                        deserialize(toml, union_slot, union_info.members[some_idx].type, tag_info.names[some_idx], union_info.members[some_idx].name); // TODO check parent_name
-                        return true;
-                    }
+                    deserialize(toml, union_slot, union_members[some_idx].type, tag_info.names[some_idx], union_info.members[some_idx].name); // TODO check parent_name
+                    return true;
                 }
             }
             log("toml: %", toml);
@@ -151,7 +155,7 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
             }
 
             set_enum_value(tag_slot, tag_info, idx);
-            deserialize(toml.table[0].value, union_slot, union_info.members[idx].type, tag_info.names[idx], union_info.members[idx].name); // TODO check parent_name
+            deserialize(toml.table[0].value, union_slot, union_members[idx].type, tag_info.names[idx], union_info.members[idx].name); // TODO check parent_name
             return true;
         }
         if sum_type(slot, struct_members, struct_info.name, toml) return; // TODO handle using fields as normal fields
