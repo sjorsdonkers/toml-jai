@@ -219,30 +219,33 @@ deserialize_sumtype :: (toml: Value, slot: *u8, struct_members: []Type_Info_Stru
 deserialize_option :: (toml: Value, member_slot: *u8, member_info: *Type_Info) -> is_sum_type:bool {
     if member_info.type == .STRUCT {
         member_struct_info := cast(*Type_Info_Struct) member_info;
-        member_struct_members: [..]Type_Info_Struct_Member;
-        collect_members(*member_struct_members, member_struct_info);
+        member_struct_members := collect_members(member_struct_info);
         return deserialize_sumtype(toml, member_slot, member_struct_members, member_struct_info.name);
     }
     return false;
 }
 
+// Collect all variables members and flattens non-union using structs
 collect_members :: (struct_info:*Type_Info_Struct) -> [..]Type_Info_Struct_Member {
     struct_members: [..]Type_Info_Struct_Member;
-    collect_members(*struct_members, struct_info);
+    collect_members(*struct_members, struct_info, 0);
     return struct_members;
 }
-collect_members :: (struct_members:*[..]Type_Info_Struct_Member, struct_info:*Type_Info_Struct) {
+collect_members :: (struct_members:*[..]Type_Info_Struct_Member, struct_info:*Type_Info_Struct, offset_in_bytes: s64) {
     for member: struct_info.members {
         if member.flags & .CONSTANT { continue; }
         if member.flags & .USING {
-            assert(member.type.type == .STRUCT);
-            sub_member:= cast(*Type_Info_Struct) member.type;
-            if !(sub_member.textual_flags & .UNION) { // Don't flatten unions
-                collect_members(struct_members, sub_member);
-                continue; // Don't add the using itself
+            if (member.type.type == .STRUCT) { // NOTE: Enums can be using too, but they don't have members to flatten
+                sub_member:= cast(*Type_Info_Struct) member.type;
+                if !(sub_member.textual_flags & .UNION) { // Don't flatten unions
+                    collect_members(struct_members, sub_member, offset_in_bytes + member.offset_in_bytes);
+                    continue; // Don't add the using itself
+                }
             }
         }
+
         array_add(struct_members, member);
+        (<<struct_members)[struct_members.count-1].offset_in_bytes += offset_in_bytes;
     }
 }
 
@@ -252,7 +255,7 @@ collect_union_members :: (union_info:*Type_Info_Struct) -> [..]Type_Info_Struct_
     array_reserve(*union_members, union_info.members.count);
     for member: union_info.members {
         if member.type.type == .STRUCT {  // Check if type is a wrapped Sum_Type variant
-            variant_info := cast(*Type_Info_Struct) member.type; // TODO assert members[0].name is value
+            variant_info := cast(*Type_Info_Struct) member.type;
             if variant_info.members.count == 1 && variant_info.members[0].name == "value" {
                 array_add(*union_members, variant_info.members[0]);
                 continue;
@@ -262,10 +265,15 @@ collect_union_members :: (union_info:*Type_Info_Struct) -> [..]Type_Info_Struct_
     }
     return union_members;
 }
+
+// Find the index of the void member in the union, returns false if there are multiple voids
 find_void_index ::(union_members: []Type_Info_Struct_Member)-> found:bool, index:s64 {
-    // Picks the 1st void type
-    for union_members {  if it.type.type == .VOID { return true, it_index; } }
-    return false, -1;
+    index := -1;
+    for union_members {  if it.type.type == .VOID {
+        if index != -1 { return false, -1; } // More than one void
+        index = it_index;
+    }}
+    return index != -1, index;
 }
 
 #load "parser.jai";
