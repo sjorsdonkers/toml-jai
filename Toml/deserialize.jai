@@ -55,6 +55,7 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
             exit(1);
         }
     case .STRUCT;
+        if deserialize_option(toml, slot, info) return; // For Option.Some values we don't expect the TABLE of the Option itself
         expect(toml.type, .TABLE, parent_name, name);
         struct_info := cast(*Type_Info_Struct) info;
         if struct_info.textual_flags & .UNION {
@@ -71,7 +72,6 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
                 if it.key == member.name {
                     found = true;
                     member_slot := slot + member.offset_in_bytes;
-                    if deserialize_option(it.value, member_slot, member.type) break; // Some does expect its tag
                     deserialize(it.value, member_slot, member.type, parent_name, member.name); // TODO check parent_name
                     break;
                 }
@@ -216,10 +216,10 @@ deserialize_sumtype :: (toml: Value, slot: *u8, struct_members: []Type_Info_Stru
     deserialize(toml.table[0].value, union_slot, union_members[idx].type, tag_info.names[idx], union_info.members[idx].name); // TODO check parent_name
     return true;
 }
-deserialize_option :: (toml: Value, member_slot: *u8, member_info: *Type_Info) -> is_sum_type:bool {
+deserialize_option :: (toml: Value, member_slot: *u8, member_info: *Type_Info) -> is_sum_type:bool { // TODO sep. is sum deser some deser none
     if member_info.type == .STRUCT {
         member_struct_info := cast(*Type_Info_Struct) member_info;
-        member_struct_members := collect_members(member_struct_info);
+        member_struct_members := collect_members(member_struct_info); // @perf cache this and is_sumtype/is_option
         return deserialize_sumtype(toml, member_slot, member_struct_members, member_struct_info.name);
     }
     return false;
