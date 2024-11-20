@@ -3,7 +3,7 @@ main :: () {
     contents := read_entire_file("toml.toml");
     heap := create_heap(context.allocator);
     defer destroy_heap(heap);
-    toml := Toml.deserialize(contents,, allocator=heap);
+    toml := Toml.deserialize(contents, Toml.Value,, allocator=heap);
     print_value(toml);
 
 THE_STRING :: #string DONE
@@ -29,7 +29,7 @@ DONE
     Q :: struct {
         q: s16;
     }
-    Filename       :: #type,distinct string;
+    Filename :: #type,distinct string;
     MyStruct :: struct {
         orange: bool;
         banana: float;
@@ -38,11 +38,34 @@ DONE
         horse :Filename;
     }
 
-    toml2 := Toml.deserialize(THE_STRING);
+    toml2 := Toml.deserialize(THE_STRING, Toml.Value);
     print_value(toml2);
     print("\n");
     my_struct := Toml.deserialize(toml2, MyStruct);
     print("MyStruct: %\n", my_struct);
+
+    Guy :: struct {
+        union {
+            Apple: struct { a: u8; b: string;};
+            Orange: string;
+            Banana: void;
+        };
+        tag: enum {
+            Apple;
+            Orange;
+            Banana;
+        };
+    }
+    void_banana := Toml.deserialize("", Guy);
+    print("void_banana: %\n", void_banana);
+    print("void_banana: %\n", void_banana.Banana);
+
+    SUM :: #string DONE
+Apple = {a = 32, b = 'Y'}
+DONE
+    apple := Toml.deserialize(SUM, Guy);
+    print("void_banana: %\n", apple);
+    print("void_banana: %\n", apple.Apple);
 }
 
 Toml :: #import, file "../Toml/module.jai";
