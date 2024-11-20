@@ -4,7 +4,8 @@ deserialize :: (contents: string, $Target: Type) -> Target {
     return deserialize(value, Target);
 }
 
-// NOTE: Allocated objects will have shared ownership by the value and the target
+// NOTE: Allocated value objects will have shared ownership by the value and the target
+// Reference objects (pointers, array views, any) will be reallocated(?)
 deserialize :: (value: Value, $Target: Type) -> Target {
     target : Target;
     bytes := cast(*u8) *target;
@@ -17,7 +18,7 @@ deserialize :: (value: Value, $Target: Type) -> Target {
 
 deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="", name:string="") {
     value_info :: type_info(Value);
-    if info == value_info {
+    if info == value_info { // If encounter a Toml.Value at any point just copy it
         <<cast(*Value) slot = toml;
         return;
     }
@@ -141,7 +142,7 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
     case .OVERLOAD_SET;         #through;
     case .POLYMORPHIC_VARIABLE; #through;
     case .TYPE;                 #through;
-    case .CODE;                 #through; // Is this possible?
+    case .CODE;                 #through;
     case;
         log_error("Deserialization to type % is not supported", info.type);
         exit(1);
