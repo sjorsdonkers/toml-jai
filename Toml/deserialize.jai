@@ -23,7 +23,7 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
         return;
     }
 
-    if info.type == { // #complete
+    if #complete info.type == {
     case .INTEGER;
         expect(toml.type, .INT, parent_name, name);
         // TODO support u64, delay parsing till here so we known wheter to parse signed or unsigned / or store u64 as well
@@ -127,7 +127,35 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
                 fill_array(toml.array, array.data, element_type, name);
                 array.count = toml.array.count;
         }
-    // case .ANY; // Probably similar to .POINTER
+    case .ANY;
+        any_value := cast(*Any_Struct) slot;
+
+        homogeneous_array_info :: (array: []Value) -> is_same_type:bool, *Type_Info {
+            if array.count == 0 { return false, null; }
+            first_type := array[0].type;
+            if first_type == .ARRAY || first_type == .TABLE { return false, null; } // Not going down multiple levels
+            for array { if it.type != first_type { return false, null; }}
+            if first_type == {
+            case .BOOL;   return true, type_info([]type_of(Value.bool_value));
+            case .INT;    return true, type_info([]type_of(Value.int_value));
+            case .FLOAT;  return true, type_info([]type_of(Value.float_value));
+            case .STRING; return true, type_info([]type_of(Value.string_value));
+            }
+            return false, null;
+        }
+
+        if #complete toml.type == {
+        case .BOOL;   any_value.type = type_info(type_of(Value.bool_value));
+        case .INT;    any_value.type = type_info(type_of(Value.int_value));
+        case .FLOAT;  any_value.type = type_info(type_of(Value.float_value));
+        case .STRING; any_value.type = type_info(type_of(Value.string_value));
+        case .ARRAY;
+            is_same, array_type := homogeneous_array_info(toml.array);
+            any_value.type = ifx is_same then array_type else type_info(type_of(Value.array));
+        case .TABLE;  any_value.type = type_info(type_of(Value.table));
+        }
+        any_value.value_pointer = alloc(any_value.type.runtime_size);
+        deserialize(toml, any_value.value_pointer, any_value.type, parent_name, name);
     case .ENUM;
         enum_info := cast(*Type_Info_Enum) info;
         if toml.type == {
