@@ -23,7 +23,7 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
         return;
     }
 
-    if info.type == { // #complete
+    if #complete info.type == {
     case .INTEGER;
         expect(toml.type, .INT, parent_name, name);
         // TODO support u64, delay parsing till here so we known wheter to parse signed or unsigned / or store u64 as well
@@ -48,7 +48,11 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
         expect(toml.type, .STRING, parent_name, name);
         // TODO deepcopy to callers allocator
         <<cast(*string) slot = toml.string_value;
-    // case .POINTER; // hmm put in permanent memory and point to the value?
+    case .POINTER;
+        pointer_info := cast(*Type_Info_Pointer) info;
+        memory := alloc(pointer_info.pointer_to.runtime_size);
+        <<cast(**u8)slot = memory;
+        deserialize(toml, memory, pointer_info.pointer_to, parent_name, name);
     case .VOID;
         expect(toml.type, .TABLE, parent_name, name);
         if toml.table.count != 0 {
@@ -66,6 +70,12 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
 
         struct_members := collect_members(struct_info);
         if deserialize_sumtype(toml, slot, struct_members, struct_info.name) return;
+
+        // We could initialize all members and let it be OK if some are not in the TOML
+        // However TOML text files are not compiled and much more prone to typos.
+        // As such for now we require the user to be explicit about which struct members are optional with Option.
+        // Also, I do not known how to detect which members have an explict default value and which do not.
+        // if struct_info.initializer then struct_info.initializer(memory); else just memset zeros
 
         for member: struct_members {
             found := false;
@@ -90,30 +100,62 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
         expect(toml.type, .ARRAY, parent_name, name);
         array_info := cast(*Type_Info_Array) info;
         element_type := array_info.element_type;
+
+        fill_array :: (toml_array: []Value, slot: *u8, item_info: *Type_Info, parent_name:string) {
+            for idx: 0..toml_array.count-1 {
+                item_slot := slot + item_info.runtime_size * idx;
+                deserialize(toml_array[idx], item_slot, item_info, parent_name, "[item]");
+            }
+        }
+
         if array_info.array_type == {
             case .FIXED;
                 if toml.array.count != array_info.array_count {
                     log_error("Fixed array %.% expected % items, got %", parent_name, name, array_info.array_count, toml.array.count);
                     exit(1);
                 }
-                for idx: 0..array_info.array_count-1 {
-                    array_slot := slot + element_type.runtime_size * idx;
-                    deserialize(toml.array[idx], array_slot, element_type, name, "[item]");
-                }
+                fill_array(toml.array, slot, element_type, name);
             case .VIEW;
-                // TODO Same as POINTER
-                log_error("Deserialization to type ARRAY VIEW is not supported yet");
-                exit(1);
+                memory := alloc(toml.array.count * element_type.runtime_size);
+                fill_array(toml.array, memory, element_type, name);
+                array := cast(*[..] u8) slot;
+                array.data = memory;
+                array.count = toml.array.count;
             case .RESIZABLE;
                 array := cast(*[..] u8) slot; // We are unable to write the type here (needs to be constant), so just use u8 for now
                 array_reserve(array, toml.array.count * element_type.runtime_size);
-                for idx: 0..toml.array.count-1 {
-                    array_slot := array.data + element_type.runtime_size * idx;
-                    deserialize(toml.array[idx], array_slot, element_type, name, "[item]");
-                }
+                fill_array(toml.array, array.data, element_type, name);
                 array.count = toml.array.count;
         }
-    // case .ANY; // Probably similar to .POINTER
+    case .ANY;
+        any_value := cast(*Any_Struct) slot;
+
+        homogeneous_array_info :: (array: []Value) -> is_same_type:bool, *Type_Info {
+            if array.count == 0 { return false, null; }
+            first_type := array[0].type;
+            if first_type == .ARRAY || first_type == .TABLE { return false, null; } // Not going down multiple levels
+            for array { if it.type != first_type { return false, null; }}
+            if first_type == {
+            case .BOOL;   return true, type_info([]type_of(Value.bool_value));
+            case .INT;    return true, type_info([]type_of(Value.int_value));
+            case .FLOAT;  return true, type_info([]type_of(Value.float_value));
+            case .STRING; return true, type_info([]type_of(Value.string_value));
+            }
+            return false, null;
+        }
+
+        if #complete toml.type == {
+        case .BOOL;   any_value.type = type_info(type_of(Value.bool_value));
+        case .INT;    any_value.type = type_info(type_of(Value.int_value));
+        case .FLOAT;  any_value.type = type_info(type_of(Value.float_value));
+        case .STRING; any_value.type = type_info(type_of(Value.string_value));
+        case .ARRAY;
+            is_same, array_type := homogeneous_array_info(toml.array);
+            any_value.type = ifx is_same then array_type else type_info(type_of(Value.array));
+        case .TABLE;  any_value.type = type_info(type_of(Value.table));
+        }
+        any_value.value_pointer = alloc(any_value.type.runtime_size);
+        deserialize(toml, any_value.value_pointer, any_value.type, parent_name, name);
     case .ENUM;
         enum_info := cast(*Type_Info_Enum) info;
         if toml.type == {
