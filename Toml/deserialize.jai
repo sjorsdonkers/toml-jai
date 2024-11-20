@@ -73,20 +73,20 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
                 if it.key == member.name {
                     found = true;
                     member_slot := slot + member.offset_in_bytes;
-                    deserialize(it.value, member_slot, member.type, parent_name, member.name); // TODO check parent_name
+                    deserialize(it.value, member_slot, member.type, parent_name, member.name);
                     break;
                 }
             }
             if !found && member.type.type != .VOID {
                 member_slot := slot + member.offset_in_bytes;
-                empty_table := Value.{type=.TABLE, array=resizable(Value.[])}; // TODO
+                empty_table := Value.{type=.TABLE, array=resizable(Value.[])};
                 if deserialize_option(empty_table, member_slot, member.type) continue; // None does not expect its tag or value
 
                 log_error("Missing field %.%", struct_info.name, member.name);
                 exit(1);
             }
         }
-    case .ARRAY; // TODO check array of options
+    case .ARRAY;
         expect(toml.type, .ARRAY, parent_name, name);
         array_info := cast(*Type_Info_Array) info;
         element_type := array_info.element_type;
@@ -182,7 +182,7 @@ deserialize_sumtype :: (toml: Value, slot: *u8, struct_members: []Type_Info_Stru
     if toml.type == .TABLE && toml.table.count == 0 {
         found, void_idx := find_void_index(union_members);
         if !found {
-            log_error("Sum-type % does not have an optional (void) variant", struct_name); // TODO name
+            log_error("Sum-type % does not have an optional (void) variant", struct_name);
             exit(1);
         }
         set_enum_value(tag_slot, tag_info, void_idx);
@@ -195,12 +195,12 @@ deserialize_sumtype :: (toml: Value, slot: *u8, struct_members: []Type_Info_Stru
         if found {
             some_idx : = 1 - void_idx;
             set_enum_value(tag_slot, tag_info, some_idx);
-            deserialize(toml, union_slot, union_members[some_idx].type, tag_info.names[some_idx], union_info.members[some_idx].name); // TODO check parent_name
+            deserialize(toml, union_slot, union_members[some_idx].type, tag_info.names[some_idx], union_info.members[some_idx].name);
             return true;
         }
     }
     if toml.type != .TABLE {
-        log_error("A value is provided without naming the variant first for sum-type %", struct_name); // TODO name
+        log_error("A value is provided without naming the variant first for sum-type %", struct_name);
         exit(1);
     }
     if toml.table.count != 1 {
@@ -214,7 +214,7 @@ deserialize_sumtype :: (toml: Value, slot: *u8, struct_members: []Type_Info_Stru
     }
 
     set_enum_value(tag_slot, tag_info, idx);
-    deserialize(toml.table[0].value, union_slot, union_members[idx].type, tag_info.names[idx], union_info.members[idx].name); // TODO check parent_name
+    deserialize(toml.table[0].value, union_slot, union_members[idx].type, tag_info.names[idx], union_info.members[idx].name);
     return true;
 }
 deserialize_option :: (toml: Value, member_slot: *u8, member_info: *Type_Info) -> is_sum_type:bool { // TODO sep. is sum deser some deser none
