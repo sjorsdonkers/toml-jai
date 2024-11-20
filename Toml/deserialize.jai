@@ -48,7 +48,16 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
         expect(toml.type, .STRING, parent_name, name);
         // TODO deepcopy to callers allocator
         <<cast(*string) slot = toml.string_value;
-    // case .POINTER; // hmm put in permanent memory and point to the value?
+    case .POINTER;
+        pointer_info := cast(*Type_Info_Pointer) info;
+        memory := alloc(pointer_info.pointer_to.runtime_size);
+        if pointer_info.pointer_to.type == .STRUCT {
+            struct_info := cast(*Type_Info_Struct) pointer_info.pointer_to;
+            if struct_info.initializer then struct_info.initializer(memory);
+        }
+
+        <<cast(**u8)slot = memory;
+        deserialize(toml, memory, pointer_info.pointer_to, parent_name, name);
     case .VOID;
         expect(toml.type, .TABLE, parent_name, name);
         if toml.table.count != 0 {
