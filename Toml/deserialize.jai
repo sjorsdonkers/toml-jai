@@ -29,10 +29,7 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
         // TODO support u64, delay parsing till here so we known wheter to parse signed or unsigned / or store u64 as well
         int_info := cast(*Type_Info_Integer)info;
         valid, low, high := range_check_and_store(toml.int_value, int_info, slot);
-        if !valid {
-            log_error("Value for %.% is out of range. Given % expected min % max %", parent_name, name, toml.int_value, low, high);
-            exit(1);
-        }
+        if !valid { exit_with_error("Value for %.% is out of range. Given % expected min % max %", parent_name, name, toml.int_value, low, high); }
     case .FLOAT;
         expect(toml.type, .FLOAT, parent_name, name);
         if info.runtime_size == 4 {
@@ -55,18 +52,12 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
         deserialize(toml, memory, pointer_info.pointer_to, parent_name, name);
     case .VOID;
         expect(toml.type, .TABLE, parent_name, name);
-        if toml.table.count != 0 {
-            log_error("Expected empty table for %.%, got %", parent_name, name, toml.table.count);
-            exit(1);
-        }
+        if toml.table.count != 0 { exit_with_error("Expected empty table for %.%, got %", parent_name, name, toml.table.count); }
     case .STRUCT;
         if deserialize_option(toml, slot, info) return; // For Option.Some values we don't expect the TABLE of the Option itself
         expect(toml.type, .TABLE, parent_name, name);
         struct_info := cast(*Type_Info_Struct) info;
-        if struct_info.textual_flags & .UNION {
-            log_error("Union are not supported unless they are in a sum-type (struct with enum tag and union where union.members.count == tag.values.count)");
-            exit(1);
-        }
+        if struct_info.textual_flags & .UNION { exit_with_error("Union are not supported unless they are in a sum-type (struct with enum tag and union where union.members.count == tag.values.count)"); }
 
         struct_members := collect_members(struct_info);
         if deserialize_sumtype(toml, slot, struct_members, struct_info.name) return;
@@ -92,8 +83,7 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
                 empty_table := Value.{type=.TABLE, array=resizable(Value.[])};
                 if deserialize_option(empty_table, member_slot, member.type) continue; // None does not expect its tag or value
 
-                log_error("Missing field %.%", struct_info.name, member.name);
-                exit(1);
+                exit_with_error("Missing field %.%", struct_info.name, member.name);
             }
         }
     case .ARRAY;
@@ -110,10 +100,7 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
 
         if array_info.array_type == {
             case .FIXED;
-                if toml.array.count != array_info.array_count {
-                    log_error("Fixed array %.% expected % items, got %", parent_name, name, array_info.array_count, toml.array.count);
-                    exit(1);
-                }
+                if toml.array.count != array_info.array_count { exit_with_error("Fixed array %.% expected % items, got %", parent_name, name, array_info.array_count, toml.array.count); }
                 fill_array(toml.array, slot, element_type, name);
             case .VIEW;
                 memory := alloc(toml.array.count * element_type.runtime_size);
@@ -161,21 +148,14 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
         if toml.type == {
         case .STRING;
             found, index := array_find(enum_info.names, toml.string_value);
-            if !found {
-                log_error("String % is not a variant of enum %", toml.string_value, enum_info.name);
-                exit(1);
-            }
+            if !found { exit_with_error("String % is not a variant of enum %", toml.string_value, enum_info.name); }
             set_enum_value(slot, enum_info, enum_info.values[index]);
         case .INT;
             found := array_find(enum_info.values, toml.int_value);
-            if !found {
-                log_error("Value % is not a variant of enum %", toml.int_value, enum_info.name);
-                exit(1);
-            }
+            if !found { exit_with_error("Value % is not a variant of enum %", toml.int_value, enum_info.name); }
             set_enum_value(slot, enum_info, toml.int_value);
         case;
-            log_error("Wrong type for %.%, expected STRING or INT, got % ", parent_name, name, toml.type);
-            exit(1);
+            exit_with_error("Wrong type for %.%, expected STRING or INT, got % ", parent_name, name, toml.type);
         }
     case .VARIANT; // This is a weak or strong alias
         variant_info := cast(*Type_Info_Variant) info;
@@ -185,17 +165,12 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
     case .POLYMORPHIC_VARIABLE; #through;
     case .TYPE;                 #through;
     case .CODE;                 #through;
-    case;
-        log_error("Deserialization to type % is not supported", info.type);
-        exit(1);
+    case; exit_with_error("Deserialization to type % is not supported", info.type);
     }
 }
 
 expect :: inline (given: Value.Type, expected: Value.Type, struct_name: string, member_name: string) {
-    if given != expected {
-        log_error("Wrong type for %.%, expected %, got % ", struct_name, member_name, expected, given);
-        exit(1);
-    }
+    if given != expected { exit_with_error("Wrong type for %.%, expected %, got % ", struct_name, member_name, expected, given); }
 }
 
 deserialize_sumtype :: (toml: Value, slot: *u8, struct_members: []Type_Info_Struct_Member, struct_name:string) -> is_sumtype:bool {
@@ -210,10 +185,7 @@ deserialize_sumtype :: (toml: Value, slot: *u8, struct_members: []Type_Info_Stru
     tag_info   := cast(*Type_Info_Enum)  struct_members[tag_idx].type;
     union_info := cast(*Type_Info_Struct)struct_members[union_idx].type;
     if !union_info.textual_flags & .UNION return false;
-    if union_info.members.count != tag_info.values.count {
-        log_error("Sum-type expects each enum variant to match a union variant 1-to-1 got % tags and % union variants for sum-type %", tag_info.values.count, union_info.members.count, struct_name);
-        exit(1);
-    }
+    if union_info.members.count != tag_info.values.count { exit_with_error("Sum-type expects each enum variant to match a union variant 1-to-1 got % tags and % union variants for sum-type %", tag_info.values.count, union_info.members.count, struct_name); }
     // It's a sum-type!
 
     tag_slot   := slot + struct_members[tag_idx].offset_in_bytes;
@@ -223,10 +195,7 @@ deserialize_sumtype :: (toml: Value, slot: *u8, struct_members: []Type_Info_Stru
     // Handle empty table as void/none NOTE: if member was missing from toml an empty table is inserted
     if toml.type == .TABLE && toml.table.count == 0 {
         found, void_idx := find_void_index(union_members);
-        if !found {
-            log_error("Sum-type % does not have an optional (void) variant", struct_name);
-            exit(1);
-        }
+        if !found { exit_with_error("Sum-type % does not have an optional (void) variant", struct_name); }
         set_enum_value(tag_slot, tag_info, void_idx);
         return true; // void does not have bytes to set
     }
@@ -241,19 +210,10 @@ deserialize_sumtype :: (toml: Value, slot: *u8, struct_members: []Type_Info_Stru
             return true;
         }
     }
-    if toml.type != .TABLE {
-        log_error("A value is provided without naming the variant first for sum-type %", struct_name);
-        exit(1);
-    }
-    if toml.table.count != 1 {
-        log_error("Exactly 1 field expected for sum-type %, got %", struct_name, toml.table.count);
-        exit(1);
-    }
+    if toml.type != .TABLE { exit_with_error("A value is provided without naming the variant first for sum-type %", struct_name); }
+    if toml.table.count != 1 { exit_with_error("Exactly 1 field expected for sum-type %, got %", struct_name, toml.table.count); }
     found, idx := array_find(tag_info.names, toml.table[0].key);
-    if !found {
-        log_error("String % is not a variant of sum-type % %", toml.table[0].key, struct_name, tag_info.names);
-        exit(1);
-    }
+    if !found { exit_with_error("String % is not a variant of sum-type % %", toml.table[0].key, struct_name, tag_info.names); }
 
     set_enum_value(tag_slot, tag_info, idx);
     deserialize(toml.table[0].value, union_slot, union_members[idx].type, tag_info.names[idx], union_info.members[idx].name);
@@ -317,6 +277,11 @@ find_void_index ::(union_members: []Type_Info_Struct_Member)-> found:bool, index
         index = it_index;
     }}
     return index != -1, index;
+}
+
+exit_with_error :: (format: string, arguments: .. Any) {
+    log_error(format, ..arguments);
+    exit(1);
 }
 
 #load "parser.jai";
