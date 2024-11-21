@@ -1,7 +1,7 @@
 
 deserialize :: (contents: string, $Target: Type) -> Target {
-    value := parse(contents); // TODO if Target != Value, use a parser that delays parsing literals for better accuracy
-    #if Target == Value return value; // Prevent unnecesarly copying
+    #if Target == Value return parse(contents); // Prevent unnecesarly copying
+    value := parse(contents,, allocator=temp); // TODO if Target != Value, use a parser that delays parsing literals for better accuracy
     return deserialize(value, Target);
 }
 
