@@ -1,11 +1,11 @@
 
 deserialize :: (contents: string, $Target: Type) -> Target {
-    value := parse(contents);
+    value := parse(contents); // TODO if Target != Value, use a parser that delays parsing literals for better accuracy
+    #if Target == Value return value; // Prevent unnecesarly copying
     return deserialize(value, Target);
 }
 
-// NOTE: Allocated value objects will have shared ownership by the value and the target
-// Reference objects (pointers, array views, any) will be reallocated(?)
+// NOTE: Allocated memory will be copied to the context allocator.
 deserialize :: (value: Value, $Target: Type) -> Target {
     target : Target;
     bytes := cast(*u8) *target;
@@ -19,7 +19,7 @@ deserialize :: (value: Value, $Target: Type) -> Target {
 deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="", name:string="") {
     value_info :: type_info(Value);
     if info == value_info { // If encounter a Toml.Value at any point just copy it
-        <<cast(*Value) slot = toml;
+        <<cast(*Value) slot = copy(toml);
         return;
     }
 
@@ -43,8 +43,7 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
         <<cast(*bool) slot = toml.bool_value;
     case .STRING;
         expect(toml.type, .STRING, parent_name, name);
-        // TODO deepcopy to callers allocator
-        <<cast(*string) slot = toml.string_value;
+        <<cast(*string) slot = copy_string(toml.string_value); // @perf: don't copy if Value is not exposed, or zero-copy requested
     case .POINTER;
         pointer_info := cast(*Type_Info_Pointer) info;
         memory := alloc(pointer_info.pointer_to.runtime_size);
