@@ -16,10 +16,10 @@ deserialize :: (value: Value, $Target: Type) -> Target {
 
 #scope_file
 
-deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="", name:string="") {
+deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="", name:string="", $share_memory:=false) {
     value_info :: type_info(Value);
     if info == value_info { // If encounter a Toml.Value at any point just copy it
-        <<cast(*Value) slot = copy(toml);
+        <<cast(*Value) slot = #ifx share_memory then toml else copy(toml);
         return;
     }
 
@@ -39,9 +39,10 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
         <<cast(*bool) slot = toml.bool_value;
     case .STRING;
         expect(toml.type, .STRING, parent_name, name);
-        <<cast(*string) slot = copy_string(toml.string_value); // @perf: don't copy if Value is not exposed, or zero-copy requested
+        <<cast(*string) slot = #ifx share_memory then toml.string_value else copy_string(toml.string_value);
     case .POINTER;
         pointer_info := cast(*Type_Info_Pointer) info;
+        // #if share_memory can prevent allocation of bool, s64, float64, string, Value, array, table, but let's wait till delayed literal parsing is implemented
         memory := alloc(pointer_info.pointer_to.runtime_size);
         <<cast(**u8)slot = memory;
         deserialize(toml, memory, pointer_info.pointer_to, parent_name, name);
@@ -85,6 +86,17 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
         array_info := cast(*Type_Info_Array) info;
         element_type := array_info.element_type;
 
+        #if share_memory {
+            if array_info.array_type == {
+            case .VIEW;
+                if element_type == type_info(Value)    { <<cast(*[]Value)      slot = toml.array; return; }
+                if element_type == type_info(KeyValue) { <<cast(*[]KeyValue)   slot = toml.table; return; }
+            case .RESIZABLE;
+                if element_type == type_info(Value)    { <<cast(*[..]Value)    slot = toml.array; return; }
+                if element_type == type_info(KeyValue) { <<cast(*[..]KeyValue) slot = toml.table; return; }
+            }
+        }
+
         fill_array :: (toml_array: []Value, slot: *u8, item_info: *Type_Info, parent_name:string) {
             for idx: 0..toml_array.count-1 {
                 item_slot := slot + item_info.runtime_size * idx;
@@ -92,7 +104,7 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
             }
         }
 
-        if array_info.array_type == {
+        if #complete array_info.array_type == {
             case .FIXED;
                 if toml.array.count != array_info.array_count { exit_with_error("Fixed array %.% expected % items, got %", parent_name, name, array_info.array_count, toml.array.count); }
                 fill_array(toml.array, slot, element_type, name);
@@ -110,6 +122,8 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
         }
     case .ANY;
         any_value := cast(*Any_Struct) slot;
+
+        // #if share_memory meh
 
         homogeneous_array_info :: (array: []Value) -> is_same_type:bool, *Type_Info {
             if array.count == 0 { return false, null; }
