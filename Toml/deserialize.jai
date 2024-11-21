@@ -5,7 +5,6 @@ deserialize :: (contents: string, $Target: Type) -> Target {
     return deserialize(value, Target);
 }
 
-// NOTE: Allocated memory will be copied to the context allocator.
 deserialize :: (value: Value, $Target: Type) -> Target {
     target : Target;
     bytes := cast(*u8) *target;
@@ -18,7 +17,7 @@ deserialize :: (value: Value, $Target: Type) -> Target {
 
 deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="", name:string="") {
     value_info :: type_info(Value);
-    if info == value_info { // If encounter a Toml.Value at any point just copy it
+    if info == value_info { // If encounter we Toml.Value at any point just copy it
         <<cast(*Value) slot = copy(toml);
         return;
     }
@@ -58,10 +57,10 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
         if deserialize_sumtype(toml, slot, struct_members, struct_info.name) return;
 
         // We could initialize all members and let it be OK if some are not in the TOML
-        // However TOML text files are not compiled and much more prone to typos.
+        // However TOML text files are not compiled and more prone to typos.
         // As such for now we require the user to be explicit about which struct members are optional with Option.
-        // Also, I do not known how to detect which members have an explict default value and which do not.
         // if struct_info.initializer then struct_info.initializer(memory); else just memset zeros
+        // TODO Consider checking for @Optional notes on members
 
         for member: struct_members {
             found := false;
@@ -92,7 +91,7 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
             }
         }
 
-        if array_info.array_type == {
+        if #complete array_info.array_type == {
             case .FIXED;
                 if toml.array.count != array_info.array_count { exit_with_error("Fixed array %.% expected % items, got %", parent_name, name, array_info.array_count, toml.array.count); }
                 fill_array(toml.array, slot, element_type, name);
