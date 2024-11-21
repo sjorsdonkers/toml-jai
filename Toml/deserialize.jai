@@ -27,17 +27,13 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
     case .INTEGER;
         expect(toml.type, .INT, parent_name, name);
         // TODO support u64, delay parsing till here so we known wheter to parse signed or unsigned / or store u64 as well
-        int_info := cast(*Type_Info_Integer)info;
-        valid, low, high := range_check_and_store(toml.int_value, int_info, slot);
+        valid, low, high := range_check_and_store(toml.int_value, cast(*Type_Info_Integer)info, slot);
         if !valid { exit_with_error("Value for %.% is out of range. Given % expected min % max %", parent_name, name, toml.int_value, low, high); }
     case .FLOAT;
         expect(toml.type, .FLOAT, parent_name, name);
-        if info.runtime_size == 4 {
-            <<cast(*float) slot = cast(float) toml.float_value; // TODO not lossless, delay parsing
-        } else {
-            assert(info.runtime_size == 8);
-            <<cast(*float64) slot = toml.float_value;
-        }
+        if info.runtime_size == 4      { <<cast(*float)   slot = cast(float) toml.float_value; } // TODO not lossless, delay parsing
+        else if info.runtime_size == 8 { <<cast(*float64) slot = toml.float_value; }
+        else { exit_with_error("Unsupported float size %", info.runtime_size); }
     case .BOOL;
         expect(toml.type, .BOOL, parent_name, name);
         <<cast(*bool) slot = toml.bool_value;
@@ -69,16 +65,15 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
 
         for member: struct_members {
             found := false;
+            member_slot := slot + member.offset_in_bytes;
             for toml.table {
                 if it.key == member.name {
                     found = true;
-                    member_slot := slot + member.offset_in_bytes;
                     deserialize(it.value, member_slot, member.type, parent_name, member.name);
                     break;
                 }
             }
             if !found && member.type.type != .VOID {
-                member_slot := slot + member.offset_in_bytes;
                 empty_table := Value.{type=.TABLE, array=resizable(Value.[])};
                 if deserialize_option(empty_table, member_slot, member.type) continue; // None does not expect its tag or value
 
@@ -104,7 +99,7 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
             case .VIEW;
                 memory := alloc(toml.array.count * element_type.runtime_size);
                 fill_array(toml.array, memory, element_type, name);
-                array := cast(*[..] u8) slot;
+                array := cast(*[] u8) slot;
                 array.data = memory;
                 array.count = toml.array.count;
             case .RESIZABLE;
