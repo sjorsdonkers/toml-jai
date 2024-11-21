@@ -38,7 +38,7 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
         <<cast(*bool) slot = toml.bool_value;
     case .STRING;
         expect(toml.type, .STRING, parent_name, name);
-        <<cast(*string) slot = copy_string(toml.string_value); // @perf: don't copy if Value is not exposed, or zero-copy requested
+        <<cast(*string) slot = copy_string(toml.string_value);
     case .POINTER;
         pointer_info := cast(*Type_Info_Pointer) info;
         memory := alloc(pointer_info.pointer_to.runtime_size);
