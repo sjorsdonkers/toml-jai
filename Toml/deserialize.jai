@@ -1,11 +1,10 @@
 
 deserialize :: (contents: string, $Target: Type) -> Target {
-    value := parse(contents);
+    #if Target == Value return parse(contents); // Prevent unnecesarly copying
+    value := parse(contents,, allocator=temp); // TODO if Target != Value, use a parser that delays parsing literals for better accuracy
     return deserialize(value, Target);
 }
 
-// NOTE: Allocated value objects will have shared ownership by the value and the target
-// Reference objects (pointers, array views, any) will be reallocated(?)
 deserialize :: (value: Value, $Target: Type) -> Target {
     target : Target;
     bytes := cast(*u8) *target;
@@ -19,8 +18,8 @@ deserialize :: (value: Value, $Target: Type) -> Target {
 // slot is already initialized memory
 deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="", name:string="") {
     value_info :: type_info(Value);
-    if info == value_info { // If encounter a Toml.Value at any point just copy it
-        <<cast(*Value) slot = toml;
+    if info == value_info { // If encounter we Toml.Value at any point just copy it
+        <<cast(*Value) slot = copy(toml);
         return;
     }
 
@@ -28,24 +27,19 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
     case .INTEGER;
         expect(toml.type, .INT, parent_name, name);
         // TODO support u64, delay parsing till here so we known wheter to parse signed or unsigned / or store u64 as well
-        int_info := cast(*Type_Info_Integer)info;
-        valid, low, high := range_check_and_store(toml.int_value, int_info, slot);
+        valid, low, high := range_check_and_store(toml.int_value, cast(*Type_Info_Integer)info, slot);
         if !valid { exit_with_error("Value for %.% is out of range. Given % expected min % max %", parent_name, name, toml.int_value, low, high); }
     case .FLOAT;
         expect(toml.type, .FLOAT, parent_name, name);
-        if info.runtime_size == 4 {
-            <<cast(*float) slot = cast(float) toml.float_value; // TODO not lossless, delay parsing
-        } else {
-            assert(info.runtime_size == 8);
-            <<cast(*float64) slot = toml.float_value;
-        }
+        if info.runtime_size == 4      { <<cast(*float)   slot = cast(float) toml.float_value; } // TODO not lossless, delay parsing
+        else if info.runtime_size == 8 { <<cast(*float64) slot = toml.float_value; }
+        else { exit_with_error("Unsupported float size %", info.runtime_size); }
     case .BOOL;
         expect(toml.type, .BOOL, parent_name, name);
         <<cast(*bool) slot = toml.bool_value;
     case .STRING;
         expect(toml.type, .STRING, parent_name, name);
-        // TODO deepcopy to callers allocator
-        <<cast(*string) slot = toml.string_value;
+        <<cast(*string) slot = copy_string(toml.string_value);
     case .POINTER;
         pointer_info := cast(*Type_Info_Pointer) info;
         memory := alloc(pointer_info.pointer_to.runtime_size);
@@ -69,10 +63,10 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
 
         for member: struct_members {
             found := false;
+            member_slot := slot + member.offset_in_bytes;
             for toml.table {
                 if it.key == member.name {
                     found = true;
-                    member_slot := slot + member.offset_in_bytes;
                     deserialize(it.value, member_slot, member.type, parent_name, member.name);
                     break;
                 }
@@ -94,7 +88,7 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
             }
         }
 
-        if array_info.array_type == {
+        if #complete array_info.array_type == {
             case .FIXED;
                 if toml.array.count != array_info.array_count { exit_with_error("Fixed array %.% expected % items, got %", parent_name, name, array_info.array_count, toml.array.count); }
                 fill_array(toml.array, slot, element_type, name); // NOTE .FIXED is inside the struct so already initialized
@@ -102,7 +96,7 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
                 memory := alloc(toml.array.count * element_type.runtime_size);
                 initialize_memory(memory, array_info.element_type, array_info.array_count);
                 fill_array(toml.array, memory, element_type, name);
-                array := cast(*[..] u8) slot;
+                array := cast(*[] u8) slot;
                 array.data = memory;
                 array.count = toml.array.count;
             case .RESIZABLE;
