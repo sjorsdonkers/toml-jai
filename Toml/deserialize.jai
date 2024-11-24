@@ -51,8 +51,11 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
         <<cast(**u8)slot = memory;
         deserialize(toml, memory, pointer_info.pointer_to, parent_name, name);
     case .VOID;
-        expect(toml.type, .TABLE, parent_name, name);
-        if toml.table.count != 0 { exit_with_error("Expected empty table for %.%, got %", parent_name, name, toml.table.count); }
+        if toml.type == {
+        case .STRING; if toml.string_value != "void" { exit_with_error("Expected 'void' for %.%, got %", parent_name, name, toml.string_value);     }
+        case .TABLE ; if toml.table.count  != 0      { exit_with_error("Expected empty table for %.%, got %", parent_name, name, toml.table.count); }
+        case; exit_with_error("Expected 'void' or empty table for %.%, got %", parent_name, name, toml.type);
+        }
     case .STRUCT;
         if deserialize_option(toml, slot, info) return; // For Option.Some values we don't expect the TABLE of the Option itself
         expect(toml.type, .TABLE, parent_name, name);
@@ -286,3 +289,4 @@ exit_with_error :: (format: string, arguments: .. Any) {
 
 #load "parser.jai";
 #import "Reflection";
+#import "Compiler";
