@@ -1,7 +1,7 @@
 
 deserialize :: (contents: string, $Target: Type) -> Target {
-    #if Target == Value return parse(contents); // Prevent unnecesarly copying
-    value := parse(contents,, allocator=temp); // TODO if Target != Value, use a parser that delays parsing literals for better accuracy
+    #if Target == Value return parse(contents); // Prevents unnecesarly copying
+    value := parse(contents,, allocator=temp);  // TODO use a parser that delays parsing literals for better accuracy
     return deserialize(value, Target);
 }
 
@@ -16,6 +16,8 @@ deserialize :: (value: Value, $Target: Type) -> Target {
 #scope_file
 
 // slot is already initialized memory
+// Currently all fields are optional. TODO check TomlOptional Note and require_all true/false
+// TODO support untagged unions, just expect table with 1 field which should be one of the union member names
 deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="", name:string="") {
     value_info :: type_info(Value);
     if info == value_info { // If encounter we Toml.Value at any point just copy it
@@ -54,28 +56,19 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
         }
     case .STRUCT;
         expect(toml.type, .TABLE, parent_name, name);
-        struct_info := cast(*Type_Info_Struct) info;
-        if struct_info.textual_flags & .UNION { exit_with_error("Union are not supported unless they are in a sum-type (struct with enum tag and union where union.members.count == tag.values.count)"); }
         if toml.table.count == 0 return; // Use defaults
+
+        struct_info := cast(*Type_Info_Struct) info;
+        if struct_info.textual_flags & .UNION { exit_with_error("Union are not yet supported unless they are in a sum-type (struct with enum tag and union where union.members.count == tag.values.count)"); }
 
         struct_members := collect_members(struct_info);
         if deserialize_sumtype(toml, slot, struct_members, struct_info.name) return;
 
-        for member: struct_members {
-            found := false;
+        for member: struct_members { for toml.table { if it.key == member.name {
             member_slot := slot + member.offset_in_bytes;
-            for toml.table {
-                if it.key == member.name {
-                    found = true;
-                    deserialize(it.value, member_slot, member.type, parent_name, member.name);
-                    break;
-                }
-            }
-            if !found && member.type.type != .VOID {
-                // TODO check TomlOptional Note and require_all true/false
-                // exit_with_error("Missing field %.%", struct_info.name, member.name);
-            }
-        }
+            deserialize(it.value, member_slot, member.type, parent_name, member.name);
+            break;
+        } } }
     case .ARRAY;
         expect(toml.type, .ARRAY, parent_name, name);
         array_info := cast(*Type_Info_Array) info;
@@ -87,24 +80,22 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
                 deserialize(toml_array[idx], item_slot, item_info, parent_name, "[item]");
             }
         }
-
         if #complete array_info.array_type == {
             case .FIXED;
                 if toml.array.count != array_info.array_count { exit_with_error("Fixed array %.% expected % items, got %", parent_name, name, array_info.array_count, toml.array.count); }
                 fill_array(toml.array, slot, element_type, name); // NOTE .FIXED is inside the struct so already initialized
             case .VIEW;
-                memory := alloc(toml.array.count * element_type.runtime_size);
-                initialize_memory(memory, array_info.element_type, array_info.array_count);
-                fill_array(toml.array, memory, element_type, name);
                 array := cast(*[] u8) slot;
-                array.data = memory;
+                array.data = alloc(toml.array.count * element_type.runtime_size);
                 array.count = toml.array.count;
-            case .RESIZABLE;
-                array := cast(*[..] u8) slot; // We are unable to write the type here (needs to be constant), so just use u8 for now
-                array_reserve(array, toml.array.count * element_type.runtime_size);
-                initialize_memory(array.data, array_info.element_type, array_info.array_count);
+                initialize_memory(array.data, array_info.element_type, array.count);
                 fill_array(toml.array, array.data, element_type, name);
+            case .RESIZABLE;
+                array := cast(*[..] u8) slot;
+                array_reserve(array, toml.array.count * element_type.runtime_size);
                 array.count = toml.array.count;
+                initialize_memory(array.data, array_info.element_type, array.count);
+                fill_array(toml.array, array.data, element_type, name);
         }
     case .ANY;
         any_value := cast(*Any_Struct) slot;
@@ -147,10 +138,9 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
             found := array_find(enum_info.values, toml.int_value);
             if !found { exit_with_error("Value % is not a variant of enum %", toml.int_value, enum_info.name); }
             set_enum_value(slot, enum_info, toml.int_value);
-        case;
-            exit_with_error("Wrong type for %.%, expected STRING or INT, got % ", parent_name, name, toml.type);
+        case; exit_with_error("Wrong type for %.%, expected STRING or INT, got % ", parent_name, name, toml.type);
         }
-    case .VARIANT; // This is a weak or strong alias
+    case .VARIANT;
         variant_info := cast(*Type_Info_Variant) info;
         deserialize(toml, slot, variant_info.variant_of, parent_name, name);
     case .PROCEDURE;            #through;
@@ -178,7 +168,7 @@ deserialize_sumtype :: (toml: Value, slot: *u8, struct_members: []Type_Info_Stru
     tag_info   := cast(*Type_Info_Enum)  struct_members[tag_idx].type;
     union_info := cast(*Type_Info_Struct)struct_members[union_idx].type;
     if !union_info.textual_flags & .UNION return false;
-    if union_info.members.count != tag_info.values.count { exit_with_error("Sum-type expects each enum variant to match a union variant 1-to-1 got % tags and % union variants for sum-type %", tag_info.values.count, union_info.members.count, struct_name); }
+    if union_info.members.count != tag_info.values.count return false;
     // It's a sum-type!
 
     tag_slot   := slot + struct_members[tag_idx].offset_in_bytes;
