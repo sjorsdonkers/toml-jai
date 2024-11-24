@@ -48,6 +48,7 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
     case .POINTER;
         pointer_info := cast(*Type_Info_Pointer) info;
         memory := alloc(pointer_info.pointer_to.runtime_size);
+        initialize_memory(memory, pointer_info.pointer_to);
         <<cast(**u8)slot = memory;
         deserialize(toml, memory, pointer_info.pointer_to, parent_name, name);
     case .VOID;
@@ -95,6 +96,7 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
         element_type := array_info.element_type;
 
         fill_array :: (toml_array: []Value, slot: *u8, item_info: *Type_Info, parent_name:string) {
+            initialize_memory(slot, item_info, toml_array.count); // TODO .FIXED should already be initialized, but now it's only if array is part of original struct
             for idx: 0..toml_array.count-1 {
                 item_slot := slot + item_info.runtime_size * idx;
                 deserialize(toml_array[idx], item_slot, item_info, parent_name, "[item]");
@@ -145,6 +147,7 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
         case .TABLE;  any_value.type = type_info(type_of(Value.table));
         }
         any_value.value_pointer = alloc(any_value.type.runtime_size);
+        initialize_memory(any_value.value_pointer, any_value.type);
         deserialize(toml, any_value.value_pointer, any_value.type, parent_name, name);
     case .ENUM;
         enum_info := cast(*Type_Info_Enum) info;
@@ -280,6 +283,24 @@ find_void_index ::(union_members: []Type_Info_Struct_Member)-> found:bool, index
         index = it_index;
     }}
     return index != -1, index;
+}
+
+initialize_memory :: (memory: *void, info: *Type_Info, count:s64=1) {
+    if count <= 0 return;
+    total_size := count * info.runtime_size;
+
+    if info.type == .STRUCT {
+        tis := cast(*Type_Info_Struct) info;
+        if tis.initializer {
+            current := memory;
+            for 0..count-1 {
+                tis.initializer(current);
+                current += tis.runtime_size;
+            }
+        }
+    }
+    // @Incomplete: Here we are not handling variants, FIXED Array? initialize first union member?
+    memset(memory, 0, total_size);
 }
 
 exit_with_error :: (format: string, arguments: .. Any) {
