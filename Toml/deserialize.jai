@@ -226,7 +226,7 @@ collect_union_members :: (union_info:*Type_Info_Struct) -> [..]Type_Info_Struct_
 }
 
 initialize_memory :: (memory: *void, info: *Type_Info, count:s64=1) {
-    if count <= 0 return;
+    if count <= 0 || info.runtime_size <= 0 return;
     total_size := count * info.runtime_size;
 
     if info.type == {
