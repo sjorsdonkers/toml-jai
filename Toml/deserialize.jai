@@ -96,7 +96,6 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
         element_type := array_info.element_type;
 
         fill_array :: (toml_array: []Value, slot: *u8, item_info: *Type_Info, parent_name:string) {
-            initialize_memory(slot, item_info, toml_array.count); // TODO .FIXED should already be initialized, but now it's only if array is part of original struct
             for idx: 0..toml_array.count-1 {
                 item_slot := slot + item_info.runtime_size * idx;
                 deserialize(toml_array[idx], item_slot, item_info, parent_name, "[item]");
@@ -106,9 +105,10 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
         if array_info.array_type == {
             case .FIXED;
                 if toml.array.count != array_info.array_count { exit_with_error("Fixed array %.% expected % items, got %", parent_name, name, array_info.array_count, toml.array.count); }
-                fill_array(toml.array, slot, element_type, name);
+                fill_array(toml.array, slot, element_type, name); // NOTE .FIXED is inside the struct so already initialized
             case .VIEW;
                 memory := alloc(toml.array.count * element_type.runtime_size);
+                initialize_memory(memory, array_info.element_type, array_info.array_count);
                 fill_array(toml.array, memory, element_type, name);
                 array := cast(*[..] u8) slot;
                 array.data = memory;
@@ -116,6 +116,7 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
             case .RESIZABLE;
                 array := cast(*[..] u8) slot; // We are unable to write the type here (needs to be constant), so just use u8 for now
                 array_reserve(array, toml.array.count * element_type.runtime_size);
+                initialize_memory(array.data, array_info.element_type, array_info.array_count);
                 fill_array(toml.array, array.data, element_type, name);
                 array.count = toml.array.count;
         }
@@ -289,7 +290,8 @@ initialize_memory :: (memory: *void, info: *Type_Info, count:s64=1) {
     if count <= 0 return;
     total_size := count * info.runtime_size;
 
-    if info.type == .STRUCT {
+    if info.type == {
+    case .STRUCT;
         tis := cast(*Type_Info_Struct) info;
         if tis.initializer {
             current := memory;
@@ -298,8 +300,18 @@ initialize_memory :: (memory: *void, info: *Type_Info, count:s64=1) {
                 current += tis.runtime_size;
             }
         }
+        return;
+    case .ARRAY;
+        array_info := cast(*Type_Info_Array) info;
+        if array_info.array_type == .FIXED {
+            initialize_memory(memory, array_info.element_type, array_info.array_count); // TODO check
+            return;
+        }
+    case .VARIANT;
+        variant_info := cast(*Type_Info_Variant) info;
+        initialize_memory(memory, variant_info.variant_of); // TODO check
     }
-    // @Incomplete: Here we are not handling variants, FIXED Array? initialize first union member?
+    // @Incomplete: initialize first union member?, using?
     memset(memory, 0, total_size);
 }
 
