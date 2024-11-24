@@ -231,12 +231,12 @@ initialize_memory :: (memory: *void, info: *Type_Info, count:s64=1) {
 
     if info.type == {
     case .STRUCT;
-        tis := cast(*Type_Info_Struct) info;
-        if tis.initializer {
+        struct_info := cast(*Type_Info_Struct) info;
+        if struct_info.initializer {
             current := memory;
             for 0..count-1 {
-                tis.initializer(current);
-                current += tis.runtime_size;
+                struct_info.initializer(current);
+                current += struct_info.runtime_size;
             }
         }
         return;
@@ -261,4 +261,3 @@ exit_with_error :: (format: string, arguments: .. Any) {
 
 #load "parser.jai";
 #import "Reflection";
-#import "Compiler";
