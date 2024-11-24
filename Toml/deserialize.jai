@@ -16,6 +16,7 @@ deserialize :: (value: Value, $Target: Type) -> Target {
 
 #scope_file
 
+// slot is already initialized memory
 deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="", name:string="") {
     value_info :: type_info(Value);
     if info == value_info { // If encounter a Toml.Value at any point just copy it
@@ -58,19 +59,13 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
         case; exit_with_error("Expected 'void' or empty table for %.%, got %", parent_name, name, toml.type);
         }
     case .STRUCT;
-        if deserialize_option(toml, slot, info) return; // For Option.Some values we don't expect the TABLE of the Option itself
         expect(toml.type, .TABLE, parent_name, name);
         struct_info := cast(*Type_Info_Struct) info;
         if struct_info.textual_flags & .UNION { exit_with_error("Union are not supported unless they are in a sum-type (struct with enum tag and union where union.members.count == tag.values.count)"); }
+        if toml.table.count == 0 return; // Use defaults
 
         struct_members := collect_members(struct_info);
         if deserialize_sumtype(toml, slot, struct_members, struct_info.name) return;
-
-        // We could initialize all members and let it be OK if some are not in the TOML
-        // However TOML text files are not compiled and much more prone to typos.
-        // As such for now we require the user to be explicit about which struct members are optional with Option.
-        // Also, I do not known how to detect which members have an explict default value and which do not.
-        // if struct_info.initializer then struct_info.initializer(memory); else just memset zeros
 
         for member: struct_members {
             found := false;
@@ -83,11 +78,8 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
                 }
             }
             if !found && member.type.type != .VOID {
-                member_slot := slot + member.offset_in_bytes;
-                empty_table := Value.{type=.TABLE, array=resizable(Value.[])};
-                if deserialize_option(empty_table, member_slot, member.type) continue; // None does not expect its tag or value
-
-                exit_with_error("Missing field %.%", struct_info.name, member.name);
+                // TODO check TomlOptional Note and require_all true/false
+                // exit_with_error("Missing field %.%", struct_info.name, member.name);
             }
         }
     case .ARRAY;
@@ -199,25 +191,6 @@ deserialize_sumtype :: (toml: Value, slot: *u8, struct_members: []Type_Info_Stru
     union_slot := slot + struct_members[union_idx].offset_in_bytes;
     union_members := collect_union_members(union_info);
 
-    // Handle empty table as void/none NOTE: if member was missing from toml an empty table is inserted
-    if toml.type == .TABLE && toml.table.count == 0 {
-        found, void_idx := find_void_index(union_members);
-        if !found { exit_with_error("Sum-type % does not have an optional (void) variant", struct_name); }
-        set_enum_value(tag_slot, tag_info, void_idx);
-        return true; // void does not have bytes to set
-    }
-    // Special case for Option type defined as a sum-type with 2 members 1 being void.
-    // The TOML is not expected to contain the Option tags some/none.
-    if union_members.count == 2 { // Search void also if union_members.count == 2 handle as optional which does not introduce new names for some / none
-        found, void_idx := find_void_index(union_members);
-        if found {
-            some_idx : = 1 - void_idx;
-            set_enum_value(tag_slot, tag_info, some_idx);
-            deserialize(toml, union_slot, union_members[some_idx].type, tag_info.names[some_idx], union_info.members[some_idx].name);
-            return true;
-        }
-    }
-    if toml.type != .TABLE { exit_with_error("A value is provided without naming the variant first for sum-type %", struct_name); }
     if toml.table.count != 1 { exit_with_error("Exactly 1 field expected for sum-type %, got %", struct_name, toml.table.count); }
     found, idx := array_find(tag_info.names, toml.table[0].key);
     if !found { exit_with_error("String % is not a variant of sum-type % %", toml.table[0].key, struct_name, tag_info.names); }
@@ -226,37 +199,29 @@ deserialize_sumtype :: (toml: Value, slot: *u8, struct_members: []Type_Info_Stru
     deserialize(toml.table[0].value, union_slot, union_members[idx].type, tag_info.names[idx], union_info.members[idx].name);
     return true;
 }
-deserialize_option :: (toml: Value, member_slot: *u8, member_info: *Type_Info) -> is_sum_type:bool { // TODO sep. is sum deser some deser none
-    if member_info.type == .STRUCT {
-        member_struct_info := cast(*Type_Info_Struct) member_info;
-        member_struct_members := collect_members(member_struct_info); // @perf cache this and is_sumtype/is_option
-        return deserialize_sumtype(toml, member_slot, member_struct_members, member_struct_info.name);
-    }
-    return false;
-}
 
 // Collect all variables members and flattens non-union using structs
 collect_members :: (struct_info:*Type_Info_Struct) -> [..]Type_Info_Struct_Member {
     struct_members: [..]Type_Info_Struct_Member;
-    collect_members(*struct_members, struct_info, 0);
-    return struct_members;
-}
-collect_members :: (struct_members:*[..]Type_Info_Struct_Member, struct_info:*Type_Info_Struct, offset_in_bytes: s64) {
-    for member: struct_info.members {
-        if member.flags & .CONSTANT { continue; }
-        if member.flags & .USING {
-            if (member.type.type == .STRUCT) { // NOTE: Enums can be using too, but they don't have members to flatten
-                sub_member:= cast(*Type_Info_Struct) member.type;
-                if !(sub_member.textual_flags & .UNION) { // Don't flatten unions
-                    collect_members(struct_members, sub_member, offset_in_bytes + member.offset_in_bytes);
-                    continue; // Don't add the using itself
+    collect_members :: (struct_members:*[..]Type_Info_Struct_Member, struct_info:*Type_Info_Struct, offset_in_bytes: s64) {
+        for member: struct_info.members {
+            if member.flags & .CONSTANT { continue; }
+            if member.flags & .USING {
+                if (member.type.type == .STRUCT) { // NOTE: Enums can be using too, but they don't have members to flatten
+                    sub_member:= cast(*Type_Info_Struct) member.type;
+                    if !(sub_member.textual_flags & .UNION) { // Don't flatten unions
+                        collect_members(struct_members, sub_member, offset_in_bytes + member.offset_in_bytes);
+                        continue; // Don't add the using itself
+                    }
                 }
             }
-        }
 
-        array_add(struct_members, member);
-        (<<struct_members)[struct_members.count-1].offset_in_bytes += offset_in_bytes;
+            array_add(struct_members, member);
+            (<<struct_members)[struct_members.count-1].offset_in_bytes += offset_in_bytes;
+        }
     }
+    collect_members(*struct_members, struct_info, 0);
+    return struct_members;
 }
 
 // Flatten variants of the union, only needed for Sum_Type support
@@ -274,16 +239,6 @@ collect_union_members :: (union_info:*Type_Info_Struct) -> [..]Type_Info_Struct_
         array_add(*union_members, member);
     }
     return union_members;
-}
-
-// Find the index of the void member in the union, returns false if there are multiple voids
-find_void_index ::(union_members: []Type_Info_Struct_Member)-> found:bool, index:s64 {
-    index := -1;
-    for union_members {  if it.type.type == .VOID {
-        if index != -1 { return false, -1; } // More than one void
-        index = it_index;
-    }}
-    return index != -1, index;
 }
 
 initialize_memory :: (memory: *void, info: *Type_Info, count:s64=1) {

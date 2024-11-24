@@ -46,14 +46,14 @@ DONE
 
     Guy :: struct {
         union {
+            Banana: void;
             Apple: struct { a: u8; b: string;};
             Orange: string;
-            Banana: void;
         };
         tag: enum {
+            Banana;
             Apple;
             Orange;
-            Banana;
         };
     }
     void_banana := Toml.deserialize("", Guy);
@@ -64,8 +64,8 @@ DONE
 Apple = {a = 32, b = 'Y'}
 DONE
     apple := Toml.deserialize(SUM, Guy);
-    print("void_banana: %\n", apple);
-    print("void_banana: %\n", apple.Apple);
+    print("struct_apple: %\n", apple);
+    print("struct_apple: %\n", apple.Apple);
 }
 
 Toml :: #import, file "../Toml/module.jai";

@@ -8,9 +8,9 @@ main :: () {
     }
     none_str := Toml.deserialize("nom = 'Tim'", Expect);
     print("none: %\n", none_str);
-    explicit_none := Toml.deserialize("nom = 'Tim'\n[expected]", Expect);
+    explicit_none := Toml.deserialize("nom = 'Tim'\nexpected.None='void'", Expect);
     print("none: %\n", explicit_none);
-    some := Toml.deserialize("nom = 'Tim'\nexpected = 23", Expect);
+    some := Toml.deserialize("nom = 'Tim'\nexpected.Some = 23", Expect);
     print("some: %\n", some);
     print("expected: %\n", unwrap(some.expected)); // TODO how to print these nicely easily?
 
@@ -22,7 +22,6 @@ main :: () {
     bread    := unwrap(food, MyFood.Bread);                         print("bread: %\n", bread);
     baguette := unwrap(bread, MyBread.Baguette);                    print("baguette: %\n", baguette);
     assert(3 == baguette);
-
     other_food := Toml.deserialize("[Fruit.Mango]", MyFood);
     other_fruit := unwrap(other_food, MyFood.Fruit);                print("other_fruit: %\n", other_fruit);
     other_mango := unwrap(other_fruit, MyFruit.Mango);              print("other_mango: %\n", other_mango);
@@ -30,7 +29,7 @@ main :: () {
 
     // Toml.deserialize("[Fruit]", MyFood); // This is not allowed only void can make a user-defined sum-type be optional
 
-    kiwi_food := Toml.deserialize("Fruit.Kiwi = {spaghetti = 3, macaroni = true, why = 9, anonymous = 88, try = 'B'}", MyFood); print("%\n", kiwi_food);
+    kiwi_food := Toml.deserialize("Fruit.Kiwi = {spaghetti = 3, macaroni = true, why = 9, anonymous = 88, try = 'B'}", MyFood); print("kiwi_food: %\n", kiwi_food);
     kiwi_fruit := unwrap(kiwi_food, MyFood.Fruit);                 print("kiwi_fruit: %\n", kiwi_fruit);
     kiwi := unwrap(kiwi_fruit, MyFruit.Kiwi);                      print("kiwi: %\n", kiwi);
     assert("{3, true, {9, 88}, B}" == tprint("%", kiwi)); // Using sub-members need to have their offset_in_bytes combined with the using member's offset_in_bytes
@@ -40,7 +39,7 @@ main :: () {
         nom: string;
         expected: [..]Option(s64);
     }
-    array := Toml.deserialize("nom = 'Tim'\nexpected = [23, 46]", Expect2);
+    array := Toml.deserialize("nom = 'Tim'\nexpected = [{Some=23}, {Some=46}]", Expect2);
     for array.expected { print("% ", unwrap(it)); assert(unwrap(it) == (1+it_index)*23); }
     print("array!\n");
 
@@ -51,7 +50,7 @@ main :: () {
         nom: string;
         expected: [..]MyFruit;
     }
-    fruit_bowl := Toml.deserialize("nom = 'Tim'\nexpected = [{Pineapple=7}, {Mango='arrr'}]\n", Expect3);
+    fruit_bowl := Toml.deserialize("nom = 'Tim'\nexpected = [{Pineapple=7}, {Mango.Some='arrr'}]\n", Expect3);
     print("fruit_bowl: %\n", fruit_bowl);
 }
 MyStruct :: struct {
