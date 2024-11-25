@@ -250,6 +250,9 @@ reinitialize_all_unions :: (memory: *void, info: *Type_Info) {
                 reinitialize_all_unions(memory + array_info.element_type.runtime_size * it, array_info.element_type);
             }
         }
+    case .VARIANT;
+        variant_info := cast(*Type_Info_Variant) info;
+        reinitialize_all_unions(memory, variant_info.variant_of);
     }
 }
 
