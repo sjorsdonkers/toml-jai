@@ -1,15 +1,15 @@
 
 deserialize :: (contents: string, $Target: Type) -> Target {
     #if Target == Value return parse(contents); // Prevents unnecesarly copying
-    value := parse(contents,, allocator=temp);  // TODO use a parser that delays parsing literals for better accuracy
+    value := parse(contents,, allocator=temp);
     return deserialize(value, Target);
 }
 
 deserialize :: (value: Value, $Target: Type) -> Target {
-    target : Target;
-    bytes := cast(*void) *target;
     info :: type_info(Target);
-    deserialize(value, bytes, info);
+    target :Target;
+    reinitialize_all_unions(*target, info); // TODO remove when union init is normal Jai behavior (not the case in: Version: beta 0.1.095)
+    deserialize(value, *target, info);
     return target;
 }
 
@@ -24,18 +24,14 @@ deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="
         return;
     }
 
-    // TODO remove when this is normal Jai behavior (not the case in: Version: beta 0.1.095)
-    reinitialize_all_unions(slot, info); // Reinitialize unions to first member
-
     if #complete info.type == {
     case .INTEGER;
         expect(toml.type, .INT, parent_name, name);
-        // TODO support u64, delay parsing till here so we known wheter to parse signed or unsigned / or store u64 as well
         valid, low, high := range_check_and_store(toml.int_value, cast(*Type_Info_Integer)info, slot);
         if !valid { exit_with_error("Value for %.% is out of range. Given % expected min % max %", parent_name, name, toml.int_value, low, high); }
     case .FLOAT;
         expect(toml.type, .FLOAT, parent_name, name);
-        if info.runtime_size == 4      { <<cast(*float)   slot = cast(float) toml.float_value; } // TODO not lossless, delay parsing
+        if      info.runtime_size == 4 { <<cast(*float)   slot = cast(float) toml.float_value; }
         else if info.runtime_size == 8 { <<cast(*float64) slot = toml.float_value; }
         else { exit_with_error("Unsupported float size %", info.runtime_size); }
     case .BOOL;
@@ -235,7 +231,6 @@ reinitialize_all_unions :: (memory: *void, info: *Type_Info) {
         if struct_info.textual_flags & .UNION {
             if struct_info.members.count <= 0 { return; }
             initialize_memory(memory, struct_info.members[0].type);
-            reinitialize_all_unions(memory + struct_info.members[0].offset_in_bytes, struct_info.members[0].type);
             return;
         }
 
@@ -272,6 +267,7 @@ initialize_memory :: (memory: *void, info: *Type_Info, count:s64=1) {
             current := memory;
             for 0..count-1 {
                 struct_info.initializer(current);
+                reinitialize_all_unions(current, struct_info); // Same hack
                 current += struct_info.runtime_size;
             }
             return;
