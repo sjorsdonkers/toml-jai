@@ -17,7 +17,6 @@ deserialize :: (value: Value, $Target: Type) -> Target {
 
 // slot is already initialized memory
 // Currently all fields are optional. TODO check TomlOptional Note and require_all true/false
-// TODO support untagged unions, just expect table with 1 field which should be one of the union member names
 deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="", name:string="") {
     value_info :: type_info(Value);
     if info == value_info { // If encounter we Toml.Value at any point just copy it
@@ -59,7 +58,7 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
         if toml.table.count == 0 return; // Use defaults
 
         struct_info := cast(*Type_Info_Struct) info;
-        if struct_info.textual_flags & .UNION { exit_with_error("Union are not yet supported unless they are in a sum-type (struct with enum tag and union where union.members.count == tag.values.count)"); }
+        if struct_info.textual_flags & .UNION { exit_with_error("Union are not supported unless they are in a sum-type (struct with enum tag and union where union.members.count == tag.values.count)"); }
 
         struct_members := collect_members(struct_info);
         if deserialize_sumtype(toml, slot, struct_members, struct_info.name) return;
@@ -243,12 +242,12 @@ initialize_memory :: (memory: *void, info: *Type_Info, count:s64=1) {
     case .ARRAY;
         array_info := cast(*Type_Info_Array) info;
         if array_info.array_type == .FIXED {
-            initialize_memory(memory, array_info.element_type, array_info.array_count); // TODO check
+            initialize_memory(memory, array_info.element_type, array_info.array_count);
             return;
         }
     case .VARIANT;
         variant_info := cast(*Type_Info_Variant) info;
-        initialize_memory(memory, variant_info.variant_of); // TODO check
+        initialize_memory(memory, variant_info.variant_of);
     }
     // @Incomplete: initialize first union member?, using?
     memset(memory, 0, total_size);

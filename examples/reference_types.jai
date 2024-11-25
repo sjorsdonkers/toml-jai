@@ -13,6 +13,29 @@ main :: () {
     print("pointers_toml.p_s16: %\n",   <<pointers_toml.p_s16  );
     print("pointers_toml.p_inner: %\n", <<pointers_toml.p_inner);
 
+    Getal :: #type,distinct u8;
+
+    // Pointer to fixed array with initializer
+    Vingt :: struct       {
+        number : s8=20;
+        getal: Getal= 23;
+    }
+    Fixed_Array :: struct {
+        p_quatre: *[4]Vingt;
+    }
+    quatre_vingt := Toml.deserialize("p_quatre = [{getal = 9}, {getal = 4}, {number = 3}, {}]", Fixed_Array);
+    log("quatre_vingt: %\n", <<quatre_vingt.p_quatre);
+    assert((<<quatre_vingt.p_quatre)[0].number == 20);
+    assert((<<quatre_vingt.p_quatre)[2].getal == 23);
+
+    // Pointer to variant
+    MyVar :: struct {
+        p_variant: *Getal;
+    }
+    mutant := Toml.deserialize("p_variant = 3", MyVar);
+    print("mutant: %\n", <<mutant.p_variant);
+    assert(<<mutant.p_variant == 3);
+
     // ARRAY VIEW
     Array_View :: struct {
         ocean: []s16;
