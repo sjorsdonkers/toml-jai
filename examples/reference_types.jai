@@ -41,6 +41,42 @@ main :: () {
     print("mutant: %\n", <<mutant.p_variant);
     assert(mutant.p_variant.a == "Anton");
 
+    // Pointer to struct with using (no impl required)
+    MyUsing :: struct {
+        using a: Vingt;
+    }
+    MyPtrUsing :: struct {
+        p_using: *MyUsing;
+    }
+    use20 := Toml.deserialize("[p_using]\nnumber = 6", MyPtrUsing);
+    print("use20: %\n", <<use20.p_using);
+    assert(use20.p_using.getal == 23);
+
+    // Union with first having an initializer
+    MyUnionStruct :: struct {
+        tag : enum {
+            FIRST;
+            SECOND;
+        }
+        union {
+            first: Vingt;
+            second: string;
+        }
+    }
+    un := Toml.deserialize("", MyUnionStruct);
+    print("un: %\n", un.first);
+    assert(un.first.number == 20);
+    assert(un.first.getal == 23);
+
+    // Pointer to union
+    MyUnionPtr :: struct {
+        p_union: *MyUnionStruct;
+    }
+    un_ptr := Toml.deserialize("p_union.FIRST.number = 3", MyUnionPtr);
+    print("un_ptr: %\n", un_ptr.p_union.first);
+    assert(un_ptr.p_union.first.number == 3);
+    assert(un_ptr.p_union.first.getal == 23);
+
     // ARRAY VIEW
     Array_View :: struct {
         ocean: []s16;

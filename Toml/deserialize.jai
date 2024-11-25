@@ -24,6 +24,9 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
         return;
     }
 
+    // TODO remove when this is normal Jai behavior (not the case in: Version: beta 0.1.095)
+    reinitialize_union_members(slot, info); // Reinitialize union members to work around union init inconsistency
+
     if #complete info.type == {
     case .INTEGER;
         expect(toml.type, .INT, parent_name, name);
@@ -55,7 +58,7 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
         }
     case .STRUCT;
         expect(toml.type, .TABLE, parent_name, name);
-        if toml.table.count == 0 return; // Use defaults
+        if toml.table.count == 0 { return; } // Use defaults
 
         struct_info := cast(*Type_Info_Struct) info;
         if struct_info.textual_flags & .UNION { exit_with_error("Union are not supported unless they are in a sum-type (struct with enum tag and union where union.members.count == tag.values.count)"); }
@@ -191,9 +194,9 @@ collect_members :: (struct_info:*Type_Info_Struct) -> [..]Type_Info_Struct_Membe
             if member.flags & .CONSTANT { continue; }
             if member.flags & .USING {
                 if (member.type.type == .STRUCT) { // NOTE: Enums can be using too, but they don't have members to flatten
-                    sub_member:= cast(*Type_Info_Struct) member.type;
-                    if !(sub_member.textual_flags & .UNION) { // Don't flatten unions
-                        collect_members(struct_members, sub_member, offset_in_bytes + member.offset_in_bytes);
+                    member_struct_info:= cast(*Type_Info_Struct) member.type;
+                    if !(member_struct_info.textual_flags & .UNION) { // Don't flatten unions
+                        collect_members(struct_members, member_struct_info, offset_in_bytes + member.offset_in_bytes);
                         continue; // Don't add the using itself
                     }
                 }
@@ -224,6 +227,32 @@ collect_union_members :: (union_info:*Type_Info_Struct) -> [..]Type_Info_Struct_
     return union_members;
 }
 
+// Initializes union members to their first variant at every level within the given memory/info
+reinitialize_union_members :: (memory: *void, info: *Type_Info) {
+    if info.type == {
+    case .STRUCT;
+        struct_info := cast(*Type_Info_Struct) info;
+        if struct_info.textual_flags & .UNION {
+            if struct_info.members.count <= 0 { return; }
+            initialize_memory(memory, struct_info.members[0].type);
+            reinitialize_union_members(memory + struct_info.members[0].offset_in_bytes, struct_info.members[0].type);
+            return;
+        }
+
+        for member: struct_info.members {
+            if member.flags & .CONSTANT { continue; }
+            reinitialize_union_members(memory + member.offset_in_bytes, member.type);
+        }
+    case .ARRAY;
+        array_info := cast(*Type_Info_Array) info;
+        if array_info.array_type == .FIXED {
+            for 0..array_info.array_count-1 {
+                reinitialize_union_members(memory + array_info.element_type.runtime_size * it, array_info.element_type);
+            }
+        }
+    }
+}
+
 initialize_memory :: (memory: *void, info: *Type_Info, count:s64=1) {
     if count <= 0 || info.runtime_size <= 0 return;
     total_size := count * info.runtime_size;
@@ -231,14 +260,19 @@ initialize_memory :: (memory: *void, info: *Type_Info, count:s64=1) {
     if info.type == {
     case .STRUCT;
         struct_info := cast(*Type_Info_Struct) info;
+        if struct_info.textual_flags & .UNION {
+            assert(struct_info.members.count > 0); // Note if members.count where 0 runtime_size would be 0, so there should at least be 1 member
+            initialize_memory(memory, struct_info.members[0].type, count); // TODO Hack to deal with inconsistent union initialization
+            return;
+        }
         if struct_info.initializer {
             current := memory;
             for 0..count-1 {
                 struct_info.initializer(current);
                 current += struct_info.runtime_size;
             }
+            return;
         }
-        return;
     case .ARRAY;
         array_info := cast(*Type_Info_Array) info;
         if array_info.array_type == .FIXED {
@@ -247,11 +281,9 @@ initialize_memory :: (memory: *void, info: *Type_Info, count:s64=1) {
         }
     case .VARIANT;
         variant_info := cast(*Type_Info_Variant) info;
-        log("Initializing variant %\n", variant_info.variant_of.type);
         initialize_memory(memory, variant_info.variant_of);
         return;
     }
-    // @Incomplete: initialize first union member?, using?
     memset(memory, 0, total_size);
 }
 
