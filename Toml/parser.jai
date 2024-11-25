@@ -286,36 +286,6 @@ last :: (scope: Scope) -> Token {
     return scope.tokens[scope.tokens.count-1];
 }
 
-get_line :: (data: string, line_number: s32) -> line: string, found:bool {
-    #import "Text_File_Handler";
-    line: string;
-    found: bool;
-    for 1..line_number { line, found = consume_next_line(*data); }
-    return line, found;
-}
-exit_with_error :: (format: string, arguments: .. Any) {
-    log_error(format, ..arguments);
-    exit(1);
-}
-exit_with_error_line :: (source: string, loc: Location, format: string, arguments: .. Any) {
-    line, found := get_line(source, loc.line);
-    if !found {
-        log_error("Failed to read line % from file", loc.line);
-        exit(1);
-    }
-    message := tprint(format, ..arguments);
-    log_error("Line % Char %: %", loc.line, loc.char, message);
-    log_error(line);
-
-    // print ^^ under the char number
-    builder: String_Builder;
-    for 1..loc.char-1 { append(*builder, #char " "); }
-    append(*builder, #char "^");
-    log_error(builder_to_string(*builder));
-
-    exit(1);
-}
-
 // .   -> `.`  ``   // .ab -> `.`  `ab`
 // ab  -> `ab` ``   // a.b -> `a`  `.b`
 //     -> ``   ``   // ab. -> `ab` `.`

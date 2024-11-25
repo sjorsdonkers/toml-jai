@@ -286,10 +286,5 @@ initialize_memory :: (memory: *void, info: *Type_Info, count:s64=1) {
     memset(memory, 0, total_size);
 }
 
-exit_with_error :: (format: string, arguments: .. Any) {
-    log_error(format, ..arguments);
-    exit(1);
-}
-
 #load "parser.jai";
 #import "Reflection";
