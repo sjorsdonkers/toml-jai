@@ -247,7 +247,9 @@ initialize_memory :: (memory: *void, info: *Type_Info, count:s64=1) {
         }
     case .VARIANT;
         variant_info := cast(*Type_Info_Variant) info;
+        log("Initializing variant %\n", variant_info.variant_of.type);
         initialize_memory(memory, variant_info.variant_of);
+        return;
     }
     // @Incomplete: initialize first union member?, using?
     memset(memory, 0, total_size);

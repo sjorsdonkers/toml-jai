@@ -29,12 +29,17 @@ main :: () {
     assert((<<quatre_vingt.p_quatre)[2].getal == 23);
 
     // Pointer to variant
-    MyVar :: struct {
-        p_variant: *Getal;
+    DefaultStruct :: struct {
+        a: string="Anton";
+        b: s8;
     }
-    mutant := Toml.deserialize("p_variant = 3", MyVar);
+    DefaultVariant :: #type,distinct DefaultStruct;
+    MyVar :: struct {
+        p_variant: *DefaultVariant;
+    }
+    mutant := Toml.deserialize("p_variant.b = 3", MyVar);
     print("mutant: %\n", <<mutant.p_variant);
-    assert(<<mutant.p_variant == 3);
+    assert(mutant.p_variant.a == "Anton");
 
     // ARRAY VIEW
     Array_View :: struct {
@@ -80,5 +85,3 @@ main :: () {
 Toml :: #import, file "../Toml/module.jai";
 #import "Basic";
 #import "File";
-
-#scope_file
