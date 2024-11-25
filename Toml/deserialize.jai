@@ -7,7 +7,7 @@ deserialize :: (contents: string, $Target: Type) -> Target {
 
 deserialize :: (value: Value, $Target: Type) -> Target {
     target : Target;
-    bytes := cast(*u8) *target;
+    bytes := cast(*void) *target;
     info :: type_info(Target);
     deserialize(value, bytes, info);
     return target;
@@ -17,7 +17,7 @@ deserialize :: (value: Value, $Target: Type) -> Target {
 
 // slot is already initialized memory
 // Currently all fields are optional. TODO check TomlOptional Note and require_all true/false
-deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="", name:string="") {
+deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="", name:string="") {
     value_info :: type_info(Value);
     if info == value_info { // If encounter we Toml.Value at any point just copy it
         <<cast(*Value) slot = copy(toml);
@@ -48,7 +48,7 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
         pointer_info := cast(*Type_Info_Pointer) info;
         memory := alloc(pointer_info.pointer_to.runtime_size);
         initialize_memory(memory, pointer_info.pointer_to);
-        <<cast(**u8)slot = memory;
+        <<cast(**void)slot = memory;
         deserialize(toml, memory, pointer_info.pointer_to, parent_name, name);
     case .VOID;
         if toml.type == {
@@ -76,7 +76,7 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
         array_info := cast(*Type_Info_Array) info;
         element_type := array_info.element_type;
 
-        fill_array :: (toml_array: []Value, slot: *u8, item_info: *Type_Info, parent_name:string) {
+        fill_array :: (toml_array: []Value, slot: *void, item_info: *Type_Info, parent_name:string) {
             for idx: 0..toml_array.count-1 {
                 item_slot := slot + item_info.runtime_size * idx;
                 deserialize(toml_array[idx], item_slot, item_info, parent_name, "[item]");
@@ -90,13 +90,13 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
                 array := cast(*[] u8) slot;
                 array.data = alloc(toml.array.count * element_type.runtime_size);
                 array.count = toml.array.count;
-                initialize_memory(array.data, array_info.element_type, array.count);
+                initialize_memory(array.data, element_type, array.count);
                 fill_array(toml.array, array.data, element_type, name);
             case .RESIZABLE;
                 array := cast(*[..] u8) slot;
                 array_reserve(array, toml.array.count * element_type.runtime_size);
                 array.count = toml.array.count;
-                initialize_memory(array.data, array_info.element_type, array.count);
+                initialize_memory(array.data, element_type, array.count);
                 fill_array(toml.array, array.data, element_type, name);
         }
     case .ANY;
@@ -158,7 +158,7 @@ expect :: inline (given: Value.Type, expected: Value.Type, struct_name: string, 
     if given != expected { exit_with_error("Wrong type for %.%, expected %, got % ", struct_name, member_name, expected, given); }
 }
 
-deserialize_sumtype :: (toml: Value, slot: *u8, struct_members: []Type_Info_Struct_Member, struct_name:string) -> is_sumtype:bool {
+deserialize_sumtype :: (toml: Value, slot: *void, struct_members: []Type_Info_Struct_Member, struct_name:string) -> is_sumtype:bool {
     if struct_members.count != 2 return false;
 
     tag_idx :s64=---;
