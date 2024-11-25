@@ -25,7 +25,7 @@ deserialize :: (toml: Value, slot: *u8, info: *Type_Info, parent_name:string="",
     }
 
     // TODO remove when this is normal Jai behavior (not the case in: Version: beta 0.1.095)
-    reinitialize_union_members(slot, info); // Reinitialize union members to work around union init inconsistency
+    reinitialize_all_unions(slot, info); // Reinitialize unions to first member
 
     if #complete info.type == {
     case .INTEGER;
@@ -228,26 +228,26 @@ collect_union_members :: (union_info:*Type_Info_Struct) -> [..]Type_Info_Struct_
 }
 
 // Initializes union members to their first variant at every level within the given memory/info
-reinitialize_union_members :: (memory: *void, info: *Type_Info) {
+reinitialize_all_unions :: (memory: *void, info: *Type_Info) {
     if info.type == {
     case .STRUCT;
         struct_info := cast(*Type_Info_Struct) info;
         if struct_info.textual_flags & .UNION {
             if struct_info.members.count <= 0 { return; }
             initialize_memory(memory, struct_info.members[0].type);
-            reinitialize_union_members(memory + struct_info.members[0].offset_in_bytes, struct_info.members[0].type);
+            reinitialize_all_unions(memory + struct_info.members[0].offset_in_bytes, struct_info.members[0].type);
             return;
         }
 
         for member: struct_info.members {
             if member.flags & .CONSTANT { continue; }
-            reinitialize_union_members(memory + member.offset_in_bytes, member.type);
+            reinitialize_all_unions(memory + member.offset_in_bytes, member.type);
         }
     case .ARRAY;
         array_info := cast(*Type_Info_Array) info;
         if array_info.array_type == .FIXED {
             for 0..array_info.array_count-1 {
-                reinitialize_union_members(memory + array_info.element_type.runtime_size * it, array_info.element_type);
+                reinitialize_all_unions(memory + array_info.element_type.runtime_size * it, array_info.element_type);
             }
         }
     }
