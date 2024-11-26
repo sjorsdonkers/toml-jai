@@ -86,11 +86,10 @@ parse_header :: (root_table: *Value, scope: Scope) -> *Value {
         }
 
         _, current_table, is_new := parse_key(root_table, aot_scope);
-        if !is_new && current_table.type != Value.Type.ARRAY {
-            exit_with_error_line(aot_scope.source, last(aot_scope).loc, "Cannot use key as Array of Tables as it already has a value: %", current_table.type);
+        if current_table.type != .ARRAY {
+            if !is_new { exit_with_error_line(aot_scope.source, last(aot_scope).loc, "Cannot use key as Array of Tables as it already has a value: %", current_table.type); }
+            <<current_table = .{type=.ARRAY, array=resizable(Value.[])};
         }
-
-        current_table.type = Value.Type.ARRAY;
         array_add(*current_table.array, Value.{type=.TABLE, table=resizable(KeyValue.[])});
         return *current_table.array[current_table.array.count-1];
     }
