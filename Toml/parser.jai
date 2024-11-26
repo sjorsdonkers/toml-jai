@@ -1,5 +1,4 @@
 // Does not support:
-// - Unescaping basic string (when? lexer, parser, when making permanent?)
 // - Date / Time
 // - Rejecting all control characters
 // - Rejecting values that overwrite / append to previous ones

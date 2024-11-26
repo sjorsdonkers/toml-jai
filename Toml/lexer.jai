@@ -1,5 +1,5 @@
 // This lexer does not parse keys or literals, it just determines scopes of chars or tokens.
-// NOTE: The keys and literals point into the input data string.
+// NOTE: The keys and literals point into the input data string, except for basic string.
 // It is up to the caller to determine when is the best time to put them in a permanent location.
 
 Token :: struct {
@@ -59,20 +59,22 @@ tokenize :: (data: string) -> tokens: [..]Token { // TODO Change to streaming le
             continue;
         }
 
-        // Literal string
+        // Quoted string
         if c == #char "'" || c == #char "\"" {
             tripple_quote := ifx c == #char "'" then "'''" else "\"\"\"";
             if has_next(lexer, 3) && peak_slice(lexer, 3) == tripple_quote {
+                // Multi-line quoted string
                 eat_char(*lexer, 3);
                 /// Trim newline immediately following ''' if present
                 if has_next(lexer) {
-                    if c == #char "\n" { eat_newline(*lexer); }
+                    if peak_char(lexer) == #char "\n" { eat_newline(*lexer); }
                     if has_next(lexer, 2) && peak_slice(lexer, 2) == "\r\n" {
                         eat_char(*lexer);
                         eat_newline(*lexer);
                     }
                 }
                 start := lexer.pos;
+
                 while has_next(lexer, 3) && peak_slice(lexer, 3) != tripple_quote {
                     if c == #char "\"" && has_next(lexer, 2) && peak_slice(lexer, 2) == "\\\"" { eat_char(*lexer, 2); continue; }
                     if peak_char(lexer) == #char "\n" { eat_newline(*lexer); }
@@ -82,15 +84,14 @@ tokenize :: (data: string) -> tokens: [..]Token { // TODO Change to streaming le
                 // 1 or 2 quotes at the end are allowed
                 if has_next(lexer, 4) && peak_char(lexer, 4) == c { eat_char(*lexer); }
                 if has_next(lexer, 4) && peak_char(lexer, 4) == c { eat_char(*lexer); }
+
                 token := Token.{ type=.QUOTED_MULTI, str=slice(data, start, lexer.pos - start), loc=Location.{lexer.loc.line, lexer.loc.char - cast(s32) (lexer.pos - start)} };
-                if c == #char "\"" {
-                    // TODO replace token.str by unescaped string
-                }
+                if c == #char "\"" { token.str = unescape(*lexer, token.str); }
                 array_add(*lexer.tokens, token);
                 eat_char(*lexer, 3);
                 continue;
             }
-            // Single line literal string
+            // Single-line quoted string
             eat_char(*lexer);
             start := lexer.pos;
             while has_next(lexer) && peak_char(lexer) != c {
@@ -101,9 +102,7 @@ tokenize :: (data: string) -> tokens: [..]Token { // TODO Change to streaming le
             if !has_next(lexer) { exit_with_error_line(lexer.data, lexer.loc, "Unterminated string."); }
 
             token := Token.{ type=.QUOTED, str=slice(data, start, lexer.pos - start), loc=Location.{lexer.loc.line, lexer.loc.char - cast(s32) (lexer.pos - start)} };
-            if c == #char "\"" {
-                // TODO replace token.str by unescaped string
-            }
+            if c == #char "\"" { token.str = unescape(*lexer, token.str); }
             array_add(*lexer.tokens, token);
             eat_char(*lexer);
             continue;
@@ -157,6 +156,7 @@ Lexer :: struct {
     pos: s64 = 0;            // Index into data of the current char to be evaluated
     loc: Location = .{1, 1}; // Location of the current char
     scope_stack: [..]int;    // Indices into `tokens` for scopes that have not been closed yet `{` and `[`
+    builder: String_Builder; // Used to unescape basic strings
 }
 has_next :: (lexer: Lexer, count:=1) -> bool {
     return lexer.pos + count -1 < lexer.data.count;
@@ -182,6 +182,60 @@ matching_open :: (close: u8) -> open: u8 {
     if close == #char "]" { return #char "["; }
     exit_with_error("No matching open for %", to_string(*close, 1));
     return 0;
+}
+
+unescape :: (lexer: *Lexer, basic: string) -> string {
+    pos := 0;
+    while pos < basic.count {
+        if basic[pos] != #char "\\" {
+            append(*lexer.builder, basic[pos]);
+            pos += 1;
+            continue;
+        }
+        if pos + 1 >= basic.count {exit_with_error_line(lexer.data, lexer.loc, "Unterminated escape sequence"); }
+
+        if basic[pos + 1] == {
+        case #char "b";  append(*lexer.builder, #char "\x08"); pos += 2;
+        case #char "t";  append(*lexer.builder, #char "\t");   pos += 2;
+        case #char "n";  append(*lexer.builder, #char "\n");   pos += 2;
+        case #char "f";  append(*lexer.builder, #char "\x0c"); pos += 2;
+        case #char "r";  append(*lexer.builder, #char "\r");   pos += 2;
+        case #char "\""; append(*lexer.builder, #char "\"");   pos += 2;
+        case #char "\\"; append(*lexer.builder, #char "\\");   pos += 2;
+        case #char "\r"; #through;
+        case #char "\n";
+            pos += 2;
+            while (pos < basic.count) && ( basic[pos] == #char " " || basic[pos] == #char "\t" || basic[pos] == #char "\r" || basic[pos] == #char "\n") {
+                pos += 1;
+            }
+        case #char "u"; #through;
+        case #char "U";
+            num_digits: s32 = xx ifx basic[pos + 1] == #char "u" then 4 else 8;
+            if num_digits >= basic.count {exit_with_error_line(lexer.data, lexer.loc, "Expected % characters in the unicode escape sequence", num_digits); }
+            pos += 2;
+
+            unicode_hex_str := slice(basic, pos, num_digits);
+            hex_value, success, remainder := string_to_int(unicode_hex_str, 16, u32);
+            if !success || remainder.count != 0 { exit_with_error_line(lexer.data, lexer.loc, "not valid unicode"); } // TODO improve loc, including \n
+
+            tmp := scope_string(4);
+            character_utf32_to_utf8(hex_value, *tmp);
+
+            append(*lexer.builder, tmp);
+            pos += num_digits;
+        case; exit_with_error_line(lexer.data, lexer.loc, "Invalid escape sequence."); // TODO improve loc, including \n
+        }
+    }
+    return builder_to_string(*lexer.builder);
+}
+
+// Returns a string pointing to a buffer `buf` on the caller's stack
+scope_string :: ($size: s64) -> string #expand {
+    `buf: [size]u8; // ` Puts the buffer in the caller's scope
+    tmp: string;
+    tmp.data = buf.data;
+    tmp.count = size;
+    return tmp;
 }
 
 get_line :: (data: string, line_number: s32) -> line: string, found:bool {
@@ -218,3 +272,4 @@ exit_with_error_line :: (source: string, loc: Location, format: string, argument
 }
 
 #import "Basic";
+#import "Unicode";
