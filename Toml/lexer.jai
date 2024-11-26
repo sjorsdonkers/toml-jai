@@ -82,10 +82,9 @@ tokenize :: (data: string) -> tokens: [..]Token { // TODO Change to streaming le
                 // 1 or 2 quotes at the end are allowed
                 if has_next(lexer, 4) && peak_char(lexer, 4) == c { eat_char(*lexer); }
                 if has_next(lexer, 4) && peak_char(lexer, 4) == c { eat_char(*lexer); }
+
                 token := Token.{ type=.QUOTED_MULTI, str=slice(data, start, lexer.pos - start), loc=Location.{lexer.loc.line, lexer.loc.char - cast(s32) (lexer.pos - start)} };
-                if c == #char "\"" {
-                    // TODO replace token.str by unescaped string
-                }
+                if c == #char "\"" { token.str = unescape(*lexer, token.str); }
                 array_add(*lexer.tokens, token);
                 eat_char(*lexer, 3);
                 continue;
@@ -101,9 +100,7 @@ tokenize :: (data: string) -> tokens: [..]Token { // TODO Change to streaming le
             if !has_next(lexer) { exit_with_error_line(lexer.data, lexer.loc, "Unterminated string."); }
 
             token := Token.{ type=.QUOTED, str=slice(data, start, lexer.pos - start), loc=Location.{lexer.loc.line, lexer.loc.char - cast(s32) (lexer.pos - start)} };
-            if c == #char "\"" {
-                // TODO replace token.str by unescaped string
-            }
+            if c == #char "\"" { token.str = unescape(*lexer, token.str); }
             array_add(*lexer.tokens, token);
             eat_char(*lexer);
             continue;
@@ -157,6 +154,7 @@ Lexer :: struct {
     pos: s64 = 0;            // Index into data of the current char to be evaluated
     loc: Location = .{1, 1}; // Location of the current char
     scope_stack: [..]int;    // Indices into `tokens` for scopes that have not been closed yet `{` and `[`
+    builder: String_Builder;
 }
 has_next :: (lexer: Lexer, count:=1) -> bool {
     return lexer.pos + count -1 < lexer.data.count;
@@ -182,6 +180,70 @@ matching_open :: (close: u8) -> open: u8 {
     if close == #char "]" { return #char "["; }
     exit_with_error("No matching open for %", to_string(*close, 1));
     return 0;
+}
+
+unescape :: (lexer: *Lexer, basic: string) -> string { // TODO change builder to lexer to have access to loc
+    // TODO if not contains "//" return basic;
+    pos := 0;
+    while true {
+        if pos >= basic.count { break; }
+        if basic[pos] == #char "\\" {
+            if pos + 1 >= basic.count {exit_with_error_line(lexer.data, lexer.loc, "Unterminated escape sequence"); }
+
+            if basic[pos + 1] == {
+            case #char "b";  append(*lexer.builder, #char "\x08"); pos += 2;
+            case #char "t";  append(*lexer.builder, #char "\t"); pos += 2;
+            case #char "n";  append(*lexer.builder, #char "\n"); pos += 2;
+            case #char "f";  append(*lexer.builder, #char "\x0c"); pos += 2;
+            case #char "r";  append(*lexer.builder, #char "\r"); pos += 2;
+            case #char "\""; append(*lexer.builder, #char "\""); pos += 2;
+            case #char "\\"; append(*lexer.builder, #char "\\"); pos += 2;
+            case #char "u"; #through;
+            case #char "U";
+                num_digits: s32 = xx ifx basic[pos + 1] == #char "u" then 4 else 8;
+                if num_digits + 2 >= basic.count {exit_with_error_line(lexer.data, lexer.loc, "Expected % characters in the unicode escape sequence", num_digits); }
+
+                unicode_hex_str := slice(basic, pos+2, num_digits);
+                hex_value, success, remainder := string_to_int(unicode_hex_str, 16, u32);
+                if !success || remainder.count != 0 {
+                    current_loc := lexer.loc;
+                    current_loc.char += xx (pos - basic.count);
+                    exit_with_error_line(lexer.data, current_loc, "not unicode");
+                }
+
+
+                #import "Windows_Utf8";
+                log("UNICODE VALUE é\u00E9 % \n", "\u00E9");
+                // utf8_to_wide_new
+
+                print("UNICODE VALUE é\u00E9 \n");
+
+                buf: [4]u8;
+                tmp: string;
+                tmp.data = buf.data;
+                character_utf32_to_utf8(hex_value, *tmp);
+
+                // result_data, fff, result_length_in_bytes := utf8_to_wide_new(tmp);
+                // assert(fff);
+                // print_bytes(result_data, result_length_in_bytes);
+                // tmp2: string;
+                // tmp2.data = xx result_data;
+                // tmp2.count = result_length_in_bytes;
+                print("tmp: %\n", tmp);
+
+                append(*lexer.builder, tmp);
+                pos += num_digits + 2;
+            case;
+                current_loc := lexer.loc;
+                current_loc.char += xx (pos - basic.count);
+                exit_with_error_line(lexer.data, current_loc, "Invalid escape sequence.");
+            }
+        } else {
+            append(*lexer.builder, basic[pos]);
+            pos += 1;
+        }
+    }
+    return builder_to_string(*lexer.builder);
 }
 
 get_line :: (data: string, line_number: s32) -> line: string, found:bool {
@@ -218,3 +280,4 @@ exit_with_error_line :: (source: string, loc: Location, format: string, argument
 }
 
 #import "Basic";
+#import "Unicode";

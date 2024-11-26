@@ -117,3 +117,6 @@ str6 = """Here are fifteen quotation marks: ""\"""\"""\"""\"""\"."""
 
 # "This," she said, "is just a pointless statement."
 str7 = """"This," she said, "is just a pointless statement.""""
+
+
+basic_str = "I'm a string. \"You can quote me\". Name\tJosé\u00E9\nLocation\tSF."
