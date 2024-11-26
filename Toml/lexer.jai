@@ -1,5 +1,5 @@
 // This lexer does not parse keys or literals, it just determines scopes of chars or tokens.
-// NOTE: The keys and literals point into the input data string.
+// NOTE: The keys and literals point into the input data string, except for basic string.
 // It is up to the caller to determine when is the best time to put them in a permanent location.
 
 Token :: struct {
@@ -156,7 +156,7 @@ Lexer :: struct {
     pos: s64 = 0;            // Index into data of the current char to be evaluated
     loc: Location = .{1, 1}; // Location of the current char
     scope_stack: [..]int;    // Indices into `tokens` for scopes that have not been closed yet `{` and `[`
-    builder: String_Builder;
+    builder: String_Builder; // Used to unescape basic strings
 }
 has_next :: (lexer: Lexer, count:=1) -> bool {
     return lexer.pos + count -1 < lexer.data.count;
@@ -184,8 +184,7 @@ matching_open :: (close: u8) -> open: u8 {
     return 0;
 }
 
-unescape :: (lexer: *Lexer, basic: string) -> string { // TODO change builder to lexer to have access to loc
-    // TODO if not contains "//" return basic;
+unescape :: (lexer: *Lexer, basic: string) -> string {
     pos := 0;
     while true {
         if pos >= basic.count { break; }
@@ -218,11 +217,7 @@ unescape :: (lexer: *Lexer, basic: string) -> string { // TODO change builder to
 
                 unicode_hex_str := slice(basic, pos+2, num_digits);
                 hex_value, success, remainder := string_to_int(unicode_hex_str, 16, u32);
-                if !success || remainder.count != 0 {
-                    current_loc := lexer.loc;
-                    current_loc.char += xx (pos - basic.count);
-                    exit_with_error_line(lexer.data, current_loc, "not unicode");
-                }
+                if !success || remainder.count != 0 { exit_with_error_line(lexer.data, lexer.loc, "not unicode"); } // TODO improve loc, including \n
 
                 buf: [4]u8;
                 tmp: string;
@@ -231,10 +226,7 @@ unescape :: (lexer: *Lexer, basic: string) -> string { // TODO change builder to
 
                 append(*lexer.builder, tmp);
                 pos += num_digits + 2;
-            case;
-                current_loc := lexer.loc;
-                current_loc.char += xx (pos - basic.count);
-                exit_with_error_line(lexer.data, current_loc, "Invalid escape sequence.");
+            case; exit_with_error_line(lexer.data, lexer.loc, "Invalid escape sequence."); // TODO improve loc, including \n
             }
         } else {
             // log("Char: %", to_string(*basic[pos], 1));
