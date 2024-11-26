@@ -1,6 +1,5 @@
 // This lexer does not parse keys or literals, it just determines scopes of chars or tokens.
-// NOTE: The keys and literals point into the input data string, except for basic strings.
-// It is up to the caller to determine when is the best time to put them in a permanent location.
+// NOTE: The keys and literals point into the input data string, except for basic strings (escaped).
 
 Token :: struct {
     Type :: enum u8 {
@@ -15,17 +14,17 @@ Token :: struct {
     }
     type: Type;
     union {
-        str  : string;  // View into `data`
+        str  : string;  // View into `data` (or owned basic string)
         scope: []Token; // View into `tokens` starting at the next token
     };
-    loc: Location; // TODO Remove, instead always store string to data, in error case it is OK to recompute line and character
+    loc: Location;
 }
 
 Location :: struct {
     line, char: s32; // Line and column number, not index
 }
 
-tokenize :: (data: string) -> tokens: [..]Token { // TODO Change to streaming lexer once all requirements are in
+tokenize :: (data: string) -> tokens: [..]Token { // Consider changing to streaming lexer
     lexer := Lexer.{data=data};
     lexer.scope_stack.allocator = temp; // Deeply nested scopes are unlikely, so not expecting get large
     array_reserve(*lexer.tokens, data.count / 2); // Rough estimate of token count
@@ -54,7 +53,7 @@ tokenize :: (data: string) -> tokens: [..]Token { // TODO Change to streaming le
         if is_raw(c) {
             start := lexer.pos;
             while has_next(lexer) && is_raw(peak_char(lexer)) { eat_char(*lexer); }
-            token := Token.{ type=.RAW, str=slice(lexer.data, start, lexer.pos - start), loc=Location.{lexer.loc.line, lexer.loc.char - cast(s32) (lexer.pos - start)} };
+            token := Token.{ type=.RAW, str=slice(lexer.data, start, lexer.pos - start), loc=Location.{lexer.loc.line, lexer.loc.char - xx (lexer.pos - start)} };
             array_add(*lexer.tokens, token);
             continue;
         }
@@ -75,37 +74,40 @@ tokenize :: (data: string) -> tokens: [..]Token { // TODO Change to streaming le
                 }
                 start := lexer.pos;
 
+                // Eat string contents till the end
                 while has_next(lexer, 3) && peak_slice(lexer, 3) != tripple_quote {
                     if c == #char "\"" && has_next(lexer, 2) && peak_slice(lexer, 2) == "\\\"" { eat_char(*lexer, 2); continue; }
                     if peak_char(lexer) == #char "\n" { eat_newline(*lexer); }
                     else                              { eat_char(*lexer); }
                 }
                 if !has_next(lexer) { exit_with_error_line(lexer.data, lexer.loc, "Unterminated multi-line string."); }
-                // 1 or 2 quotes at the end are allowed
+                // 1 or 2 quotes at the end are allowed, like """"abra""""" -> "abra""
                 if has_next(lexer, 4) && peak_char(lexer, 4) == c { eat_char(*lexer); }
                 if has_next(lexer, 4) && peak_char(lexer, 4) == c { eat_char(*lexer); }
 
-                token := Token.{ type=.QUOTED_MULTI, str=slice(data, start, lexer.pos - start), loc=Location.{lexer.loc.line, lexer.loc.char - cast(s32) (lexer.pos - start)} };
-                if c == #char "\"" { token.str = unescape(*lexer, token.str); }
+                token := Token.{ type=.QUOTED_MULTI, str=slice(data, start, lexer.pos - start), loc=Location.{lexer.loc.line, lexer.loc.char - xx (lexer.pos - start)} };
+                if c == #char "\"" { token.str = unescape(lexer, token.str); }
                 array_add(*lexer.tokens, token);
                 eat_char(*lexer, 3);
                 continue;
-            }
-            // Single-line quoted string
-            eat_char(*lexer);
-            start := lexer.pos;
-            while has_next(lexer) && peak_char(lexer) != c {
-                if c == #char "\"" && has_next(lexer, 2) && peak_slice(lexer, 2) == "\\\"" { eat_char(*lexer, 2); continue; }
-                if peak_char(lexer) == #char "\n" { exit_with_error_line(lexer.data, lexer.loc, "Newline in string. Escape `\n` or use a multi-line string (tripple quote) instead."); }
+            } else {
+                // Single-line quoted string
                 eat_char(*lexer);
-            }
-            if !has_next(lexer) { exit_with_error_line(lexer.data, lexer.loc, "Unterminated string."); }
+                start := lexer.pos;
+                // Eat string contents till the end
+                while has_next(lexer) && peak_char(lexer) != c {
+                    if c == #char "\"" && has_next(lexer, 2) && peak_slice(lexer, 2) == "\\\"" { eat_char(*lexer, 2); continue; }
+                    if peak_char(lexer) == #char "\n" { exit_with_error_line(lexer.data, lexer.loc, "Newline in string. Escape `\n` or use a multi-line string (tripple quote) instead."); }
+                    eat_char(*lexer);
+                }
+                if !has_next(lexer) { exit_with_error_line(lexer.data, lexer.loc, "Unterminated string."); }
 
-            token := Token.{ type=.QUOTED, str=slice(data, start, lexer.pos - start), loc=Location.{lexer.loc.line, lexer.loc.char - cast(s32) (lexer.pos - start)} };
-            if c == #char "\"" { token.str = unescape(*lexer, token.str); }
-            array_add(*lexer.tokens, token);
-            eat_char(*lexer);
-            continue;
+                token := Token.{ type=.QUOTED, str=slice(data, start, lexer.pos - start), loc=Location.{lexer.loc.line, lexer.loc.char - xx (lexer.pos - start)} };
+                if c == #char "\"" { token.str = unescape(lexer, token.str); }
+                array_add(*lexer.tokens, token);
+                eat_char(*lexer);
+                continue;
+            }
         }
 
         // Scopes
@@ -113,7 +115,7 @@ tokenize :: (data: string) -> tokens: [..]Token { // TODO Change to streaming le
         || c == #char "[" {
             scope_index := lexer.tokens.count;
              // .scope is replaced by actual scope on scope closing, scope.count points to the slice token itself for now
-            token := Token.{ type=cast(Token.Type) c, scope = lexer.tokens, loc=Location.{lexer.loc.line, lexer.loc.char} };
+            token := Token.{ type=xx c, scope = lexer.tokens, loc=Location.{lexer.loc.line, lexer.loc.char} };
             array_add(*lexer.tokens, token);
             array_add(*lexer.scope_stack, scope_index);
             eat_char(*lexer);
@@ -123,13 +125,11 @@ tokenize :: (data: string) -> tokens: [..]Token { // TODO Change to streaming le
         || c == #char "]" {
             if lexer.scope_stack.count == 0 { exit_with_error_line(lexer.data, lexer.loc, "Mismatched braces. No scope opened for: %", to_string(*c, 1)); }
 
-            removed_idx := pop(*lexer.scope_stack);
-            if lexer.tokens[removed_idx].type != cast(Token.Type) matching_open(c) {
-                exit_with_error_line(lexer.data, lexer.loc, "Mismatched scope closure. Scope Opened with: % Attempt to close with: %", to_string(*cast(u8)lexer.tokens[removed_idx].type, 1), to_string(*c,1));
-            }
+            scope_token := *lexer.tokens[pop(*lexer.scope_stack)];
+            if scope_token.type != xx matching_open(c) { exit_with_error_line(lexer.data, lexer.loc, "Mismatched scope closure. Scope Opened with: % Attempt to close with: %", to_string(*cast(u8)scope_token.type, 1), to_string(*c,1)); }
 
-            scope_count := lexer.tokens.count - lexer.tokens[removed_idx].scope.count - 1;
-            lexer.tokens[removed_idx].scope = array_view(lexer.tokens, lexer.tokens[removed_idx].scope.count+1, scope_count);
+            tokens_in_scope := lexer.tokens.count - scope_token.scope.count - 1;
+            scope_token.scope = array_view(lexer.tokens, scope_token.scope.count+1, tokens_in_scope);
             eat_char(*lexer);
             continue;
         }
@@ -137,8 +137,7 @@ tokenize :: (data: string) -> tokens: [..]Token { // TODO Change to streaming le
         // Others
         if c == #char ","
         || c == #char "=" {
-            token := Token.{ type=cast(Token.Type) c, loc=Location.{lexer.loc.line, lexer.loc.char} };
-            array_add(*lexer.tokens, token);
+            array_add(*lexer.tokens, .{ type=xx c, loc=lexer.loc});
             eat_char(*lexer);
             continue;
         }
@@ -156,7 +155,6 @@ Lexer :: struct {
     pos: s64 = 0;            // Index into data of the current char to be evaluated
     loc: Location = .{1, 1}; // Location of the current char
     scope_stack: [..]int;    // Indices into `tokens` for scopes that have not been closed yet `{` and `[`
-    builder: String_Builder; // Used to unescape basic strings
 }
 has_next :: (lexer: Lexer, count:=1) -> bool {
     return lexer.pos + count -1 < lexer.data.count;
@@ -184,24 +182,25 @@ matching_open :: (close: u8) -> open: u8 {
     return 0;
 }
 
-unescape :: (lexer: *Lexer, basic: string) -> string {
+unescape :: (lexer: Lexer, basic: string) -> string {
+    builder: String_Builder;
     pos := 0;
     while pos < basic.count {
         if basic[pos] != #char "\\" {
-            append(*lexer.builder, basic[pos]);
+            append(*builder, basic[pos]);
             pos += 1;
             continue;
         }
         if pos + 1 >= basic.count {exit_with_error_line(lexer.data, lexer.loc, "Unterminated escape sequence"); }
 
         if basic[pos + 1] == {
-        case #char "b";  append(*lexer.builder, #char "\x08"); pos += 2;
-        case #char "t";  append(*lexer.builder, #char "\t");   pos += 2;
-        case #char "n";  append(*lexer.builder, #char "\n");   pos += 2;
-        case #char "f";  append(*lexer.builder, #char "\x0c"); pos += 2;
-        case #char "r";  append(*lexer.builder, #char "\r");   pos += 2;
-        case #char "\""; append(*lexer.builder, #char "\"");   pos += 2;
-        case #char "\\"; append(*lexer.builder, #char "\\");   pos += 2;
+        case #char "b";  append(*builder, #char "\x08"); pos += 2;
+        case #char "t";  append(*builder, #char "\t");   pos += 2;
+        case #char "n";  append(*builder, #char "\n");   pos += 2;
+        case #char "f";  append(*builder, #char "\x0c"); pos += 2;
+        case #char "r";  append(*builder, #char "\r");   pos += 2;
+        case #char "\""; append(*builder, #char "\"");   pos += 2;
+        case #char "\\"; append(*builder, #char "\\");   pos += 2;
         case #char "\r"; #through;
         case #char "\n";
             pos += 2;
@@ -221,12 +220,12 @@ unescape :: (lexer: *Lexer, basic: string) -> string {
             tmp := scope_string(4);
             character_utf32_to_utf8(hex_value, *tmp);
 
-            append(*lexer.builder, tmp);
+            append(*builder, tmp);
             pos += num_digits;
         case; exit_with_error_line(lexer.data, lexer.loc, "Invalid escape sequence."); // TODO improve loc, including \n
         }
     }
-    return builder_to_string(*lexer.builder);
+    return builder_to_string(*builder);
 }
 
 // Returns a string pointing to a buffer `buf` on the caller's stack
