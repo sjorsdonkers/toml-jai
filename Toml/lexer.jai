@@ -59,20 +59,22 @@ tokenize :: (data: string) -> tokens: [..]Token { // TODO Change to streaming le
             continue;
         }
 
-        // Literal string
+        // Quoted string
         if c == #char "'" || c == #char "\"" {
             tripple_quote := ifx c == #char "'" then "'''" else "\"\"\"";
             if has_next(lexer, 3) && peak_slice(lexer, 3) == tripple_quote {
+                // Multi-line quoted string
                 eat_char(*lexer, 3);
                 /// Trim newline immediately following ''' if present
                 if has_next(lexer) {
-                    if c == #char "\n" { eat_newline(*lexer); }
+                    if peak_char(lexer) == #char "\n" { eat_newline(*lexer); }
                     if has_next(lexer, 2) && peak_slice(lexer, 2) == "\r\n" {
                         eat_char(*lexer);
                         eat_newline(*lexer);
                     }
                 }
                 start := lexer.pos;
+
                 while has_next(lexer, 3) && peak_slice(lexer, 3) != tripple_quote {
                     if c == #char "\"" && has_next(lexer, 2) && peak_slice(lexer, 2) == "\\\"" { eat_char(*lexer, 2); continue; }
                     if peak_char(lexer) == #char "\n" { eat_newline(*lexer); }
@@ -89,7 +91,7 @@ tokenize :: (data: string) -> tokens: [..]Token { // TODO Change to streaming le
                 eat_char(*lexer, 3);
                 continue;
             }
-            // Single line literal string
+            // Single-line quoted string
             eat_char(*lexer);
             start := lexer.pos;
             while has_next(lexer) && peak_char(lexer) != c {
@@ -198,6 +200,17 @@ unescape :: (lexer: *Lexer, basic: string) -> string { // TODO change builder to
             case #char "r";  append(*lexer.builder, #char "\r"); pos += 2;
             case #char "\""; append(*lexer.builder, #char "\""); pos += 2;
             case #char "\\"; append(*lexer.builder, #char "\\"); pos += 2;
+            case #char "\r"; #through; // TOD space and tab
+            case #char "\n";
+                pos += 2;
+                // log("HERE: %", to_string(*basic[pos], 1));
+                while (pos < basic.count) && (basic[pos] == #char " "
+                                            || basic[pos] == #char "\t"
+                                            || basic[pos] == #char "\r"
+                                            || basic[pos] == #char "\n") {
+                    // log("HERE2: %", to_string(*basic[pos], 1));
+                    pos += 1;
+                }
             case #char "u"; #through;
             case #char "U";
                 num_digits: s32 = xx ifx basic[pos + 1] == #char "u" then 4 else 8;
@@ -211,25 +224,10 @@ unescape :: (lexer: *Lexer, basic: string) -> string { // TODO change builder to
                     exit_with_error_line(lexer.data, current_loc, "not unicode");
                 }
 
-
-                #import "Windows_Utf8";
-                log("UNICODE VALUE é\u00E9 % \n", "\u00E9");
-                // utf8_to_wide_new
-
-                print("UNICODE VALUE é\u00E9 \n");
-
                 buf: [4]u8;
                 tmp: string;
                 tmp.data = buf.data;
                 character_utf32_to_utf8(hex_value, *tmp);
-
-                // result_data, fff, result_length_in_bytes := utf8_to_wide_new(tmp);
-                // assert(fff);
-                // print_bytes(result_data, result_length_in_bytes);
-                // tmp2: string;
-                // tmp2.data = xx result_data;
-                // tmp2.count = result_length_in_bytes;
-                print("tmp: %\n", tmp);
 
                 append(*lexer.builder, tmp);
                 pos += num_digits + 2;
@@ -239,6 +237,7 @@ unescape :: (lexer: *Lexer, basic: string) -> string { // TODO change builder to
                 exit_with_error_line(lexer.data, current_loc, "Invalid escape sequence.");
             }
         } else {
+            // log("Char: %", to_string(*basic[pos], 1));
             append(*lexer.builder, basic[pos]);
             pos += 1;
         }
