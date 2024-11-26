@@ -1,5 +1,5 @@
 // This lexer does not parse keys or literals, it just determines scopes of chars or tokens.
-// NOTE: The keys and literals point into the input data string, except for basic string.
+// NOTE: The keys and literals point into the input data string, except for basic strings.
 // It is up to the caller to determine when is the best time to put them in a permanent location.
 
 Token :: struct {
@@ -96,7 +96,7 @@ tokenize :: (data: string) -> tokens: [..]Token { // TODO Change to streaming le
             start := lexer.pos;
             while has_next(lexer) && peak_char(lexer) != c {
                 if c == #char "\"" && has_next(lexer, 2) && peak_slice(lexer, 2) == "\\\"" { eat_char(*lexer, 2); continue; }
-                if peak_char(lexer) == #char "\n" { exit_with_error_line(lexer.data, lexer.loc, "Newline in string. Use a multi-line string (tripple quote) instead."); }
+                if peak_char(lexer) == #char "\n" { exit_with_error_line(lexer.data, lexer.loc, "Newline in string. Escape `\n` or use a multi-line string (tripple quote) instead."); }
                 eat_char(*lexer);
             }
             if !has_next(lexer) { exit_with_error_line(lexer.data, lexer.loc, "Unterminated string."); }

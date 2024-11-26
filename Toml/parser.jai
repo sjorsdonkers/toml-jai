@@ -80,7 +80,7 @@ parse_header :: (root_table: *Value, scope: Scope) -> *Value {
     } else {
         // Parse array of tables header
         aot_scope := sub(scope, eat_token(*scope).scope);
-        if scope.tokens.count > aot_scope.tokens.count + 1 {
+        if scope.tokens.count > aot_scope.tokens.count + 1 { // No tokens between the closing brackets `]]` allowed
             error_token:= scope.tokens[1 + aot_scope.tokens.count];
             exit_with_error_line(scope.source, error_token.loc, "Unexpected % in Array of Tables header", error_token.type);
         }
@@ -248,7 +248,7 @@ eat_key_token :: (scope: *Scope) -> Token {
         case .QUOTED; return eat_token(scope);            // A quoted token cannot have sub-keys
         case .RAW;    scope.remaining_key = original.str; // A raw token may contain several dot separated keys
         case .QUOTED_MULTI; exit_with_error_line(scope.source, original.loc, "Cannot use multi-line strings as key");
-        case .DOT;          assert(false, "Parser expected lexer to give `.` as RAW, not as DOT");
+        case .DOT;          assert(false, "Parser expects lexer to give `.` as RAW, not as DOT");
         case;               exit_with_error_line(scope.source, original.loc, "Expected key, got %", original.type);
         }
     }
