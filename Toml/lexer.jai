@@ -1,5 +1,6 @@
 // This lexer does not parse keys or literals, it just determines scopes of chars or tokens.
 // NOTE: The keys and literals point into the input data string, except for basic strings (escaped).
+// Would be nice to move unescape to the parser so memory ownership is clear and some copies can be avoided, if proc returns whether it needed to unescape.
 
 Token :: struct {
     Type :: enum u8 {
@@ -24,9 +25,9 @@ Location :: struct {
     line, char: s32; // Line and column number, not index
 }
 
-tokenize :: (data: string) -> tokens: [..]Token { // Consider changing to streaming lexer
+tokenize :: (data: string) -> tokens: [..]Token {
     lexer := Lexer.{data=data};
-    lexer.scope_stack.allocator = temp; // Deeply nested scopes are unlikely, so not expecting get large
+    lexer.scope_stack.allocator = temp;
     array_reserve(*lexer.tokens, data.count / 2); // Rough estimate of token count
 
     while has_next(lexer) {
@@ -217,7 +218,8 @@ unescape :: (lexer: Lexer, basic: string) -> string {
             hex_value, success, remainder := string_to_int(unicode_hex_str, 16, u32);
             if !success || remainder.count != 0 { exit_with_error_line(lexer.data, lexer.loc, "not valid unicode"); } // TODO improve loc, including \n
 
-            tmp := scope_string(4);
+            buf: [4]u8;
+            tmp := string.{4, buf.data};
             character_utf32_to_utf8(hex_value, *tmp);
 
             append(*builder, tmp);
@@ -226,15 +228,6 @@ unescape :: (lexer: Lexer, basic: string) -> string {
         }
     }
     return builder_to_string(*builder);
-}
-
-// Returns a string pointing to a buffer `buf` on the caller's stack
-scope_string :: ($size: s64) -> string #expand {
-    `buf: [size]u8; // ` Puts the buffer in the caller's scope
-    tmp: string;
-    tmp.data = buf.data;
-    tmp.count = size;
-    return tmp;
 }
 
 get_line :: (data: string, line_number: s32) -> line: string, found:bool {
