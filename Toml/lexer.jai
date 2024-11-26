@@ -186,55 +186,56 @@ matching_open :: (close: u8) -> open: u8 {
 
 unescape :: (lexer: *Lexer, basic: string) -> string {
     pos := 0;
-    while true {
-        if pos >= basic.count { break; }
-        if basic[pos] == #char "\\" {
-            if pos + 1 >= basic.count {exit_with_error_line(lexer.data, lexer.loc, "Unterminated escape sequence"); }
-
-            if basic[pos + 1] == {
-            case #char "b";  append(*lexer.builder, #char "\x08"); pos += 2;
-            case #char "t";  append(*lexer.builder, #char "\t"); pos += 2;
-            case #char "n";  append(*lexer.builder, #char "\n"); pos += 2;
-            case #char "f";  append(*lexer.builder, #char "\x0c"); pos += 2;
-            case #char "r";  append(*lexer.builder, #char "\r"); pos += 2;
-            case #char "\""; append(*lexer.builder, #char "\""); pos += 2;
-            case #char "\\"; append(*lexer.builder, #char "\\"); pos += 2;
-            case #char "\r"; #through; // TOD space and tab
-            case #char "\n";
-                pos += 2;
-                // log("HERE: %", to_string(*basic[pos], 1));
-                while (pos < basic.count) && (basic[pos] == #char " "
-                                            || basic[pos] == #char "\t"
-                                            || basic[pos] == #char "\r"
-                                            || basic[pos] == #char "\n") {
-                    // log("HERE2: %", to_string(*basic[pos], 1));
-                    pos += 1;
-                }
-            case #char "u"; #through;
-            case #char "U";
-                num_digits: s32 = xx ifx basic[pos + 1] == #char "u" then 4 else 8;
-                if num_digits + 2 >= basic.count {exit_with_error_line(lexer.data, lexer.loc, "Expected % characters in the unicode escape sequence", num_digits); }
-
-                unicode_hex_str := slice(basic, pos+2, num_digits);
-                hex_value, success, remainder := string_to_int(unicode_hex_str, 16, u32);
-                if !success || remainder.count != 0 { exit_with_error_line(lexer.data, lexer.loc, "not unicode"); } // TODO improve loc, including \n
-
-                buf: [4]u8;
-                tmp: string;
-                tmp.data = buf.data;
-                character_utf32_to_utf8(hex_value, *tmp);
-
-                append(*lexer.builder, tmp);
-                pos += num_digits + 2;
-            case; exit_with_error_line(lexer.data, lexer.loc, "Invalid escape sequence."); // TODO improve loc, including \n
-            }
-        } else {
-            // log("Char: %", to_string(*basic[pos], 1));
+    while pos < basic.count {
+        if basic[pos] != #char "\\" {
             append(*lexer.builder, basic[pos]);
             pos += 1;
+            continue;
+        }
+        if pos + 1 >= basic.count {exit_with_error_line(lexer.data, lexer.loc, "Unterminated escape sequence"); }
+
+        if basic[pos + 1] == {
+        case #char "b";  append(*lexer.builder, #char "\x08"); pos += 2;
+        case #char "t";  append(*lexer.builder, #char "\t");   pos += 2;
+        case #char "n";  append(*lexer.builder, #char "\n");   pos += 2;
+        case #char "f";  append(*lexer.builder, #char "\x0c"); pos += 2;
+        case #char "r";  append(*lexer.builder, #char "\r");   pos += 2;
+        case #char "\""; append(*lexer.builder, #char "\"");   pos += 2;
+        case #char "\\"; append(*lexer.builder, #char "\\");   pos += 2;
+        case #char "\r"; #through;
+        case #char "\n";
+            pos += 2;
+            while (pos < basic.count) && ( basic[pos] == #char " " || basic[pos] == #char "\t" || basic[pos] == #char "\r" || basic[pos] == #char "\n") {
+                pos += 1;
+            }
+        case #char "u"; #through;
+        case #char "U";
+            num_digits: s32 = xx ifx basic[pos + 1] == #char "u" then 4 else 8;
+            if num_digits >= basic.count {exit_with_error_line(lexer.data, lexer.loc, "Expected % characters in the unicode escape sequence", num_digits); }
+            pos += 2;
+
+            unicode_hex_str := slice(basic, pos, num_digits);
+            hex_value, success, remainder := string_to_int(unicode_hex_str, 16, u32);
+            if !success || remainder.count != 0 { exit_with_error_line(lexer.data, lexer.loc, "not valid unicode"); } // TODO improve loc, including \n
+
+            tmp := scope_string(4);
+            character_utf32_to_utf8(hex_value, *tmp);
+
+            append(*lexer.builder, tmp);
+            pos += num_digits;
+        case; exit_with_error_line(lexer.data, lexer.loc, "Invalid escape sequence."); // TODO improve loc, including \n
         }
     }
     return builder_to_string(*lexer.builder);
+}
+
+// Returns a string pointing to a buffer `buf` on the caller's stack
+scope_string :: ($size: s64) -> string #expand {
+    `buf: [size]u8; // ` Puts the buffer in the caller's scope
+    tmp: string;
+    tmp.data = buf.data;
+    tmp.count = size;
+    return tmp;
 }
 
 get_line :: (data: string, line_number: s32) -> line: string, found:bool {
