@@ -153,19 +153,13 @@ tokenize :: (data: string) -> tokens: [..]Token {
 Lexer :: struct {
     data: string;            // The original TOML input string
     tokens: [..]Token;       // The lexed tokens to be returned
-    pos: s64 = 0;            // Index into data of the current char to be evaluated
+    pos: s64      = 0;       // Index into data of the current char to be evaluated
     loc: Location = .{1, 1}; // Location of the current char
     scope_stack: [..]int;    // Indices into `tokens` for scopes that have not been closed yet `{` and `[`
 }
-has_next :: (lexer: Lexer, count:=1) -> bool {
-    return lexer.pos + count -1 < lexer.data.count;
-}
-peak_char :: (lexer: Lexer, forward:=1) -> u8 {
-    return lexer.data[lexer.pos + forward -1];
-}
-peak_slice :: (lexer: Lexer, count:=1) -> string {
-    return slice(lexer.data, lexer.pos, count);
-}
+has_next   :: (lexer: Lexer, count:=1) -> bool   { return lexer.pos + count -1 < lexer.data.count; }
+peak_char  :: (lexer: Lexer, forward:=1) -> u8   { return lexer.data[lexer.pos + forward -1]; }
+peak_slice :: (lexer: Lexer, count:s64) -> string { return slice(lexer.data, lexer.pos, count); }
 eat_char :: (lexer: *Lexer, count:s32=1) {
     lexer.pos += count;
     lexer.loc.char += count;
