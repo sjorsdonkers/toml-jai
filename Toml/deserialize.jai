@@ -184,7 +184,6 @@ deserialize_sumtype :: (toml: Value, slot: *void, struct_members: []Type_Info_St
 
 // Collect all variables members and flattens non-union using structs
 collect_members :: (struct_info:*Type_Info_Struct) -> [..]Type_Info_Struct_Member {
-    struct_members: [..]Type_Info_Struct_Member;
     collect_members :: (struct_members:*[..]Type_Info_Struct_Member, struct_info:*Type_Info_Struct, offset_in_bytes: s64) {
         for member: struct_info.members {
             if member.flags & .CONSTANT { continue; }
@@ -202,6 +201,7 @@ collect_members :: (struct_info:*Type_Info_Struct) -> [..]Type_Info_Struct_Membe
             (<<struct_members)[struct_members.count-1].offset_in_bytes += offset_in_bytes;
         }
     }
+    struct_members: [..]Type_Info_Struct_Member;
     collect_members(*struct_members, struct_info, 0);
     return struct_members;
 }
