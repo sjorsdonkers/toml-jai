@@ -84,7 +84,6 @@ MyFruit :: struct {
 #poke_name ST MyFruit;
 
 Toml :: #import, file "../Toml/module.jai";
-ST :: #import, file "../../sum_type-jai/Sum_Type/module.jai";
-#import, file "../../sum_type-jai/Sum_Type/module.jai";
+using ST :: #import, file "../../sum_type-jai/Sum_Type/module.jai";
 #import "Basic";
 #import "File";
