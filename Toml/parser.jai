@@ -19,7 +19,7 @@ parse :: (contents: string) -> root_table:Value {
             eat_scope(*scope, token);
         } else { // Parse key value pair
             keys_scope := eat_scope_until(*scope, Token.Type.ASSIGN);
-            _, leaf_value := parse_key(current_table, keys_scope);
+            leaf_value := parse_key(current_table, keys_scope);
             <<leaf_value = parse_value(leaf_value, *scope);
         }
     }
@@ -31,7 +31,7 @@ parse :: (contents: string) -> root_table:Value {
 parse_header :: (root_table: *Value, scope: Scope) -> *Value {
     if !has_next(scope) || peak_token(scope).type != Token.Type.SCOPE_BRACKET{
         // Parse [table] header
-        _, current_table, is_new := parse_key(root_table, scope);
+        current_table, is_new := parse_key(root_table, scope);
         if !is_new && current_table.type != Value.Type.TABLE {
             exit_with_error_line(scope.source, last(scope).loc, "Cannot use key as Tables as it already has a value: %", current_table.type);
         }
@@ -44,7 +44,7 @@ parse_header :: (root_table: *Value, scope: Scope) -> *Value {
             exit_with_error_line(scope.source, error_token.loc, "Unexpected % in Array of Tables header", error_token.type);
         }
 
-        _, current_table, is_new := parse_key(root_table, aot_scope);
+        current_table, is_new := parse_key(root_table, aot_scope);
         if current_table.type != .ARRAY {
             if !is_new { exit_with_error_line(aot_scope.source, last(aot_scope).loc, "Cannot use key as Array of Tables as it already has a value: %", current_table.type); }
             <<current_table = .{type=.ARRAY, array=resizable(Value.[])};
@@ -54,37 +54,24 @@ parse_header :: (root_table: *Value, scope: Scope) -> *Value {
     }
 }
 
-
 // parse key. key.`key`."etc"
-parse_key :: (parent: *Value, scope: Scope) -> root:KeyValue, leaf:*Value, leaf_is_new:bool {
+parse_key :: (parent: *Value, scope: Scope) -> leaf:*Value, leaf_is_new:bool {
     if !has_next(scope) { exit_with_error("Unexpected end of scope while parsing key"); }
-    token := eat_expected_key(*scope, .LITERAL);
+    if parent.type != Value.Type.TABLE { exit_with_error("Cannot use key as table as it already has a value: %", parent.type); } // TODO print_value
 
-    // Determine the root table
-    local_root := KeyValue.{key=token.str, value=Value.{type=.TABLE, table=resizable(KeyValue.[])}};
-    current_table := *local_root.value;
-    current_is_new := true;
-    if parent != null {
-        if parent.type != Value.Type.TABLE { exit_with_error("Cannot use key as table as it already has a value: %", parent.type); } // TODO print_value
-        current_is_new =, index := array_add_copy_if_unique(*parent.table, local_root);
-        current_table = *parent.table[index].value;
-    }
+    // Get or insert key
+    token := eat_expected_key(*scope, .LITERAL);
+    current_is_new, index := array_add_copy_if_unique(*parent.table, .{key=token.str, value=Value.{type=.TABLE, table=resizable(KeyValue.[])}});
+    current_table := *parent.table[index].value;
 
     // Check for dotted keys
-    while has_next(scope) {
-        token = eat_expected_key(*scope, .DOT);
-        if !has_next(scope) { exit_with_error_line(scope.source, last(scope).loc, "Key is not allowed to end with a dot"); }
-        token = eat_expected_key(*scope, .LITERAL);
-
-        if current_table.type == Value.Type.ARRAY { // This is an Array of Tables header that we are going to add into
-            assert(current_table.array.count > 0); // How would this be possible
-            current_table = *current_table.array[current_table.array.count-1];
-        }
-        if current_table.type != Value.Type.TABLE { exit_with_error("Cannot use key as table it already has a value: %", current_table.type); }
-        current_is_new=, index := array_add_copy_if_unique(*current_table.table, KeyValue.{token.str, Value.{type=.TABLE, table=resizable(KeyValue.[])}});
-        current_table = *current_table.table[index].value;
+    if has_next(scope) {
+        eat_expected_key(*scope, .DOT);
+        // If this is an Array of Tables header then we are going to add into its last table
+        if current_table.type == Value.Type.ARRAY then { current_table = *current_table.array[current_table.array.count-1]; }
+        current_table, current_is_new = parse_key(current_table, scope);
     }
-    return local_root, current_table, current_is_new;
+    return current_table, current_is_new;
 }
 
 parse_value :: (current_table: *Value, scope: *Scope) -> value:Value { // TODO only assign value if key is empty table
@@ -114,7 +101,7 @@ parse_inline_table :: (current_table: *Value, scope: Scope) -> table:Value {
     if current_table == null { current_table = *table_root; }
     while has_next(scope) {
         keys_scope := eat_scope_until(*scope, Token.Type.ASSIGN);
-        _, leaf_value := parse_key(current_table, keys_scope);
+        leaf_value := parse_key(current_table, keys_scope);
         <<leaf_value = parse_value(leaf_value, *scope);
 
         // Inline tables are not allowed to have trailing commas
