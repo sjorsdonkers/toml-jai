@@ -189,9 +189,9 @@ unescape :: (basic_token: Token, source: string) -> string {
         case #char "u"; #through;
         case #char "U";
             num_digits: s32 = xx ifx basic[pos + 1] == #char "u" then 4 else 8;
-            if num_digits >= basic.count {exit_with_error_line(source, basic_token.loc, "Expected % characters in the unicode escape sequence", num_digits); }
             pos += 2;
 
+            if pos + num_digits > basic.count {exit_with_error_line(source, basic_token.loc, "Expected % characters in the unicode escape sequence", num_digits); }
             unicode_hex_str := slice(basic, pos, num_digits);
             hex_value, success, remainder := string_to_int(unicode_hex_str, 16, u32);
             if !success || remainder.count != 0 { exit_with_error_line(source, basic_token.loc, "not valid unicode"); } // TODO improve loc, including \n
