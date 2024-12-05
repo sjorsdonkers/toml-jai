@@ -1,6 +1,6 @@
 
 deserialize :: (contents: string, $Target: Type) -> Target {
-    #if Target == Value return parse(contents); // Prevents unnecesarly copying
+    #if Target == Value return parse(contents); // Prevents unnecessarily copying
     value := parse(contents,, allocator=temp);
     return deserialize(value, Target);
 }
@@ -8,7 +8,7 @@ deserialize :: (contents: string, $Target: Type) -> Target {
 deserialize :: (value: Value, $Target: Type) -> Target {
     info :: type_info(Target);
     target :Target;
-    reinitialize_all_unions(*target, info); // TODO remove when union init is normal Jai behavior (not the case in: Version: beta 0.1.095)
+    reinitialize_all_unions(*target, info); // TODO remove when union init is normal Jai behavior (not the case in: Version: beta 0.1.096)
     deserialize(value, *target, info);
     return target;
 }

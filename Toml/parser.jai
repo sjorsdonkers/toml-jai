@@ -5,30 +5,6 @@
 // - Full toml validation like endlines in an inline table
 // - Error propagation
 
-Value :: struct {
-    Type :: enum u8 {
-        BOOL;
-        INT;
-        FLOAT;
-        STRING;
-        ARRAY;
-        TABLE;
-    }
-    type: Type;
-    union {
-        bool_value  : bool;
-        int_value   : s64;
-        float_value : float64;
-        string_value: string;
-        array       : [..]Value;
-        table       : [..]KeyValue;
-    };
-}
-KeyValue :: struct {
-    key        :  string;
-    using value:  Value;
-}
-
 parse :: (contents: string) -> root_table:Value {
     tokens := tokenize(contents,, allocator=temp);
     scope  := Scope.{contents, tokens, 0, ""};
@@ -48,23 +24,6 @@ parse :: (contents: string) -> root_table:Value {
         }
     }
     return root_table;
-}
-
-copy :: (value: Value) -> Value {
-    if #complete value.type == {
-    case .BOOL; #through;
-    case .INT;  #through;
-    case .FLOAT;  return value;
-    case .STRING; return Value.{type=value.type, string_value=copy_string(value.string_value)};
-    case .ARRAY;
-        output:= Value.{type=.ARRAY, array=resizable(Value.[])};
-        array_copy(*output.array, value.array);
-        return output;
-    case .TABLE;
-        output:= Value.{type=.TABLE, table=resizable(KeyValue.[])};
-        array_copy(*output.table, value.table);
-        return output;
-    }
 }
 
 #scope_file

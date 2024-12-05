@@ -66,9 +66,14 @@ DONE
     apple := Toml.deserialize(SUM, Guy);
     print("struct_apple: %\n", apple);
     print("struct_apple: %\n", apple.Apple);
+
+
+    left := Toml.deserialize("a.b = {c.d = 1}", Toml.Value);
+    right := Toml.deserialize("a.b.c.d = 1", Toml.Value);
+    assert(left == right);
 }
 
-Toml :: #import, file "../Toml/module.jai";
+using Toml :: #import, file "../Toml/module.jai";
 #import "Basic";
 #import "File";
 
