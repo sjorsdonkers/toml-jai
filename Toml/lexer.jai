@@ -1,12 +1,13 @@
 // This lexer does not parse keys or literals, it just determines scopes of chars or tokens.
-// NOTE: The keys and literals point into the input data string, except for basic strings (escaped).
-// Would be nice to move unescape to the parser so memory ownership is clear and some copies can be avoided, if proc returns whether it needed to unescape.
+// NOTE: The keys and literals point into the input data string.
 
 Token :: struct {
     Type :: enum u8 {
         RAW           :: 0;         // str
-        QUOTED        :: 1;         // str
-        QUOTED_MULTI  :: 2;         // str   // Not using QUOTED as multi-line string cannot be keys
+        LITERAL       :: 1;         // str
+        LITERAL_MULTI :: 2;         // str   // Not using LITERAL as multi-line string cannot be keys
+        BASIC         :: 3;         // str   // Not using LITERAL as BASIC still needs to be unescaped
+        BASIC_MULTI   :: 4;         // str   // Not using BASIC as multi-line string cannot be keys
         COMMA         :: #char ","; // -
         DOT           :: #char "."; // -     // Not produced by lexer itself
         ASSIGN        :: #char "="; // -
@@ -15,7 +16,7 @@ Token :: struct {
     }
     type: Type;
     union {
-        str  : string;  // View into `data` (or owned basic string)
+        str  : string;  // View into `data`
         scope: []Token; // View into `tokens` starting at the next token
     };
     loc: Location;
@@ -86,8 +87,8 @@ tokenize :: (data: string) -> tokens: [..]Token {
                 if has_next(lexer, 4) && peak_char(lexer, 4) == c { eat_char(*lexer); }
                 if has_next(lexer, 4) && peak_char(lexer, 4) == c { eat_char(*lexer); }
 
-                token := Token.{ type=.QUOTED_MULTI, str=slice(data, start, lexer.pos - start), loc=Location.{lexer.loc.line, lexer.loc.char - xx (lexer.pos - start)} };
-                if c == #char "\"" { token.str = unescape(lexer, token.str); }
+                token_type :Token.Type= ifx c == #char "\"" then .BASIC_MULTI else .LITERAL_MULTI;
+                token := Token.{ type=token_type, str=slice(data, start, lexer.pos - start), loc=Location.{lexer.loc.line, lexer.loc.char - xx (lexer.pos - start)} };
                 array_add(*lexer.tokens, token);
                 eat_char(*lexer, 3);
                 continue;
@@ -103,8 +104,8 @@ tokenize :: (data: string) -> tokens: [..]Token {
                 }
                 if !has_next(lexer) { exit_with_error_line(lexer.data, lexer.loc, "Unterminated string."); }
 
-                token := Token.{ type=.QUOTED, str=slice(data, start, lexer.pos - start), loc=Location.{lexer.loc.line, lexer.loc.char - xx (lexer.pos - start)} };
-                if c == #char "\"" { token.str = unescape(lexer, token.str); }
+                token_type :Token.Type= ifx c == #char "\"" then .BASIC else .LITERAL;
+                token := Token.{ type=token_type, str=slice(data, start, lexer.pos - start), loc=Location.{lexer.loc.line, lexer.loc.char - xx (lexer.pos - start)} };
                 array_add(*lexer.tokens, token);
                 eat_char(*lexer);
                 continue;
@@ -177,53 +178,6 @@ matching_open :: (close: u8) -> open: u8 {
     return 0;
 }
 
-unescape :: (lexer: Lexer, basic: string) -> string {
-    builder: String_Builder;
-    pos := 0;
-    while pos < basic.count {
-        if basic[pos] != #char "\\" {
-            append(*builder, basic[pos]);
-            pos += 1;
-            continue;
-        }
-        if pos + 1 >= basic.count {exit_with_error_line(lexer.data, lexer.loc, "Unterminated escape sequence"); }
-
-        if basic[pos + 1] == {
-        case #char "b";  append(*builder, #char "\x08"); pos += 2;
-        case #char "t";  append(*builder, #char "\t");   pos += 2;
-        case #char "n";  append(*builder, #char "\n");   pos += 2;
-        case #char "f";  append(*builder, #char "\x0c"); pos += 2;
-        case #char "r";  append(*builder, #char "\r");   pos += 2;
-        case #char "\""; append(*builder, #char "\"");   pos += 2;
-        case #char "\\"; append(*builder, #char "\\");   pos += 2;
-        case #char "\r"; #through;
-        case #char "\n";
-            pos += 2;
-            while (pos < basic.count) && ( basic[pos] == #char " " || basic[pos] == #char "\t" || basic[pos] == #char "\r" || basic[pos] == #char "\n") {
-                pos += 1;
-            }
-        case #char "u"; #through;
-        case #char "U";
-            num_digits: s32 = xx ifx basic[pos + 1] == #char "u" then 4 else 8;
-            if num_digits >= basic.count {exit_with_error_line(lexer.data, lexer.loc, "Expected % characters in the unicode escape sequence", num_digits); }
-            pos += 2;
-
-            unicode_hex_str := slice(basic, pos, num_digits);
-            hex_value, success, remainder := string_to_int(unicode_hex_str, 16, u32);
-            if !success || remainder.count != 0 { exit_with_error_line(lexer.data, lexer.loc, "not valid unicode"); } // TODO improve loc, including \n
-
-            buf: [4]u8;
-            tmp := string.{4, buf.data};
-            character_utf32_to_utf8(hex_value, *tmp);
-
-            append(*builder, tmp);
-            pos += num_digits;
-        case; exit_with_error_line(lexer.data, lexer.loc, "Invalid escape sequence."); // TODO improve loc, including \n
-        }
-    }
-    return builder_to_string(*builder);
-}
-
 get_line :: (data: string, line_number: s32) -> line: string, found:bool {
     #import "Text_File_Handler";
     line: string;
@@ -258,4 +212,3 @@ exit_with_error_line :: (source: string, loc: Location, format: string, argument
 }
 
 #import "Basic";
-#import "Unicode";

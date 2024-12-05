@@ -2,7 +2,7 @@
 // - Date / Time
 // - Rejecting all control characters
 // - Rejecting values that overwrite / append to previous ones
-// - Full toml validation like endlines in an inline table
+// - Full toml validation like endlines in an inline table or numbers with leading zeros or _s
 // - Error propagation
 
 parse :: (contents: string) -> root_table:Value {
@@ -30,14 +30,14 @@ parse :: (contents: string) -> root_table:Value {
 
 parse_header :: (root_table: *Value, scope: Scope) -> *Value {
     if !has_next(scope) || peak_token(scope).type != Token.Type.SCOPE_BRACKET{
-        // Parse table header
+        // Parse [table] header
         _, current_table, is_new := parse_key(root_table, scope);
         if !is_new && current_table.type != Value.Type.TABLE {
             exit_with_error_line(scope.source, last(scope).loc, "Cannot use key as Tables as it already has a value: %", current_table.type);
         }
         return current_table;
     } else {
-        // Parse array of tables header
+        // Parse [[array of tables]] header
         aot_scope := sub(scope, eat_token(*scope).scope);
         if scope.tokens.count > aot_scope.tokens.count + 1 { // No tokens between the closing brackets `]]` allowed
             error_token:= scope.tokens[1 + aot_scope.tokens.count];
@@ -58,9 +58,9 @@ parse_header :: (root_table: *Value, scope: Scope) -> *Value {
 // parse key. key.`key`."etc"
 parse_key :: (parent: *Value, scope: Scope) -> root:KeyValue, leaf:*Value, leaf_is_new:bool {
     if !has_next(scope) { exit_with_error("Unexpected end of scope while parsing key"); }
-    token := eat_key_token(*scope);
-    if token.type != Token.Type.QUOTED { exit_with_error_line(scope.source, token.loc, "Key cannot start with a %", token.type); }
+    token := eat_expected_key(*scope, .LITERAL);
 
+    // Determine the root table
     local_root := KeyValue.{key=token.str, value=Value.{type=.TABLE, table=resizable(KeyValue.[])}};
     current_table := *local_root.value;
     current_is_new := true;
@@ -70,12 +70,11 @@ parse_key :: (parent: *Value, scope: Scope) -> root:KeyValue, leaf:*Value, leaf_
         current_table = *parent.table[index].value;
     }
 
+    // Check for dotted keys
     while has_next(scope) {
-        token = eat_key_token(*scope);
-        if token.type != Token.Type.DOT { exit_with_error_line(scope.source, token.loc, "Expected DOT, got %", token.type); }
+        token = eat_expected_key(*scope, .DOT);
         if !has_next(scope) { exit_with_error_line(scope.source, last(scope).loc, "Key is not allowed to end with a dot"); }
-        token = eat_key_token(*scope);
-        if token.type != Token.Type.QUOTED { exit_with_error_line(scope.source, token.loc, "Expected KEY, got %", token.type); }
+        token = eat_expected_key(*scope, .LITERAL);
 
         if current_table.type == Value.Type.ARRAY { // This is an Array of Tables header that we are going to add into
             assert(current_table.array.count > 0); // How would this be possible
@@ -137,8 +136,10 @@ parse_array :: (scope: Scope) -> array:Value {
 parse_literal :: (scope: *Scope) -> Value {
     token := eat_token(scope);
     if token.type == {
-    case .QUOTED;       #through;
-    case .QUOTED_MULTI; return Value.{type=.STRING, string_value=copy_string(token.str)};
+    case .LITERAL;       #through;
+    case .LITERAL_MULTI; return Value.{type=.STRING, string_value=copy_string(token.str)};
+    case .BASIC;         #through;
+    case .BASIC_MULTI;   return Value.{type=.STRING, string_value=unescape(token, scope.source)};
     case .RAW;
         // Parse boolean
         if token.str == "true" { return Value.{type=.BOOL, bool_value=true}; }
@@ -182,6 +183,57 @@ parse_literal :: (scope: *Scope) -> Value {
     return Value.{};
 }
 
+
+unescape :: (basic_token: Token, source: string) -> string {
+    assert(basic_token.type == Token.Type.BASIC || basic_token.type == Token.Type.BASIC_MULTI);
+    basic := basic_token.str;
+
+    builder: String_Builder;
+    pos := 0;
+    while pos < basic.count {
+        if basic[pos] != #char "\\" {
+            append(*builder, basic[pos]);
+            pos += 1;
+            continue;
+        }
+        if pos + 1 >= basic.count {exit_with_error_line(source, basic_token.loc, "Unterminated escape sequence"); }
+
+        if basic[pos + 1] == {
+        case #char "b";  append(*builder, #char "\x08"); pos += 2;
+        case #char "t";  append(*builder, #char "\t");   pos += 2;
+        case #char "n";  append(*builder, #char "\n");   pos += 2;
+        case #char "f";  append(*builder, #char "\x0c"); pos += 2;
+        case #char "r";  append(*builder, #char "\r");   pos += 2;
+        case #char "\""; append(*builder, #char "\"");   pos += 2;
+        case #char "\\"; append(*builder, #char "\\");   pos += 2;
+        case #char "\r"; #through;
+        case #char "\n";
+            pos += 2;
+            while (pos < basic.count) && ( basic[pos] == #char " " || basic[pos] == #char "\t" || basic[pos] == #char "\r" || basic[pos] == #char "\n") {
+                pos += 1;
+            }
+        case #char "u"; #through;
+        case #char "U";
+            num_digits: s32 = xx ifx basic[pos + 1] == #char "u" then 4 else 8;
+            if num_digits >= basic.count {exit_with_error_line(source, basic_token.loc, "Expected % characters in the unicode escape sequence", num_digits); }
+            pos += 2;
+
+            unicode_hex_str := slice(basic, pos, num_digits);
+            hex_value, success, remainder := string_to_int(unicode_hex_str, 16, u32);
+            if !success || remainder.count != 0 { exit_with_error_line(source, basic_token.loc, "not valid unicode"); } // TODO improve loc, including \n
+
+            buf: [4]u8;
+            tmp := string.{4, buf.data};
+            character_utf32_to_utf8(hex_value, *tmp);
+
+            append(*builder, tmp);
+            pos += num_digits;
+        case; exit_with_error_line(source, basic_token.loc, "Invalid escape sequence."); // TODO improve loc, including \n
+        }
+    }
+    return builder_to_string(*builder);
+}
+
 Scope :: struct {
     source: string;
     tokens: []Token;
@@ -199,15 +251,22 @@ eat_token :: (scope: *Scope) -> Token {
     scope.pos += 1;
     return token;
 }
+/// Only ever returns DOT or LITERAL tokens
 eat_key_token :: (scope: *Scope) -> Token {
     original := peak_token(scope);
     if scope.remaining_key.count == 0 {
         if original.type == {
-        case .QUOTED; return eat_token(scope);            // A quoted token cannot have sub-keys
         case .RAW;    scope.remaining_key = original.str; // A raw token may contain several dot separated keys
-        case .QUOTED_MULTI; exit_with_error_line(scope.source, original.loc, "Cannot use multi-line strings as key");
-        case .DOT;          assert(false, "Parser expects lexer to give `.` as RAW, not as DOT");
-        case;               exit_with_error_line(scope.source, original.loc, "Expected key, got %", original.type);
+        case .LITERAL; return eat_token(scope);           // A quoted token cannot have sub-keys
+        case .BASIC;                                      // Normalize to LITERAL as the unescaped needs to be compared
+            toki := eat_token(scope);
+            toki.str = unescape(toki, scope.source);
+            toki.type = Token.Type.LITERAL;
+            return toki;
+        case .BASIC_MULTI;   #through;
+        case .LITERAL_MULTI; exit_with_error_line(scope.source, original.loc, "Cannot use multi-line strings as key");
+        case .DOT;           assert(false, "Parser expects lexer to give `.` as RAW, not as DOT");
+        case;                exit_with_error_line(scope.source, original.loc, "Expected key, got %", original.type);
         }
     }
     // Handling potentially dot separated RAW key
@@ -215,7 +274,12 @@ eat_key_token :: (scope: *Scope) -> Token {
     next:, scope.remaining_key = split_from_left_incl(scope.remaining_key, #char ".");
     if scope.remaining_key.count == 0 { eat_token(scope); }
     if next == "." { return Token.{type=Token.Type.DOT, loc=Location.{original.loc.line, char_num}}; }
-    else           { return Token.{type=Token.Type.QUOTED, str=next, loc=Location.{original.loc.line, char_num}}; }
+    else           { return Token.{type=Token.Type.LITERAL, str=next, loc=Location.{original.loc.line, char_num}}; }
+}
+eat_expected_key :: (scope: *Scope, expected: Token.Type) -> Token {
+    token := eat_key_token(scope);
+    if token.type != expected { exit_with_error_line(scope.source, token.loc, "Expected %, got %", expected, token.type); }
+    return token;
 }
 eat_scope :: (scope: *Scope, edible: Token) {
     assert(edible.type == .SCOPE_BRACE || edible.type == .SCOPE_BRACKET);
@@ -273,3 +337,4 @@ using Basic :: #import "Basic";
 #import "File";
 #import "String";
 #import "Math";
+#import "Unicode";
