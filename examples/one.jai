@@ -4,7 +4,7 @@ main :: () {
     heap := create_heap(context.allocator);
     defer destroy_heap(heap);
     toml := Toml.deserialize(contents, Toml.Value,, allocator=heap);
-    print_value(toml);
+    Toml.print_value(toml);
 
 THE_STRING :: #string DONE
 orange = false
@@ -39,7 +39,7 @@ DONE
     }
 
     toml2 := Toml.deserialize(THE_STRING, Toml.Value);
-    print_value(toml2);
+    Toml.print_value(toml2);
     print("\n");
     my_struct := Toml.deserialize(toml2, MyStruct);
     print("MyStruct: %\n", my_struct);
@@ -76,33 +76,3 @@ DONE
 using Toml :: #import, file "../Toml/module.jai";
 #import "Basic";
 #import "File";
-
-#scope_file
-
-print_value :: (value : Toml.Value, indent:="") {
-    if #complete value.type == {
-    case .STRING; print("'%'", value.string_value);
-    case .INT; print("%", value.int_value);
-    case .FLOAT; print("%", value.float_value);
-    case .BOOL; print("%", value.bool_value);
-    case .ARRAY;
-        print("[\n");
-        new_indent := tprint("%  ", indent);
-        for val: value.array {
-            print("%", new_indent);
-            print_value(val, new_indent);
-            print(",\n");
-        }
-        print("%]", indent);
-    case .TABLE;
-        print("{\n");
-        new_indent := tprint("%  ", indent);
-        for keyval: value.table {
-            print("%0% ", new_indent, keyval.key);
-            if keyval.type != .TABLE { print("= "); }
-            print_value(keyval.value, new_indent);
-            print("\n");
-        }
-        print("%}", indent);
-    }
-}

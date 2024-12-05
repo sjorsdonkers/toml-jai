@@ -22,7 +22,6 @@ KeyValue :: struct {
     using value:  Value;
 }
 
-
 copy :: (value: Value) -> Value {
     if #complete value.type == {
     case .BOOL; #through;
@@ -64,4 +63,32 @@ operator == :: (left: Value, right: Value) -> bool {
 
 operator == :: (left: KeyValue, right: KeyValue) -> bool {
     return left.key == right.key && left.value == right.value;
+}
+
+print_value :: (value : Value, indent:="") {
+    if #complete value.type == {
+    case .STRING; print("'%'", value.string_value);
+    case .INT; print("%", value.int_value);
+    case .FLOAT; print("%", value.float_value);
+    case .BOOL; print("%", value.bool_value);
+    case .ARRAY;
+        print("[\n");
+        new_indent := tprint("%  ", indent);
+        for val: value.array {
+            print("%", new_indent);
+            print_value(val, new_indent);
+            print(",\n");
+        }
+        print("%]", indent);
+    case .TABLE;
+        print("{\n");
+        new_indent := tprint("%  ", indent);
+        for keyval: value.table {
+            print("%0% ", new_indent, keyval.key);
+            if keyval.type != .TABLE { print("= "); }
+            print_value(keyval.value, new_indent);
+            print("\n");
+        }
+        print("%}", indent);
+    }
 }
