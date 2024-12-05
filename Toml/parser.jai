@@ -2,24 +2,22 @@
 // - Date / Time
 // - Rejecting all control characters
 // - Rejecting values that overwrite / append to previous ones
-// - Full toml validation like endlines in an inline table or numbers with leading zeros or _s
+// - Full toml validation like newlines in an inline table or numbers with leading zeros or _s
 // - Error propagation
 
 parse :: (contents: string) -> root_table:Value {
     tokens := tokenize(contents,, allocator=temp);
     scope  := Scope.{contents, tokens, 0, ""};
 
-    // At top level we can expect (keys, [keys], [[keys]])
+    // At top level we can expect ([[keys]], [keys], keys = value)
     root_table := Value.{type=.TABLE, table=resizable(KeyValue.[])};
     current_table := *root_table;
     while has_next(scope) {
         token := peak_token(scope);
         if token.type == Token.Type.SCOPE_BRACKET {
-            current_table = parse_header(*root_table, sub(scope, token.scope));
-            eat_scope(*scope, token);
-        } else { // Parse key value pair
-            keys_scope := eat_scope_until(*scope, Token.Type.ASSIGN);
-            leaf_value := parse_key(current_table, keys_scope);
+            current_table = parse_header(*root_table, eat_scope(*scope, token));
+        } else {
+            leaf_value := parse_key(current_table, eat_scope_until(*scope, Token.Type.ASSIGN));
             <<leaf_value = parse_value(leaf_value, *scope);
         }
     }
@@ -38,7 +36,7 @@ parse_header :: (root_table: *Value, scope: Scope) -> *Value {
         return current_table;
     } else {
         // Parse [[array of tables]] header
-        aot_scope := sub(scope, eat_token(*scope).scope);
+        aot_scope := eat_scope(*scope, eat_token(*scope)); // Eat the inner brackets
         if scope.tokens.count > aot_scope.tokens.count + 1 { // No tokens between the closing brackets `]]` allowed
             error_token:= scope.tokens[1 + aot_scope.tokens.count];
             exit_with_error_line(scope.source, error_token.loc, "Unexpected % in Array of Tables header", error_token.type);
@@ -54,7 +52,7 @@ parse_header :: (root_table: *Value, scope: Scope) -> *Value {
     }
 }
 
-// parse key. key.`key`."etc"
+// Parse: key. key.`key`."etc"
 parse_key :: (parent: *Value, scope: Scope) -> leaf:*Value, leaf_is_new:bool {
     if !has_next(scope) { exit_with_error("Unexpected end of scope while parsing key"); }
     if parent.type != Value.Type.TABLE { exit_with_error("Cannot use key as table as it already has a value: %", parent.type); } // TODO print_value
@@ -74,22 +72,15 @@ parse_key :: (parent: *Value, scope: Scope) -> leaf:*Value, leaf_is_new:bool {
     return current_table, current_is_new;
 }
 
+// * current_table is null for values in arrays
 parse_value :: (current_table: *Value, scope: *Scope) -> value:Value { // TODO only assign value if key is empty table
     if !has_next(scope) { exit_with_error("Unexpected end of file while parsing value"); }
 
     token := peak_token(scope);
     if token.type == {
-    case .SCOPE_BRACE;
-        table := parse_inline_table(current_table, sub(scope, token.scope));
-        eat_scope(scope, token);
-        return table;
-    case .SCOPE_BRACKET;
-        array := parse_array(sub(scope, token.scope));
-        eat_scope(scope, token);
-        return array;
-    case;
-        literal := parse_literal(scope);
-        return literal;
+    case .SCOPE_BRACE;   return parse_inline_table(current_table, eat_scope(scope, token));;
+    case .SCOPE_BRACKET; return parse_array(eat_scope(scope, token));
+    case;                return parse_literal(scope);
     }
 }
 
@@ -97,11 +88,10 @@ parse_inline_table :: (current_table: *Value, scope: Scope) -> table:Value {
     // An inline table is either the right-hand side of an assignment to a key
     // or a value in an array. In case of the former it is important that we continue building
     // on the current key as a.b = {c.d = 1} is the same as in a.b.c.d = 1
-    table_root := Value.{type=.TABLE, table=resizable(KeyValue.[])};
+    table_root := Value.{type=.TABLE, table=resizable(KeyValue.[])}; // Needed for tables in arrays that have no parent
     if current_table == null { current_table = *table_root; }
     while has_next(scope) {
-        keys_scope := eat_scope_until(*scope, Token.Type.ASSIGN);
-        leaf_value := parse_key(current_table, keys_scope);
+        leaf_value := parse_key(current_table, eat_scope_until(*scope, Token.Type.ASSIGN));
         <<leaf_value = parse_value(leaf_value, *scope);
 
         // Inline tables are not allowed to have trailing commas
@@ -268,9 +258,10 @@ eat_expected_key :: (scope: *Scope, expected: Token.Type) -> Token {
     if token.type != expected { exit_with_error_line(scope.source, token.loc, "Expected %, got %", expected, token.type); }
     return token;
 }
-eat_scope :: (scope: *Scope, edible: Token) {
+eat_scope :: (scope: *Scope, edible: Token) -> Scope {
     assert(edible.type == .SCOPE_BRACE || edible.type == .SCOPE_BRACKET);
     scope.pos += edible.scope.count + 1;
+    return Scope.{scope.source, edible.scope, 0, ""};
 }
 eat_expected :: (scope: *Scope, expected: Token.Type) {
     token := eat_token(scope);
@@ -286,9 +277,6 @@ eat_scope_until :: (scope: *Scope, scope_end: Token.Type) -> sub_scope:Scope {
     }
     exit_with_error_line(scope.source, scope.tokens[start_pos].loc, "Unexpected end of scope. Expected %", scope_end);
     return scope;
-}
-sub :: (scope: Scope, tokens: []Token) -> Scope {
-    return Scope.{scope.source, tokens, 0, ""};
 }
 last :: (scope: Scope) -> Token {
     return scope.tokens[scope.tokens.count-1];
