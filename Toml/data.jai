@@ -64,6 +64,41 @@ operator == :: (left: Value, right: Value) -> bool {
 operator == :: (left: KeyValue, right: KeyValue) -> bool {
     return left.key == right.key && left.value == right.value;
 }
+serialize :: (value: Value) -> string {
+    builder: String_Builder;
+    assert(value.type == .TABLE);
+    for value.table {
+        print_to_builder(*builder, "\"%\"", it.key);
+        append(*builder, "=");
+        serialize(it.value, *builder);
+        append(*builder, "\n");
+    }
+    return builder_to_string(*builder);
+}
+serialize :: (value: Value, builder: *String_Builder) {
+    if #complete value.type == {
+    case .BOOL;   append(builder, ifx value.bool_value then "true" else "false");
+    case .INT;    print_to_builder(builder, "%", value.int_value);
+    case .FLOAT;  print_to_builder(builder, "%", value.float_value);
+    case .STRING; print_to_builder(builder, "\"%\"", value.string_value); // TODO: escape
+    case .ARRAY;
+        append(builder, "[");
+        for value.array {
+            serialize(it, builder);
+            append(builder, ",");
+        }
+        append(builder, "]");
+    case .TABLE;
+        append(builder, "{");
+        for value.table {
+            print_to_builder(builder, "\"%\"", it.key);
+            append(builder, "=");
+            serialize(it.value, builder);
+            if it_index + 1 != value.table.count then append(builder, ",");
+        }
+        append(builder, "}");
+    }
+}
 
 print_value :: (value : Value, indent:="") {
     if #complete value.type == {

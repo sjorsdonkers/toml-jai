@@ -4,7 +4,12 @@ main :: () {
     heap := create_heap(context.allocator);
     defer destroy_heap(heap);
     toml := Toml.deserialize(contents, Toml.Value,, allocator=heap);
-    Toml.print_value(toml);
+    log("dfg");
+    log("dfg");
+    print(Toml.serialize(toml));
+    log("dfg");
+    log("dfg");
+
 
 THE_STRING :: #string DONE
 orange = false
