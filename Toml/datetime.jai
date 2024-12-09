@@ -97,7 +97,7 @@ parse_date :: (input: string) -> bool, Date {
     return true, Date.{year=year, month=month, day=day};
 }
 
-// #scope_file
+#scope_file
 
 slice_to_int :: (input: string, start: s64, size: s64, $Target: Type, $Returns: Type) -> Target #expand {
     output, success, remainder := string_to_int(slice(input, start, size), 10, Target);
@@ -107,21 +107,3 @@ slice_to_int :: (input: string, start: s64, size: s64, $Target: Type, $Returns: 
 
 #import "Basic";
 #import "String";
-
-main :: () {
-    // {
-    //     success, time := parse_datetime("12:34:56.78912");
-    //     if !success { print("Failed to parse time\n"); return; }
-    //     print_value(time);
-    // }
-    // {
-    //     success, date := parse_datetime("2020-12-31");
-    //     if !success { print("Failed to parse date\n"); return; }
-    //     print_value(date);
-    // }
-    {
-        success, date := parse_datetime("1979-05-27T00:32:00.999999-07:00");
-        if !success { print("Failed to parse date\n"); return; }
-        print("%", date);
-    }
-}

@@ -108,6 +108,7 @@ deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="
             case .INT;    return true, type_info([]type_of(Value.int_value));
             case .FLOAT;  return true, type_info([]type_of(Value.float_value));
             case .STRING; return true, type_info([]type_of(Value.string_value));
+            case .DATETIME; return true, type_info([]type_of(Value.datetime));
             }
             return false, null;
         }
@@ -117,6 +118,7 @@ deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="
         case .INT;    any_value.type = type_info(type_of(Value.int_value));
         case .FLOAT;  any_value.type = type_info(type_of(Value.float_value));
         case .STRING; any_value.type = type_info(type_of(Value.string_value));
+        case .DATETIME; any_value.type = type_info(type_of(Value.datetime));
         case .ARRAY;
             is_same, array_type := homogeneous_array_info(toml.array);
             any_value.type = ifx is_same then array_type else type_info(type_of(Value.array));

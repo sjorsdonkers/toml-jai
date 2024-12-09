@@ -149,7 +149,18 @@ parse_literal :: (scope: *Scope) -> Value {
         if token.str == "nan" || token.str == "+nan" { return Value.{type=.FLOAT, float_value=FLOAT64_NAN}; }
         if token.str == "-nan"                       { return Value.{type=.FLOAT, float_value=-FLOAT64_NAN}; }
 
-        // if date, check if next token is time separated by single space: 1979-05-27 07:32:00Z
+        // If date, check if next token is time separated by single space: 1979-05-27 07:32:00Z
+        date_input := token.str;
+        if has_next(scope) {
+            next := peak_token(scope);
+            if next.type == .RAW
+            && <<(token.str.data + token.str.count) == #char " "
+            && token.str.data + token.str.count + 1 == next.str.data {
+                date_input.count += 1 + eat_token(scope).str.count;
+            }
+        }
+        success = parse_datetime(date_input);
+        if success { return Value.{type=.DATETIME, datetime=copy_string(date_input)}; }
 
         exit_with_error_line(scope.source, token.loc, "Unable to parse literal %", token.str);
     case;
@@ -304,6 +315,7 @@ operator == :: inline (a: KeyValue, b: KeyValue) -> bool {
 }
 
 #load "lexer.jai";
+#load "datetime.jai";
 using Basic :: #import "Basic";
 #poke_name Basic operator==;
 #import "File";
