@@ -1,5 +1,4 @@
 // Does not support:
-// - Date / Time
 // - Rejecting all control characters
 // - Rejecting values that overwrite / append to previous ones
 // - Full toml validation like newlines in an inline table or numbers with leading zeros or _s
