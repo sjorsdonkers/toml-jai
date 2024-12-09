@@ -21,6 +21,13 @@ lt2 = 00:32:00.999999
 DONE
     right := Toml.deserialize(TIME_STRING, Toml.Value);
     print_value(right);
+
+    MyTime :: struct {
+        t: string;
+    }
+    left := Toml.deserialize("t = 1979-05-27T07:32:00Z", MyTime);
+    print("left: %\n", left);
+    assert(left.t == "1979-05-27T07:32:00Z");
 }
 
 using Toml :: #import, file "../Toml/module.jai";

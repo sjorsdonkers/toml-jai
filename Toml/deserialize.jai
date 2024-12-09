@@ -38,8 +38,8 @@ deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="
         expect(toml.type, .BOOL, parent_name, name);
         <<cast(*bool) slot = toml.bool_value;
     case .STRING;
-        expect(toml.type, .STRING, parent_name, name);
-        <<cast(*string) slot = copy_string(toml.string_value);
+        if toml.type != .DATETIME expect(toml.type, .STRING, parent_name, name);
+        <<cast(*string) slot = copy_string(toml.string_value); // Note: datetime is string as well so same memory layout
     case .POINTER;
         pointer_info := cast(*Type_Info_Pointer) info;
         memory := alloc(pointer_info.pointer_to.runtime_size);
