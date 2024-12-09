@@ -4,17 +4,19 @@ Value :: struct {
         INT;
         FLOAT;
         STRING;
+        DATETIME;
         ARRAY;
         TABLE;
     }
     type: Type;
     union {
-        bool_value  : bool;
-        int_value   : s64;
-        float_value : float64;
-        string_value: string;
-        array       : [..]Value;
-        table       : [..]KeyValue;
+        bool_value     : bool;
+        int_value      : s64;
+        float_value    : float64;
+        string_value   : string;
+        datetime       : string;
+        array          : [..]Value;
+        table          : [..]KeyValue;
     };
 }
 KeyValue :: struct {
@@ -27,6 +29,7 @@ copy :: (value: Value) -> Value {
     case .BOOL; #through;
     case .INT;  #through;
     case .FLOAT;  return value;
+    case .DATETIME; #through;
     case .STRING; return Value.{type=value.type, string_value=copy_string(value.string_value)};
     case .ARRAY;
         output:= Value.{type=.ARRAY, array=resizable(Value.[])};
@@ -46,6 +49,7 @@ operator == :: (left: Value, right: Value) -> bool {
     case .INT;   return left.int_value == right.int_value;
     case .FLOAT; return left.float_value == right.float_value;
     case .STRING; return left.string_value == right.string_value;
+    case .DATETIME; return left.datetime == right.datetime;
     case .ARRAY;
         if left.array.count != right.array.count { return false; }
         for left.array {
@@ -71,6 +75,7 @@ print_value :: (value : Value, indent:="") {
     case .INT; print("%", value.int_value);
     case .FLOAT; print("%", value.float_value);
     case .BOOL; print("%", value.bool_value);
+    case .DATETIME; print("%", value.datetime);
     case .ARRAY;
         print("[\n");
         new_indent := tprint("%  ", indent);
