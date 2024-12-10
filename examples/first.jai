@@ -1,5 +1,98 @@
-
 main :: () {
+    // TOML data is not expected to multi-GB, so just read the entire file. For easy cleanup of the memory allocated for
+    // the returned structs we can push an allocator. The type Toml.Value can be used deserialization target for any TOML data.
+    contents := read_entire_file("data/inline_table.toml");
+    heap := create_heap(context.allocator);
+    defer destroy_heap(heap);
+    toml_value := Toml.deserialize(contents, Toml.Value,, allocator=heap);
+    Toml.print_value(toml_value); print("\n");
+
+    // We can also deserialize the TOML data into a struct. The struct must have the same fields as the TOML data.
+    // The struct can have additional fields that are not present in the TOML data, in this case the fields will be initialized to their default values.
+    // The TOML can have additional fields that are not present in the struct, in this case the fields will be ignored.
+THE_STRING :: #string DONE
+orange = false
+banana = 23.3
+apple = {a = 32, b = 'Y', c = 'Y'}
+kiwi = [
+    {q = 2},
+    {q = -3},
+    {q = 4},
+]
+horse = "Mai"
+DONE
+    Hello :: enum {
+        X;
+        Y;
+    }
+    Inner :: struct {
+        a: u8;
+        b: string;
+        c: Hello;
+    }
+    Q :: struct {
+        q: s16;
+    }
+    Filename :: #type,distinct string; // #type,isa Variants are supported as well
+    MyStruct :: struct {
+        orange: bool;
+        banana: float;
+        apple : Inner;
+        kiwi  : [..] Q;
+        horse :Filename;
+    }
+
+    my_struct := Toml.deserialize(THE_STRING, MyStruct);
+    print("MyStruct: %\n", my_struct);
+
+    // Except for untagged-unions all run-time types are supported.
+    // Meaning, union are only supported if they are in the shape of a sum-type. A sum-type is defined as a struct with a tag enum
+    // and a union, where both have the same number of members. The tag indices should correspond to those of the union variants.
+    Guy :: struct {
+        union {
+            Banana: void;
+            Apple: struct { a: u8; b: string;};
+            Orange: string;
+        };
+        tag: enum {
+            Banana;
+            Apple;
+            Orange;
+        };
+    }
+    SUM :: #string DONE
+Apple = {a = 32, b = 'Y'}
+DONE
+    apple := Toml.deserialize(SUM, Guy);
+    print("struct_apple: %\n", apple);
+    print("struct_apple: %\n", apple.Apple);
+
+    // If the TOML data does not contain a field that is present in the struct, the field will be initialized to its default value.
+    // Jai's initialization of unions is wack. So instead unions are initialized always initialized to the first variant.
+    void_banana := Toml.deserialize("", Guy);
+    print("void_banana: %\n", void_banana);
+    print("void_banana: %\n", void_banana.Banana);
+
+    // For convenience Toml.Value comes with an equality operator and copy procedure.
+    left := Toml.deserialize("a.b = {c.d = 1}", Toml.Value);
+    right := Toml.deserialize("a.b.c.d = 1", Toml.Value);
+    assert(left == right);
+
+    // Jai does not have commonly used types for dates and times. Most likely you do not want those provided by some Toml module.
+    // As such date/times are returned as strings. You the user can choose to use their own RFC 3339 parser. Or use the one defined here in Toml/datetime.jai.
+    MyTime :: struct {
+        t: string;
+    }
+    chrono := Toml.deserialize("t = 1979-05-27 07:32:00Z", MyTime);
+    print("chrono: %\n", chrono);
+    assert(chrono.t == "1979-05-27 07:32:00Z");
+
+    // Pointers, ANY, VIEW and RESIZABLE arrays are supported at any depth in the struct definition.
+    // These types that are referencing memory elsewhere will have new memory allocated for them with the context allocator.
+    reference_types();
+}
+
+reference_types :: () {
     // POINTER
     Inner :: struct {
         str: string;
@@ -118,6 +211,6 @@ main :: () {
     assert("{\"Peter\", \"Derick\"}" == tprint("%", other_andy));
 }
 
-Toml :: #import, file "../Toml/module.jai";
+using Toml :: #import, file "../Toml/module.jai";
 #import "Basic";
 #import "File";

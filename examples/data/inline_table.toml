@@ -1,0 +1,13 @@
+name = { first = "Tom", last = "Preston-Werner" }
+point = { x = 1, y = 2 }
+animal = { type.name = "pug" }
+
+# Inline tables are fully self-contained
+[product]
+type = { name = "Nail" }
+# type.edible = false  # INVALID
+
+# Inline tables cannot be used to add keys or sub-tables to an already-defined table
+# [product]
+# type.name = "Nail"
+# type = { edible = false }  # INVALID
