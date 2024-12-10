@@ -215,6 +215,6 @@ reference_types :: () {
     assert("{\"Peter\", \"Derick\"}" == tprint("%", other_andy));
 }
 
-using Toml :: #import, file "../Toml/module.jai";
+using Toml :: #import, file "../module.jai";
 #import "Basic";
 #import "File";

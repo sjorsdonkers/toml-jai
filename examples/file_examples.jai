@@ -23,6 +23,6 @@ read_parse_print :: (filepath: string) {
     print("\n");
 }
 
-Toml :: #import, file "../Toml/module.jai";
+Toml :: #import, file "../module.jai";
 #import "Basic";
 #import "File";
