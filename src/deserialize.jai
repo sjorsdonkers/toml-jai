@@ -1,7 +1,7 @@
 
 deserialize :: (contents: string, $Target: Type) -> Target {
     #if Target == Value return parse(contents); // Prevents unnecessarily copying
-    value := parse(contents,, allocator=temp);
+    value := parse(contents,, scoped_pool());   // Using scoped_pool since Value can be a bit big for temp
     return deserialize(value, Target);
 }
 
@@ -299,5 +299,15 @@ initialize_memory :: (memory: *void, info: *Type_Info, count:s64=1) {
     memset(memory, 0, total_size);
 }
 
+scoped_pool :: () -> Allocator #expand {
+    `scoped_pool_data: Flat_Pool;
+    a: Allocator;
+    a.proc = flat_pool_allocator_proc;
+    a.data = *scoped_pool_data;
+    `defer fini(*scoped_pool_data);
+    return a;
+}
+
 #load "parser.jai";
 #import "Reflection";
+#import "Flat_Pool";

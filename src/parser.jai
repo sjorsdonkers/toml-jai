@@ -5,7 +5,8 @@
 // - Error propagation
 
 parse :: (contents: string) -> root_table:Value {
-    tokens := tokenize(contents,, allocator=temp);
+    tokens := tokenize(contents);
+    defer array_free(tokens);
     scope  := Scope.{contents, tokens, 0, ""};
 
     // At top level we can expect ([[keys]], [keys], keys = value)
