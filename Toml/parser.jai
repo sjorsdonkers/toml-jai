@@ -314,7 +314,6 @@ operator == :: inline (a: KeyValue, b: KeyValue) -> bool {
 }
 
 #load "lexer.jai";
-#load "datetime.jai";
 using Basic :: #import "Basic";
 #poke_name Basic operator==;
 #import "File";

@@ -1,0 +1,64 @@
+[table]
+
+[table-1]
+key1 = "some string"
+key2 = 123
+
+[table-2]
+key1 = "another string"
+key2 = 456
+
+[dog."tater.man"]
+type.name = "pug"
+
+[a.b.c]            # this is best practice
+[ d.e.f ]          # same as [d.e.f]
+[ g .  h  . i ]    # same as [g.h.i]
+[ j . "ʞ" . 'l' ]  # same as [j."ʞ".'l']
+
+# [x] you
+# [x.y] don't
+# [x.y.z] need these
+[x.y.z.w] # for this to work
+
+[x] # defining a super-table afterward is ok
+
+# DO NOT DO THIS
+# [fruit]
+# apple = "red"
+# [fruit]
+# orange = "orange"
+
+# DO NOT DO THIS EITHER
+# [fruit]
+# apple = "red"
+# [fruit.apple]
+# texture = "smooth"
+
+# VALID BUT DISCOURAGED
+[fruit.apple]
+[animal]
+[fruit.orange]
+
+# Top-level table begins.
+name = "Fido"
+breed = "pug"
+# Top-level table ends.
+[owner]
+name = "Regina Dogman"
+member_since = 1999-08-04
+
+# Dotted keys create and define a table for each key part before the last one
+fruit.apple.color = "red"
+# Defines a table named fruit
+# Defines a table named fruit.apple
+fruit.apple.taste.sweet = true
+# Defines a table named fruit.apple.taste
+# fruit and fruit.apple were already created
+
+# Redefining tables using a [table] header is not allowed
+# [fruit.apple]  # INVALID
+# [fruit.apple.taste]  # INVALID
+
+[fruit.apple.texture]  # you can add sub-tables
+smooth = true

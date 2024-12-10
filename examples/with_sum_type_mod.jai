@@ -1,7 +1,5 @@
-
-
-
 main :: () {
+    // This Toml module is compatible with the sum-types defined by the Sum_Type module at https://github.com/sjorsdonkers/sum_type-jai
     Expect :: struct {
         nom: string;
         expected: Option(s64);
@@ -12,7 +10,7 @@ main :: () {
     print("none: %\n", explicit_none);
     some := Toml.deserialize("nom = 'Tim'\nexpected.Some = 23", Expect);
     print("some: %\n", some);
-    print("expected: %\n", unwrap(some.expected)); // TODO how to print these nicely easily?
+    print("expected: %\n", unwrap(some.expected));
 
     MyFood :: Sum_Type (
         .{"Bread", #run MyBread},
@@ -60,7 +58,7 @@ MyStruct :: struct {
         why: s64;
         anonymous: s16;
     }
-    using try : enum { // `using try : ` is optional, but that creates a weird inaccessible value
+    using try : enum { // The name `try` is optional (so `using enum {`), but without a name a weird inaccessible value is created
         A;
         B;
     }

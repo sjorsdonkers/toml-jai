@@ -53,8 +53,10 @@ deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="
         case; exit_with_error("Expected 'void' or empty table for %.%, got %", parent_name, name, toml.type);
         }
     case .STRUCT;
+        if deserialize_chrono(toml, slot, info) return;
+
         expect(toml.type, .TABLE, parent_name, name);
-        if toml.table.count == 0 { return; } // Use defaults
+        if toml.table.count == 0 return; // Use defaults
 
         struct_info := cast(*Type_Info_Struct) info;
         if struct_info.textual_flags & .UNION { exit_with_error("Union are not supported unless they are in a sum-type (struct with enum tag and union where union.members.count == tag.values.count)"); }
@@ -154,6 +156,19 @@ deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="
 
 expect :: inline (given: Value.Type, expected: Value.Type, struct_name: string, member_name: string) {
     if given != expected { exit_with_error("Wrong type for %.%, expected %, got % ", struct_name, member_name, expected, given); }
+}
+
+deserialize_chrono ::  (toml: Value, slot: *void, info: *Type_Info) -> is_chrono:bool {
+    if toml.type != .DATETIME return false;
+    success, chrono := parse_datetime(toml.datetime);
+    if !success return false;
+    if #complete chrono.type == {
+    case .LOCAL_TIME;       if info == type_info(Time)           { <<cast(*Time) slot           = chrono.time;            return true; }
+    case .LOCAL_DATE;       if info == type_info(Date)           { <<cast(*Date) slot           = chrono.date;            return true; }
+    case .LOCAL_DATETIME;   if info == type_info(DateTime)       { <<cast(*DateTime) slot       = chrono.datetime;        return true; }
+    case .OFFSET_DATETIME;  if info == type_info(DateTimeOffset) { <<cast(*DateTimeOffset) slot = chrono.datetime_offset; return true; }
+    }
+    return false;
 }
 
 deserialize_sumtype :: (toml: Value, slot: *void, struct_members: []Type_Info_Struct_Member, struct_name:string) -> is_sumtype:bool {
