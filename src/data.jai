@@ -45,22 +45,18 @@ copy :: (value: Value) -> Value {
 operator == :: (left: Value, right: Value) -> bool {
     if left.type != right.type { return false; }
     if #complete left.type == {
-    case .BOOL;  return left.bool_value == right.bool_value;
-    case .INT;   return left.int_value == right.int_value;
-    case .FLOAT; return left.float_value == right.float_value;
-    case .STRING; return left.string_value == right.string_value;
-    case .DATETIME; return left.datetime == right.datetime;
+    case .BOOL;     return left.bool_value   == right.bool_value;
+    case .INT;      return left.int_value    == right.int_value;
+    case .FLOAT;    return left.float_value  == right.float_value;
+    case .STRING;   return left.string_value == right.string_value;
+    case .DATETIME; return left.datetime     == right.datetime;
     case .ARRAY;
         if left.array.count != right.array.count { return false; }
-        for left.array {
-            if it != right.array[it_index] { return false; }
-        }
+        for left.array { if it != right.array[it_index] { return false; } }
         return true;
     case .TABLE;
         if left.table.count != right.table.count { return false; }
-        for left.table {
-            if it != right.table[it_index] { return false; }
-        }
+        for left.table { if it != right.table[it_index] { return false; } }
         return true;
     }
 }

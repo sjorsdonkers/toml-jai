@@ -18,11 +18,7 @@ deserialize :: (value: Value, $Target: Type) -> Target {
 // slot is already initialized memory
 // Currently all fields are optional. TODO check TomlOptional Note and require_all true/false
 deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="", name:string="") {
-    value_info :: type_info(Value);
-    if info == value_info { // If encounter we Toml.Value at any point just copy it
-        <<cast(*Value) slot = copy(toml);
-        return;
-    }
+    if info == type_info(Value) { <<cast(*Value) slot = copy(toml); return; } // If encounter we Toml.Value at any point just copy it
 
     if #complete info.type == {
     case .INTEGER;
@@ -175,8 +171,8 @@ deserialize_sumtype :: (toml: Value, slot: *void, struct_members: []Type_Info_St
     if struct_members.count != 2 return false;
 
     tag_idx :s64=---;
-    if struct_members[0].type.type == .ENUM && struct_members[1].type.type == .STRUCT      then tag_idx = 0;
-    else if struct_members[0].type.type == .STRUCT && struct_members[1].type.type == .ENUM then tag_idx = 1;
+    if      struct_members[0].type.type == .ENUM   && struct_members[1].type.type == .STRUCT then tag_idx = 0;
+    else if struct_members[0].type.type == .STRUCT && struct_members[1].type.type == .ENUM   then tag_idx = 1;
     else return false;
     union_idx := 1 - tag_idx;
 
