@@ -45,14 +45,14 @@ DONE
     my_struct := Toml.deserialize(THE_STRING, MyStruct);
     print("MyStruct: %\n", my_struct);
 
-    // Except for untagged-unions all run-time types are supported.
-    // Meaning, union are only supported if they are in the shape of a sum-type. A sum-type is defined as a struct with a tag enum
-    // and a union, where both have the same number of members. The tag indices should correspond to those of the union variants.
+    // All run-time types are supported.
+    // A tagged union / sum-type requires the tag in the toml to be correctly matching the set union
+    // NOTE: Make sure the union initializes to the first variant by disabling initialization of the other variants with ---.
     Guy :: struct {
         union {
             banana: void;
-            apple: struct { a: u8; b: string;};
-            orange: string;
+            apple: struct { a: u8; b: string;} = ---;
+            orange: string = ---;
         };
         tag: enum {
             BANANA;
@@ -158,7 +158,7 @@ reference_types :: () {
         }
         union {
             first: Vingt;
-            second: string;
+            second: string = ---;
         }
     }
     un := Toml.deserialize("", MyUnionStruct);
