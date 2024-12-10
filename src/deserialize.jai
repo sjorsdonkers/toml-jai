@@ -236,6 +236,10 @@ collect_union_members :: (union_info:*Type_Info_Struct) -> [..]Type_Info_Struct_
     return union_members;
 }
 
+//
+// Generic memory utilities
+//
+
 // Initializes union members to their first variant at every level within the given memory/info
 reinitialize_all_unions :: (memory: *void, info: *Type_Info) {
     if info.type == {
@@ -300,11 +304,11 @@ initialize_memory :: (memory: *void, info: *Type_Info, count:s64=1) {
 }
 
 scoped_pool :: () -> Allocator #expand {
-    `scoped_pool_data: Flat_Pool;
+    pool: Flat_Pool; // TBD does this needs to be backticked?
     a: Allocator;
     a.proc = flat_pool_allocator_proc;
-    a.data = *scoped_pool_data;
-    `defer fini(*scoped_pool_data);
+    a.data = *pool;
+    `defer fini(*pool);
     return a;
 }
 
