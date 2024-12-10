@@ -184,14 +184,13 @@ deserialize_sumtype :: (toml: Value, slot: *void, struct_members: []Type_Info_St
 
     tag_slot   := slot + struct_members[tag_idx].offset_in_bytes;
     union_slot := slot + struct_members[union_idx].offset_in_bytes;
-    union_members := collect_union_members(union_info);
 
     if toml.table.count != 1 { exit_with_error("Exactly 1 field expected for sum-type %, got %", struct_name, toml.table.count); }
     found, idx := array_find(tag_info.names, toml.table[0].key);
     if !found { exit_with_error("String % is not a variant of sum-type % %", toml.table[0].key, struct_name, tag_info.names); }
 
     set_enum_value(tag_slot, tag_info, idx);
-    deserialize(toml.table[0].value, union_slot, union_members[idx].type, tag_info.names[idx], union_info.members[idx].name);
+    deserialize(toml.table[0].value, union_slot, union_info.members[idx].type, tag_info.names[idx], union_info.members[idx].name);
     return true;
 }
 
@@ -217,23 +216,6 @@ collect_members :: (struct_info:*Type_Info_Struct) -> [..]Type_Info_Struct_Membe
     struct_members: [..]Type_Info_Struct_Member;
     collect_members(*struct_members, struct_info, 0);
     return struct_members;
-}
-
-// Flatten variants of the union, only needed for Sum_Type support
-collect_union_members :: (union_info:*Type_Info_Struct) -> [..]Type_Info_Struct_Member {
-    union_members: [..]Type_Info_Struct_Member;
-    array_reserve(*union_members, union_info.members.count);
-    for member: union_info.members {
-        if member.type.type == .STRUCT {  // Check if type is a wrapped Sum_Type variant
-            variant_info := cast(*Type_Info_Struct) member.type;
-            if variant_info.members.count == 1 && variant_info.members[0].name == "value" {
-                array_add(*union_members, variant_info.members[0]);
-                continue;
-            }
-        }
-        array_add(*union_members, member);
-    }
-    return union_members;
 }
 
 //
