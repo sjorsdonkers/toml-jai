@@ -57,10 +57,7 @@ deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="
         struct_info := cast(*Type_Info_Struct) info;
         if struct_info.textual_flags & .UNION { exit_with_error("Union are not supported unless they are in a sum-type (struct with enum tag and union where union.members.count == tag.values.count)"); }
 
-        struct_members := collect_members(struct_info);
-        if deserialize_sumtype(toml, slot, struct_members, struct_info.name) return;
-
-        for member: struct_members { for toml.table { if it.key == member.name {
+        for member: flat_members(struct_info) { for toml.table { if it.key == member.name {
             member_slot := slot + member.offset_in_bytes;
             deserialize(it.value, member_slot, member.type, parent_name, member.name);
             break;
@@ -102,20 +99,20 @@ deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="
             if first_type == .ARRAY || first_type == .TABLE { return false, null; } // Not going down multiple levels
             for array { if it.type != first_type { return false, null; }}
             if first_type == {
-            case .BOOL;   return true, type_info([]type_of(Value.bool_value));
-            case .INT;    return true, type_info([]type_of(Value.int_value));
-            case .FLOAT;  return true, type_info([]type_of(Value.float_value));
-            case .STRING; return true, type_info([]type_of(Value.string_value));
+            case .BOOL;     return true, type_info([]type_of(Value.bool_value));
+            case .INT;      return true, type_info([]type_of(Value.int_value));
+            case .FLOAT;    return true, type_info([]type_of(Value.float_value));
+            case .STRING;   return true, type_info([]type_of(Value.string_value));
             case .DATETIME; return true, type_info([]type_of(Value.datetime));
             }
             return false, null;
         }
 
         if #complete toml.type == {
-        case .BOOL;   any_value.type = type_info(type_of(Value.bool_value));
-        case .INT;    any_value.type = type_info(type_of(Value.int_value));
-        case .FLOAT;  any_value.type = type_info(type_of(Value.float_value));
-        case .STRING; any_value.type = type_info(type_of(Value.string_value));
+        case .BOOL;     any_value.type = type_info(type_of(Value.bool_value));
+        case .INT;      any_value.type = type_info(type_of(Value.int_value));
+        case .FLOAT;    any_value.type = type_info(type_of(Value.float_value));
+        case .STRING;   any_value.type = type_info(type_of(Value.string_value));
         case .DATETIME; any_value.type = type_info(type_of(Value.datetime));
         case .ARRAY;
             is_same, array_type := homogeneous_array_info(toml.array);
@@ -150,10 +147,6 @@ deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="
     }
 }
 
-expect :: inline (given: Value.Type, expected: Value.Type, struct_name: string, member_name: string) {
-    if given != expected { exit_with_error("Wrong type for %.%, expected %, got % ", struct_name, member_name, expected, given); }
-}
-
 deserialize_chrono ::  (toml: Value, slot: *void, info: *Type_Info) -> is_chrono:bool {
     if toml.type != .DATETIME return false;
     success, chrono := parse_datetime(toml.datetime);
@@ -167,55 +160,26 @@ deserialize_chrono ::  (toml: Value, slot: *void, info: *Type_Info) -> is_chrono
     return false;
 }
 
-deserialize_sumtype :: (toml: Value, slot: *void, struct_members: []Type_Info_Struct_Member, struct_name:string) -> is_sumtype:bool {
-    if struct_members.count != 2 return false;
-
-    tag_idx :s64=---;
-    if      struct_members[0].type.type == .ENUM   && struct_members[1].type.type == .STRUCT then tag_idx = 0;
-    else if struct_members[0].type.type == .STRUCT && struct_members[1].type.type == .ENUM   then tag_idx = 1;
-    else return false;
-    union_idx := 1 - tag_idx;
-
-    tag_info   := cast(*Type_Info_Enum)  struct_members[tag_idx].type;
-    union_info := cast(*Type_Info_Struct)struct_members[union_idx].type;
-    if !union_info.textual_flags & .UNION return false;
-    if union_info.members.count != tag_info.values.count return false;
-    // It's a sum-type!
-
-    tag_slot   := slot + struct_members[tag_idx].offset_in_bytes;
-    union_slot := slot + struct_members[union_idx].offset_in_bytes;
-
-    if toml.table.count != 1 { exit_with_error("Exactly 1 field expected for sum-type %, got %", struct_name, toml.table.count); }
-    found, idx := array_find(tag_info.names, toml.table[0].key);
-    if !found { exit_with_error("String % is not a variant of sum-type % %", toml.table[0].key, struct_name, tag_info.names); }
-
-    set_enum_value(tag_slot, tag_info, idx);
-    deserialize(toml.table[0].value, union_slot, union_info.members[idx].type, tag_info.names[idx], union_info.members[idx].name);
-    return true;
-}
-
-// Collect all variables members and flattens non-union using structs
-collect_members :: (struct_info:*Type_Info_Struct) -> [..]Type_Info_Struct_Member {
-    collect_members :: (struct_members:*[..]Type_Info_Struct_Member, struct_info:*Type_Info_Struct, offset_in_bytes: s64) {
-        for member: struct_info.members {
+// Collect all variables members and flattens using structs incl. unions
+flat_members :: (info:*Type_Info_Struct) -> [..]Type_Info_Struct_Member { // TODO change to for_expansion?
+    flat_members :: (flattened:*[..]Type_Info_Struct_Member, info:*Type_Info_Struct, offset_in_bytes: s64) {
+        for member: info.members {
             if member.flags & .CONSTANT { continue; }
-            if member.flags & .USING {
-                if (member.type.type == .STRUCT) { // NOTE: Enums can be using too, but they don't have members to flatten
-                    member_struct_info:= cast(*Type_Info_Struct) member.type;
-                    if !(member_struct_info.textual_flags & .UNION) { // Don't flatten unions
-                        collect_members(struct_members, member_struct_info, offset_in_bytes + member.offset_in_bytes);
-                        continue; // Don't add the using itself
-                    }
-                }
+            if member.flags & .USING && member.type.type == .STRUCT { // NOTE: Enums can be using too, but they don't have members to flatten
+                flat_members(flattened, xx member.type, offset_in_bytes + member.offset_in_bytes);
+                continue; // Don't add the using itself
             }
-
-            array_add(struct_members, member);
-            (<<struct_members)[struct_members.count-1].offset_in_bytes += offset_in_bytes;
+            array_add(flattened, member);
+            (<<flattened)[flattened.count-1].offset_in_bytes += offset_in_bytes;
         }
     }
-    struct_members: [..]Type_Info_Struct_Member;
-    collect_members(*struct_members, struct_info, 0);
-    return struct_members;
+    flattened: [..]Type_Info_Struct_Member;
+    flat_members(*flattened, info, 0);
+    return flattened;
+}
+
+expect :: inline (given: Value.Type, expected: Value.Type, struct_name: string, member_name: string) {
+    if given != expected { exit_with_error("Wrong type for %.%, expected %, got % ", struct_name, member_name, expected, given); }
 }
 
 //

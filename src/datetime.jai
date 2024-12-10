@@ -1,4 +1,4 @@
-// Toml Dates / times which are based on RFC 3339
+// Toml dates / times which are based on RFC 3339
 // https://datatracker.ietf.org/doc/html/rfc3339
 
 Chrono :: struct {

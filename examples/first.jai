@@ -50,28 +50,29 @@ DONE
     // and a union, where both have the same number of members. The tag indices should correspond to those of the union variants.
     Guy :: struct {
         union {
-            Banana: void;
-            Apple: struct { a: u8; b: string;};
-            Orange: string;
+            banana: void;
+            apple: struct { a: u8; b: string;};
+            orange: string;
         };
         tag: enum {
-            Banana;
-            Apple;
-            Orange;
+            BANANA;
+            APPLE;
+            ORANGE;
         };
     }
     SUM :: #string DONE
-Apple = {a = 32, b = 'Y'}
+apple = {a = 32, b = 'Y'}
+tag   = 'APPLE'
 DONE
     apple := Toml.deserialize(SUM, Guy);
     print("struct_apple: %\n", apple);
-    print("struct_apple: %\n", apple.Apple);
+    print("struct_apple: %: %\n", apple.tag, apple.apple);
 
     // If the TOML data does not contain a field that is present in the struct, the field will be initialized to its default value.
     // Jai's initialization of unions is wack. So instead unions are initialized always initialized to the first variant.
     void_banana := Toml.deserialize("", Guy);
     print("void_banana: %\n", void_banana);
-    print("void_banana: %\n", void_banana.Banana);
+    print("void_banana: %: %\n", void_banana.tag, void_banana.banana);
 
     // For convenience Toml.Value comes with an equality operator and copy procedure.
     left := Toml.deserialize("a.b = {c.d = 1}", Toml.Value);
@@ -169,8 +170,8 @@ reference_types :: () {
     MyUnionPtr :: struct {
         p_union: *MyUnionStruct;
     }
-    un_ptr := Toml.deserialize("p_union.FIRST.number = 3", MyUnionPtr);
-    print("un_ptr: %\n", un_ptr.p_union.first);
+    un_ptr := Toml.deserialize("tag = 'FIRST' \n p_union.first.number = 3", MyUnionPtr);
+    print("un_ptr: %: %\n", un_ptr.p_union.tag, un_ptr.p_union.first);
     assert(un_ptr.p_union.first.number == 3);
     assert(un_ptr.p_union.first.getal == 23);
 
