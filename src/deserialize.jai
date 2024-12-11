@@ -8,7 +8,7 @@ deserialize :: (contents: string, $Target: Type) -> Target {
 deserialize :: (value: Value, $Target: Type) -> Target {
     info :: type_info(Target);
     target :Target;
-    deserialize(value, *target, info);
+    deserialize(value, *target, info, info.name);
     return target;
 }
 
@@ -60,11 +60,12 @@ deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="
                 }
                 for toml_table if it.key == member.name {
                     deserialize(it.value, slot + member.offset_in_bytes, member.type, parent_name, member.name);
-                    break;
+                    if struct_info.textual_flags & .UNION return; else break; // Ignores any subsequent union variants
                 }
             }
         }
         fill_struct(toml.table, slot, xx info, parent_name);
+        enforce_uniontag_note(toml.table, slot, xx info, parent_name);
     case .ARRAY;
         expect(toml.type, .ARRAY, parent_name, name);
         array_info := cast(*Type_Info_Array) info;
@@ -161,6 +162,32 @@ deserialize_chrono ::  (toml: Value, slot: *void, info: *Type_Info) -> is_chrono
     case .OFFSET_DATETIME;  if info == type_info(DateTimeOffset) { <<cast(*DateTimeOffset) slot = chrono.datetime_offset; return true; }
     }
     return false;
+}
+
+enforce_uniontag_note :: (toml_table: []KeyValue, slot: *void, info: *Type_Info_Struct, parent_name: string) {
+    for member: info.members {
+        // Find union member with @UnionTag note
+        if member.flags & .CONSTANT || member.type.type != .STRUCT continue;
+        member_info := cast(*Type_Info_Struct) member.type;
+        if !(member_info.textual_flags & .UNION) continue;
+        tag_name: string;
+        for note: member.notes {
+            if !begins_with(note, "UnionTag:") continue;
+            tag_name = slice(note, 9, note.count-9);
+        }
+        if !tag_name continue;
+
+        // Find it's tag member
+        tag : *Type_Info_Struct_Member;
+        for *info.members if it.name == tag_name { tag = it; break; }
+        if !tag { exit_with_error("Union %.%'s tag member `%` cannot be found", parent_name, member.name, tag_name); }
+
+        // Determine which union member is was set (if any) and set the tag to its index
+        for union_member, union_idx: member_info.members for toml_table if it.key == union_member.name {
+            deserialize(.{type=.INT, int_value=union_idx}, slot + tag.offset_in_bytes, tag.type, parent_name, union_member.name);
+            break union_member;
+        }
+    }
 }
 
 expect :: inline (given: Value.Type, expected: Value.Type, struct_name: string, member_name: string) {

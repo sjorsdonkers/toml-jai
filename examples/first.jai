@@ -47,32 +47,29 @@ DONE
 
     // All run-time types are supported.
     // A tagged union / sum-type requires the tag in the toml to be correctly matching the set union
+    // To make the TAG optional and prevent incorrect tags you can declare the union's tag member with a note like @UnionTag:mytag
     // NOTE: Make sure the union initializes to the first variant by disabling initialization of the other variants with ---.
     Guy :: struct {
-        union {
+        using joost: union { // @compiler It would be nice if we could add a tag to anonymous using unions
             banana: void;
             apple: struct { a: u8; b: string;} = ---;
             orange: string = ---;
-        };
-        tag: enum {
+        }; @UnionTag:mytag
+        mytag: enum {
             BANANA;
             APPLE;
             ORANGE;
         };
     }
-    SUM :: #string DONE
-apple = {a = 32, b = 'Y'}
-tag   = 'APPLE'
-DONE
-    apple := Toml.deserialize(SUM, Guy);
+    apple := Toml.deserialize("apple = {a = 32, b = 'Y'}", Guy);
     print("struct_apple: %\n", apple);
-    print("struct_apple: %: %\n", apple.tag, apple.apple);
+    print("struct_apple: %: %\n", apple.mytag, apple.joost.apple);
 
     // If the TOML data does not contain a field that is present in the struct, the field will be initialized to its default value.
     // Jai's initialization of unions is wack. So instead unions are initialized always initialized to the first variant.
     void_banana := Toml.deserialize("", Guy);
     print("void_banana: %\n", void_banana);
-    print("void_banana: %: %\n", void_banana.tag, void_banana.banana);
+    print("void_banana: %: %\n", void_banana.mytag, void_banana.joost.banana);
 
     // For convenience Toml.Value comes with an equality operator and copy procedure.
     left := Toml.deserialize("a.b = {c.d = 1}", Toml.Value);
