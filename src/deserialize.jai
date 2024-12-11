@@ -55,7 +55,7 @@ deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="
         for member: members if !(member.flags & .USING && member.type.type == .STRUCT) {
             for toml.table if it.key == member.name {
                 deserialize(it.value, slot + member.offset_in_bytes, member.type, parent_name, member.name);
-                break; // TODO catch multiple members from the same union, works but leaky
+                break; // TODO catch multiple members from the same union, works but leaky, will also needed to determine required members are set
             }
         }
         enforce_uniontag_note(toml.table, slot, members, parent_name);
