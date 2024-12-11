@@ -55,7 +55,7 @@ deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="
         for member: members if !(member.flags & .USING && member.type.type == .STRUCT) {
             for toml.table if it.key == member.name {
                 deserialize(it.value, slot + member.offset_in_bytes, member.type, parent_name, member.name);
-                break;
+                break; // TODO catch multiple members from the same union, works but leaky
             }
         }
         enforce_uniontag_note(toml.table, slot, members, parent_name);
@@ -177,7 +177,7 @@ flat_members :: (info:*Type_Info_Struct) -> [..]Type_Info_Struct_Member { // TOD
 enforce_uniontag_note :: (toml_table: []KeyValue, slot: *void, flat_members: []Type_Info_Struct_Member, parent_name: string) {
     for member: flat_members {
         // Find union member with @UnionTag note
-        if member.flags & .CONSTANT || member.type.type != .STRUCT continue;
+        if member.type.type != .STRUCT continue;
         member_info := cast(*Type_Info_Struct) member.type;
         if !(member_info.textual_flags & .UNION) continue;
         tag_name: string;
@@ -186,11 +186,11 @@ enforce_uniontag_note :: (toml_table: []KeyValue, slot: *void, flat_members: []T
 
         // Find it's tag member
         tag : *Type_Info_Struct_Member;
-        for #v2 < * flat_members if it.name == tag_name { tag = it; break; } // Reverse in case of multiple
+        for * flat_members if it.name == tag_name { tag = it; break; }
         if !tag { exit_with_error("Union %.%'s tag member `%` cannot be found", parent_name, member.name, tag_name); }
 
         // Determine which union member is was set (if any) and set the tag to its index
-        for union_member, union_idx: member_info.members for toml_table if it.key == union_member.name {
+        for #v2 < union_member, union_idx: member_info.members for toml_table if it.key == union_member.name { // Reverse in case of multiple
             deserialize(.{type=.INT, int_value=union_idx}, slot + tag.offset_in_bytes, tag.type, parent_name, union_member.name);
             break union_member;
         }
