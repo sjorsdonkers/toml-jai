@@ -17,7 +17,7 @@ deserialize :: (value: Value, $Target: Type) -> Target {
 // slot is already initialized memory
 // Currently all fields are optional. TODO check TomlOptional Note and require_all true/false
 deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="", name:string="") {
-    if info == type_info(Value) { <<cast(*Value) slot = copy(toml); return; } // If encounter we Toml.Value at any point just copy it
+    if info == type_info(Value) { <<cast(*Value) slot = copy(toml); return; } // If we encounter a Toml.Value at any point just copy it
 
     if #complete info.type == {
     case .INTEGER;
@@ -43,21 +43,28 @@ deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="
         deserialize(toml, memory, pointer_info.pointer_to, parent_name, name);
     case .VOID;
         if toml.type == {
-        case .STRING; if toml.string_value != "void" { exit_with_error("Expected 'void' for %.%, got %", parent_name, name, toml.string_value);     }
-        case .TABLE ; if toml.table.count  != 0      { exit_with_error("Expected empty table for %.%, got %", parent_name, name, toml.table.count); }
+        case .STRING; if toml.string_value != "void" { exit_with_error("Expected 'void' for %.%, got %",      parent_name, name, toml.string_value); }
+        case .TABLE ; if toml.table.count  != 0      { exit_with_error("Expected empty table for %.%, got %", parent_name, name, toml.table.count);  }
         case; exit_with_error("Expected 'void' or empty table for %.%, got %", parent_name, name, toml.type);
         }
     case .STRUCT;
         if deserialize_chrono(toml, slot, info) return;
-
         expect(toml.type, .TABLE, parent_name, name);
-        struct_info := cast(*Type_Info_Struct) info;
 
-        for member: flat_members(struct_info) { for toml.table { if it.key == member.name {
-            member_slot := slot + member.offset_in_bytes;
-            deserialize(it.value, member_slot, member.type, parent_name, member.name);
-            break;
-        } } }
+        fill_struct :: (toml_table: []KeyValue, slot: *void, struct_info: *Type_Info_Struct, parent_name:string) {
+            for member: struct_info.members {
+                if member.flags & .CONSTANT continue;
+                if member.flags & .USING && member.type.type == .STRUCT { // NOTE: Enums can be using too
+                    fill_struct(toml_table, slot + member.offset_in_bytes, xx member.type, parent_name);
+                    continue; // Don't process the using itself
+                }
+                for toml_table if it.key == member.name {
+                    deserialize(it.value, slot + member.offset_in_bytes, member.type, parent_name, member.name);
+                    break;
+                }
+            }
+        }
+        fill_struct(toml.table, slot, xx info, parent_name);
     case .ARRAY;
         expect(toml.type, .ARRAY, parent_name, name);
         array_info := cast(*Type_Info_Array) info;
@@ -154,24 +161,6 @@ deserialize_chrono ::  (toml: Value, slot: *void, info: *Type_Info) -> is_chrono
     case .OFFSET_DATETIME;  if info == type_info(DateTimeOffset) { <<cast(*DateTimeOffset) slot = chrono.datetime_offset; return true; }
     }
     return false;
-}
-
-// Collect all variables members and flattens using structs incl. unions
-flat_members :: (info:*Type_Info_Struct) -> [..]Type_Info_Struct_Member { // TODO change to for_expansion?
-    flat_members :: (flattened:*[..]Type_Info_Struct_Member, info:*Type_Info_Struct, offset_in_bytes: s64) {
-        for member: info.members {
-            if member.flags & .CONSTANT { continue; }
-            if member.flags & .USING && member.type.type == .STRUCT { // NOTE: Enums can be using too, but they don't have members to flatten
-                flat_members(flattened, xx member.type, offset_in_bytes + member.offset_in_bytes);
-                continue; // Don't add the using itself
-            }
-            array_add(flattened, member);
-            (<<flattened)[flattened.count-1].offset_in_bytes += offset_in_bytes;
-        }
-    }
-    flattened: [..]Type_Info_Struct_Member;
-    flat_members(*flattened, info, 0);
-    return flattened;
 }
 
 expect :: inline (given: Value.Type, expected: Value.Type, struct_name: string, member_name: string) {
