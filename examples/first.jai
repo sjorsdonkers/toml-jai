@@ -105,8 +105,8 @@ reference_types :: () {
     }
     pointers_toml := Toml.deserialize("p_s16 = 36\np_inner = {str = 'Barry'}", Outer);
     print("pointers_toml: %\n", pointers_toml);
-    print("pointers_toml.p_s16: %\n",   <<pointers_toml.p_s16  );
-    print("pointers_toml.p_inner: %\n", <<pointers_toml.p_inner);
+    print("pointers_toml.p_s16: %\n",   pointers_toml.p_s16.*  );
+    print("pointers_toml.p_inner: %\n", pointers_toml.p_inner.*);
 
     Getal :: #type,distinct u8;
 
@@ -119,9 +119,9 @@ reference_types :: () {
         p_quatre: *[4]Vingt;
     }
     quatre_vingt := Toml.deserialize("p_quatre = [{getal = 9}, {getal = 4}, {number = 3}, {}]", Fixed_Array);
-    log("quatre_vingt: %\n", <<quatre_vingt.p_quatre);
-    assert((<<quatre_vingt.p_quatre)[0].number == 20);
-    assert((<<quatre_vingt.p_quatre)[2].getal == 23);
+    log("quatre_vingt: %\n", quatre_vingt.p_quatre.*);
+    assert(quatre_vingt.p_quatre.*[0].number == 20);
+    assert(quatre_vingt.p_quatre.*[2].getal == 23);
 
     // Pointer to variant
     DefaultStruct :: struct {
@@ -133,7 +133,7 @@ reference_types :: () {
         p_variant: *DefaultVariant;
     }
     mutant := Toml.deserialize("p_variant.b = 3", MyVar);
-    print("mutant: %\n", <<mutant.p_variant);
+    print("mutant: %\n", mutant.p_variant.*);
     assert(mutant.p_variant.a == "Anton");
 
     // Pointer to struct with using (no impl required)
@@ -144,7 +144,7 @@ reference_types :: () {
         p_using: *MyUsing;
     }
     use20 := Toml.deserialize("[p_using]\nnumber = 6", MyPtrUsing);
-    print("use20: %\n", <<use20.p_using);
+    print("use20: %\n", use20.p_using.*);
     assert(use20.p_using.getal == 23);
 
     // Union with first having an initializer
@@ -207,9 +207,9 @@ reference_types :: () {
     }
     toml5 := Toml.deserialize("[[andy]]\nany_andy = 9\nany_amy = 8\n[[andy]]\nother_andy = 'Peter'\nother_amy = 'Derick'", Amy);
     andies := cast(*[]Toml.Value) toml5.andy.value_pointer;
-    any_andy := Toml.deserialize((<<andies)[0], AnyAndy);
+    any_andy := Toml.deserialize(andies.*[0], AnyAndy);
     assert("{9, 8}" == tprint("%", any_andy));
-    other_andy := Toml.deserialize((<<andies)[1], OtherAndy);
+    other_andy := Toml.deserialize(andies.*[1], OtherAndy);
     assert("{\"Peter\", \"Derick\"}" == tprint("%", other_andy));
 }
 

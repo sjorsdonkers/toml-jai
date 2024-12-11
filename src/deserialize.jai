@@ -17,7 +17,7 @@ deserialize :: (value: Value, $Target: Type) -> Target {
 // slot is already initialized memory
 // Currently all fields are optional. TODO check TomlOptional Note and require_all true/false
 deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="", name:string="") {
-    if info == type_info(Value) { <<cast(*Value) slot = copy(toml); return; } // If we encounter a Toml.Value at any point just copy it
+    if info == type_info(Value) { (cast(*Value) slot).* = copy(toml); return; } // If we encounter a Toml.Value at any point just copy it
 
     if #complete info.type == {
     case .INTEGER;
@@ -26,20 +26,20 @@ deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="
         if !valid { exit_with_error("Value for %.% is out of range. Given % expected min % max %", parent_name, name, toml.int_value, low, high); }
     case .FLOAT;
         expect(toml.type, .FLOAT, parent_name, name);
-        if      info.runtime_size == 4 { <<cast(*float)   slot = cast(float) toml.float_value; }
-        else if info.runtime_size == 8 { <<cast(*float64) slot = toml.float_value; }
+        if      info.runtime_size == 4 { (cast(*float)   slot).* = cast(float) toml.float_value; }
+        else if info.runtime_size == 8 { (cast(*float64) slot).* = toml.float_value; }
         else { exit_with_error("Unsupported float size %", info.runtime_size); }
     case .BOOL;
         expect(toml.type, .BOOL, parent_name, name);
-        <<cast(*bool) slot = toml.bool_value;
+        (cast(*bool) slot).* = toml.bool_value;
     case .STRING;
         if toml.type != .DATETIME expect(toml.type, .STRING, parent_name, name);
-        <<cast(*string) slot = copy_string(toml.string_value); // Note: datetime is string as well so same memory layout
+        (cast(*string) slot).* = copy_string(toml.string_value); // Note: datetime is string as well so same memory layout
     case .POINTER;
         pointer_info := cast(*Type_Info_Pointer) info;
         memory := alloc(pointer_info.pointer_to.runtime_size);
         initialize_memory(memory, pointer_info.pointer_to);
-        <<cast(**void)slot = memory;
+        (cast(**void) slot).* = memory;
         deserialize(toml, memory, pointer_info.pointer_to, parent_name, name);
     case .VOID;
         if toml.type == {
@@ -156,10 +156,10 @@ deserialize_chrono ::  (toml: Value, slot: *void, info: *Type_Info) -> is_chrono
     success, chrono := parse_datetime(toml.datetime);
     if !success return false;
     if #complete chrono.type == {
-    case .LOCAL_TIME;       if info == type_info(Time)           { <<cast(*Time) slot           = chrono.time;            return true; }
-    case .LOCAL_DATE;       if info == type_info(Date)           { <<cast(*Date) slot           = chrono.date;            return true; }
-    case .LOCAL_DATETIME;   if info == type_info(DateTime)       { <<cast(*DateTime) slot       = chrono.datetime;        return true; }
-    case .OFFSET_DATETIME;  if info == type_info(DateTimeOffset) { <<cast(*DateTimeOffset) slot = chrono.datetime_offset; return true; }
+    case .LOCAL_TIME;       if info == type_info(Time)           { (cast(*Time) slot).*           = chrono.time;            return true; }
+    case .LOCAL_DATE;       if info == type_info(Date)           { (cast(*Date) slot).*           = chrono.date;            return true; }
+    case .LOCAL_DATETIME;   if info == type_info(DateTime)       { (cast(*DateTime) slot).*       = chrono.datetime;        return true; }
+    case .OFFSET_DATETIME;  if info == type_info(DateTimeOffset) { (cast(*DateTimeOffset) slot).* = chrono.datetime_offset; return true; }
     }
     return false;
 }
@@ -171,10 +171,7 @@ enforce_uniontag_note :: (toml_table: []KeyValue, slot: *void, info: *Type_Info_
         member_info := cast(*Type_Info_Struct) member.type;
         if !(member_info.textual_flags & .UNION) continue;
         tag_name: string;
-        for note: member.notes {
-            if !begins_with(note, "UnionTag:") continue;
-            tag_name = slice(note, 9, note.count-9);
-        }
+        for note: member.notes if begins_with(note, "UnionTag:") { tag_name = slice(note, 9, note.count-9); break; }
         if !tag_name continue;
 
         // Find it's tag member

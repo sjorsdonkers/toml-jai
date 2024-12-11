@@ -18,7 +18,7 @@ parse :: (contents: string) -> root_table:Value {
             current_table = parse_header(*root_table, eat_scope(*scope, token));
         } else {
             leaf_value := parse_key(current_table, eat_scope_until(*scope, Token.Type.ASSIGN));
-            <<leaf_value = parse_value(leaf_value, *scope);
+            leaf_value.* = parse_value(leaf_value, *scope);
         }
     }
     return root_table;
@@ -45,7 +45,7 @@ parse_header :: (root_table: *Value, scope: Scope) -> *Value {
         current_table, is_new := parse_key(root_table, aot_scope);
         if current_table.type != .ARRAY {
             if !is_new { exit_with_error_line(aot_scope.source, last(aot_scope).loc, "Cannot use key as Array of Tables as it already has a value: %", current_table.type); }
-            <<current_table = .{type=.ARRAY, array=resizable(Value.[])};
+            current_table.* = .{type=.ARRAY, array=resizable(Value.[])};
         }
         array_add(*current_table.array, Value.{type=.TABLE, table=resizable(KeyValue.[])});
         return *current_table.array[current_table.array.count-1];
@@ -92,10 +92,10 @@ parse_inline_table :: (current_table: *Value, scope: Scope) -> table:Value {
     if current_table == null { current_table = *table_root; }
     while has_next(scope) {
         leaf_value := parse_key(current_table, eat_scope_until(*scope, Token.Type.ASSIGN));
-        <<leaf_value = parse_value(leaf_value, *scope);
+        leaf_value.* = parse_value(leaf_value, *scope);
         if has_next(scope, 2) { eat_expected(*scope, Token.Type.COMMA); } // Inline tables are not allowed to have trailing commas
     }
-    return <<current_table;
+    return current_table.*;
 }
 
 parse_array :: (scope: Scope) -> array:Value {
@@ -154,7 +154,7 @@ parse_literal :: (scope: *Scope) -> Value {
         if has_next(scope) {
             next := peak_token(scope);
             if next.type == .RAW
-            && <<(token.str.data + token.str.count) == #char " "
+            && (token.str.data + token.str.count).* == #char " "
             && token.str.data + token.str.count + 1 == next.str.data {
                 date_input.count += 1 + eat_token(scope).str.count;
             }
@@ -301,11 +301,11 @@ split_from_left_incl :: (s: string, separator: u8) -> (left: string, right: stri
 }
 
 array_add_copy_if_unique :: (array: *[..]KeyValue, item: KeyValue) -> is_new:bool, index:s64 {
-    found, index := array_find(<<array, item);
+    found, index := array_find(array.*, item);
     if found return false, index;
 
     array_add(array, item);
-    (<<array)[array.count-1].key = copy_string(item.key);
+    array.*[array.count-1].key = copy_string(item.key);
     return true, array.count-1;
 }
 
