@@ -51,21 +51,14 @@ deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="
         if deserialize_chrono(toml, slot, info) return;
         expect(toml.type, .TABLE, parent_name, name);
 
-        fill_struct :: (toml_table: []KeyValue, slot: *void, struct_info: *Type_Info_Struct, parent_name:string) {
-            for member: struct_info.members {
-                if member.flags & .CONSTANT continue;
-                if member.flags & .USING && member.type.type == .STRUCT { // NOTE: Enums can be using too
-                    fill_struct(toml_table, slot + member.offset_in_bytes, xx member.type, parent_name);
-                    continue; // Don't process the using itself
-                }
-                for toml_table if it.key == member.name {
-                    deserialize(it.value, slot + member.offset_in_bytes, member.type, parent_name, member.name);
-                    if struct_info.textual_flags & .UNION return; else break; // Ignores any subsequent union variants
-                }
+        members := flat_members(xx info); defer array_free(members);
+        for member: members if !(member.flags & .USING && member.type.type == .STRUCT) {
+            for toml.table if it.key == member.name {
+                deserialize(it.value, slot + member.offset_in_bytes, member.type, parent_name, member.name);
+                break;
             }
         }
-        fill_struct(toml.table, slot, xx info, parent_name);
-        enforce_uniontag_note(toml.table, slot, xx info, parent_name);
+        enforce_uniontag_note(toml.table, slot, members, parent_name);
     case .ARRAY;
         expect(toml.type, .ARRAY, parent_name, name);
         array_info := cast(*Type_Info_Array) info;
@@ -164,8 +157,25 @@ deserialize_chrono ::  (toml: Value, slot: *void, info: *Type_Info) -> is_chrono
     return false;
 }
 
-enforce_uniontag_note :: (toml_table: []KeyValue, slot: *void, info: *Type_Info_Struct, parent_name: string) {
-    for member: info.members {
+// Collect all variables members and flattens using structs incl. unions, keeps original using members as well, needed for uniontag
+flat_members :: (info:*Type_Info_Struct) -> [..]Type_Info_Struct_Member { // TODO change to for_expansion?
+    flat_members :: (flattened:*[..]Type_Info_Struct_Member, info:*Type_Info_Struct, offset_in_bytes: s64) {
+        for member: info.members {
+            if member.flags & .CONSTANT { continue; }
+            if member.flags & .USING && member.type.type == .STRUCT { // NOTE: Enums can be using too
+                flat_members(flattened, xx member.type, offset_in_bytes + member.offset_in_bytes);
+            }
+            array_add(flattened, member);
+            (<<flattened)[flattened.count-1].offset_in_bytes += offset_in_bytes;
+        }
+    }
+    flattened: [..]Type_Info_Struct_Member;
+    flat_members(*flattened, info, 0);
+    return flattened;
+}
+
+enforce_uniontag_note :: (toml_table: []KeyValue, slot: *void, flat_members: []Type_Info_Struct_Member, parent_name: string) {
+    for member: flat_members {
         // Find union member with @UnionTag note
         if member.flags & .CONSTANT || member.type.type != .STRUCT continue;
         member_info := cast(*Type_Info_Struct) member.type;
@@ -176,7 +186,7 @@ enforce_uniontag_note :: (toml_table: []KeyValue, slot: *void, info: *Type_Info_
 
         // Find it's tag member
         tag : *Type_Info_Struct_Member;
-        for *info.members if it.name == tag_name { tag = it; break; }
+        for #v2 < * flat_members if it.name == tag_name { tag = it; break; } // Reverse in case of multiple
         if !tag { exit_with_error("Union %.%'s tag member `%` cannot be found", parent_name, member.name, tag_name); }
 
         // Determine which union member is was set (if any) and set the tag to its index

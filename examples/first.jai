@@ -63,13 +63,13 @@ DONE
     }
     apple := Toml.deserialize("apple = {a = 32, b = 'Y'}", Guy);
     print("struct_apple: %\n", apple);
-    print("struct_apple: %: %\n", apple.mytag, apple.joost.apple);
+    print("struct_apple: %: %\n", apple.mytag, apple.apple);
 
     // If the TOML data does not contain a field that is present in the struct, the field will be initialized to its default value.
     // Jai's initialization of unions is wack. So instead unions are initialized always initialized to the first variant.
     void_banana := Toml.deserialize("", Guy);
     print("void_banana: %\n", void_banana);
-    print("void_banana: %: %\n", void_banana.mytag, void_banana.joost.banana);
+    print("void_banana: %: %\n", void_banana.mytag, void_banana.banana);
 
     // For convenience Toml.Value comes with an equality operator and copy procedure.
     left := Toml.deserialize("a.b = {c.d = 1}", Toml.Value);
