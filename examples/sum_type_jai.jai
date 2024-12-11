@@ -5,10 +5,10 @@ main :: () {
         nom: string;
         expected: Option(s64);
     }
-    // none_str := Toml.deserialize("nom = 'Tim'", Expect);
-    // print("none: %\n", none_str);
-    // explicit_none := Toml.deserialize("nom = 'Tim'\nexpected.None='void'", Expect);
-    // print("none: %\n", explicit_none);
+    none_str := Toml.deserialize("nom = 'Tim'", Expect);
+    print("none: %\n", none_str);
+    explicit_none := Toml.deserialize("nom = 'Tim'\nexpected.None='void'", Expect);
+    print("none: %\n", explicit_none);
     some := Toml.deserialize("nom = 'Tim'\nexpected.some.value = 23", Expect);
     print("some: %\n", some.expected.some);
     print("expected: %\n", unwrap(some.expected));
