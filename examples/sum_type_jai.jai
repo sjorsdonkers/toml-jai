@@ -1,5 +1,6 @@
 main :: () {
     // This Toml module is compatible with the sum-types defined by the Sum_Type module at https://github.com/sjorsdonkers/sum_type-jai
+    // TODO Improve Sum_Type to avoid `.value`
     Expect :: struct {
         nom: string;
         expected: Option(s64);
@@ -25,7 +26,9 @@ main :: () {
     other_mango := unwrap(other_fruit, MyFruit.Mango);              print("other_mango: %\n", other_mango);
     assert(tprint("%", none(string)) == tprint("%", other_mango));
 
-    // Toml.deserialize("[Fruit]", MyFood); // This is not allowed only void can make a user-defined sum-type be optional
+    // Sum_Type makes sure that the first variant is default initialized
+    pine0 := Toml.deserialize("[fruit]", MyFood);
+    assert(0 == unwrap(unwrap(pine0, MyFood.Fruit), MyFruit.Pineapple));
 
     kiwi_food := Toml.deserialize("fruit.value.kiwi.value = {spaghetti = 3, macaroni = true, why = 9, anonymous = 88, try = 'B'}", MyFood); print("kiwi_food: %\n", kiwi_food);
     kiwi_fruit := unwrap(kiwi_food, MyFood.Fruit);                 print("kiwi_fruit: %\n", kiwi_fruit);
