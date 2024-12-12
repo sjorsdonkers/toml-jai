@@ -52,10 +52,10 @@ parse_header :: (root_table: *Value, scope: Scope) -> *Value {
     }
 }
 
-// Parse: key. key.`key`."etc"
+// Parse: key. key.'key'."etc"
 parse_key :: (parent: *Value, scope: Scope) -> leaf:*Value, leaf_is_new:bool {
     if !has_next(scope) { exit_with_error("Unexpected end of scope while parsing key"); }
-    if parent.type != Value.Type.TABLE { exit_with_error("Cannot use key as table as it already has a value: %", parent.type); } // TODO print_value
+    if parent.type != Value.Type.TABLE { exit_with_error("Cannot use key as table as it already has a value: %", parent.type); }
 
     // Get or insert key
     token := eat_expected_key(*scope, .LITERAL);

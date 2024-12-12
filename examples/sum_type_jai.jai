@@ -1,15 +1,14 @@
 main :: () {
     // This Toml module is compatible with the sum-types defined by the Sum_Type module at https://github.com/sjorsdonkers/sum_type-jai
-    // TODO Improve Sum_Type to avoid `.value`
     Expect :: struct {
         nom: string;
         expected: Option(s64);
     }
     none_str := Toml.deserialize("nom = 'Tim'", Expect);
     print("none: %\n", none_str);
-    explicit_none := Toml.deserialize("nom = 'Tim'\nexpected.none.value='void'", Expect);
+    explicit_none := Toml.deserialize("nom = 'Tim'\nexpected.none='void'", Expect);
     print("none: %\n", explicit_none);
-    some := Toml.deserialize("nom = 'Tim'\nexpected.some.value = 23", Expect);
+    some := Toml.deserialize("nom = 'Tim'\nexpected.some = 23", Expect);
     print("some: %\n", some.expected.some);
     print("expected: %\n", unwrap(some.expected));
 
@@ -17,22 +16,22 @@ main :: () {
         .{"Bread", #run MyBread},
         .{"Fruit", #run MyFruit},
     );
-    food     := Toml.deserialize("bread.value = {baguette.value = 3}", MyFood); print("food: %\n", food);
-    bread    := unwrap(food, MyFood.Bread);                                     print("bread: %\n", bread);
-    baguette := unwrap(bread, MyBread.Baguette);                                print("baguette: %\n", baguette);
+    food     := Toml.deserialize("bread = {baguette = 3}", MyFood); print("food: %\n", food);
+    bread    := unwraps(food, MyFood.Bread);                                     print("bread: %\n", bread);
+    baguette := unwraps(bread, MyBread.Baguette);                                print("baguette: %\n", baguette);
     assert(3 == baguette);
-    other_food := Toml.deserialize("[fruit.value.mango.value]", MyFood);
-    other_fruit := unwrap(other_food, MyFood.Fruit);   print("other_fruit: %\n", other_fruit);
-    other_mango := unwrap(other_fruit, MyFruit.Mango); print("other_mango: %\n", other_mango);
+    other_food := Toml.deserialize("[fruit.mango]", MyFood);
+    other_fruit := unwraps(other_food, MyFood.Fruit);   print("other_fruit: %\n", other_fruit);
+    other_mango := unwraps(other_fruit, MyFruit.Mango); print("other_mango: %\n", other_mango);
     assert(tprint("%", none(string)) == tprint("%", other_mango));
 
     // Sum_Type makes sure that the first variant is default initialized
     pine0 := Toml.deserialize("[fruit]", MyFood);
-    assert(0 == unwrap(unwrap(pine0, MyFood.Fruit), MyFruit.Pineapple));
+    assert(0 == unwraps(unwraps(pine0, MyFood.Fruit), MyFruit.Pineapple));
 
-    kiwi_food := Toml.deserialize("fruit.value.kiwi.value = {spaghetti = 3, macaroni = true, why = 9, anonymous = 88, try = 'B'}", MyFood); print("kiwi_food: %\n", kiwi_food);
-    kiwi_fruit := unwrap(kiwi_food, MyFood.Fruit); print("kiwi_fruit: %\n", kiwi_fruit);
-    kiwi := unwrap(kiwi_fruit, MyFruit.Kiwi);      print("kiwi: %\n", kiwi);
+    kiwi_food := Toml.deserialize("fruit.kiwi = {spaghetti = 3, macaroni = true, why = 9, anonymous = 88, try = 'B'}", MyFood); print("kiwi_food: %\n", kiwi_food);
+    kiwi_fruit := unwraps(kiwi_food, MyFood.Fruit); print("kiwi_fruit: %\n", kiwi_fruit);
+    kiwi := unwraps(kiwi_fruit, MyFruit.Kiwi);      print("kiwi: %\n", kiwi);
     assert("{3, true, {9, 88}, B}" == tprint("%", kiwi)); // Using sub-members need to have their offset_in_bytes combined with the using member's offset_in_bytes
 
     // Test toml of array of optionals
@@ -40,7 +39,7 @@ main :: () {
         nom: string;
         expected: [..]Option(s64);
     }
-    array := Toml.deserialize("nom = 'Tim'\nexpected = [{some.value=23}, {some.value=46}]", Expect2);
+    array := Toml.deserialize("nom = 'Tim'\nexpected = [{some=23}, {some=46}]", Expect2);
     for array.expected { print("% ", unwrap(it)); assert(unwrap(it) == (1+it_index)*23); }
     print("array!\n");
 
