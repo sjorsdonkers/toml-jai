@@ -42,11 +42,8 @@ deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="
         (cast(**void) slot).* = memory;
         deserialize(toml, memory, pointer_info.pointer_to, parent_name, name);
     case .VOID;
-        if toml.type == {
-        case .STRING; if toml.string_value != "void" { exit_with_error("Expected 'void' for %.%, got %",      parent_name, name, toml.string_value); }
-        case .TABLE ; if toml.table.count  != 0      { exit_with_error("Expected empty table for %.%, got %", parent_name, name, toml.table.count);  }
-        case; exit_with_error("Expected 'void' or empty table for %.%, got %", parent_name, name, toml.type);
-        }
+        expect(toml.type, .TABLE, parent_name, name);
+        if toml.table.count != 0 { exit_with_error("Expected empty table for %.%, got %", parent_name, name, toml.table.count);  }
     case .STRUCT;
         if deserialize_chrono(toml, slot, info) return;
         expect(toml.type, .TABLE, parent_name, name);
