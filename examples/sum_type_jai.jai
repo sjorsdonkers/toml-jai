@@ -6,7 +6,7 @@ main :: () {
     }
     none_str := Toml.deserialize("nom = 'Tim'", Expect);
     print("none: %\n", none_str);
-    explicit_none := Toml.deserialize("nom = 'Tim'\nexpected.none='void'", Expect);
+    explicit_none := Toml.deserialize("nom = 'Tim'\nexpected.none={}", Expect);
     print("none: %\n", explicit_none);
     some := Toml.deserialize("nom = 'Tim'\nexpected.some = 23", Expect);
     print("some: %\n", some.expected.some);

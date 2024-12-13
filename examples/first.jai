@@ -5,7 +5,7 @@ main :: () {
     heap := create_heap(context.allocator);
     defer destroy_heap(heap);
     toml_value := Toml.deserialize(contents, Toml.Value,, allocator=heap);
-    Toml.print_value(toml_value); print("\n");
+    print("%\n", Toml.serialize(toml_value));
 
     // We can also deserialize the TOML data into a struct. The struct must have the same fields as the TOML data.
     // The struct can have additional fields that are not present in the TOML data, in this case the fields will be initialized to their default values.

@@ -98,8 +98,11 @@ tokenize :: (data: string) -> tokens: [..]Token {
                 start := lexer.pos;
                 // Eat string contents till the end
                 while has_next(lexer) && peak_char(lexer) != c {
-                    if c == #char "\"" && has_next(lexer, 2) && peak_slice(lexer, 2) == "\\\"" { eat_char(*lexer, 2); continue; }
-                    if peak_char(lexer) == #char "\n" { exit_with_error_line(lexer.data, lexer.loc, "Newline in string. Escape `\n` or use a multi-line string (tripple quote) instead."); }
+                    if c == #char "\"" && has_next(lexer, 2) {
+                        next_two := peak_slice(lexer, 2);
+                        if next_two == "\\\""  || next_two == "\\\\" { eat_char(*lexer, 2); continue; }
+                    }
+                    if peak_char(lexer) == #char "\n" { exit_with_error_line(lexer.data, lexer.loc, "Newline in string. Escape `\\n` or use a multi-line string (tripple quote) instead."); }
                     eat_char(*lexer);
                 }
                 if !has_next(lexer) { exit_with_error_line(lexer.data, lexer.loc, "Unterminated string."); }

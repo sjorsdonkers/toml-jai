@@ -10,3 +10,8 @@ A module for `TOML v1.0.0` support. It provides functionality to parse TOML file
 - Dates/times are deserialized as string, or as one of the types provided in Toml/datetime.jai (until Jai has native types).
 - If the parser understands the input it will accept it even if it is officially invalid according to the standard.
 - WIP Failure to parse the input will currently result in a program `exit()`.
+
+## Serialize
+- Only Toml.Value serialization atm.
+- Dates/Times are expected to be valid
+- Output Toml is not pretty
