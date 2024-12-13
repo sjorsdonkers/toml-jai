@@ -16,9 +16,12 @@ main :: () {
 read_parse_print :: (filepath: string) {
     contents := read_entire_file(filepath);
     toml := Toml.deserialize(contents, Toml.Value);
-    print("File: % ", filepath);
-    Toml.print_value(toml);
-    print("\n");
+    print("File: %\n", filepath);
+    ser   := Toml.serialize(toml);
+    print("Toml: %\n", ser);
+    toml2 := Toml.deserialize(ser, Toml.Value);
+    ser2  := Toml.serialize(toml2);
+    assert(ser == ser2);
 }
 
 Toml :: #import, file "../module.jai";
