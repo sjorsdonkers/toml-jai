@@ -15,9 +15,7 @@ main :: () {
 
 read_parse_print :: (filepath: string) {
     contents := read_entire_file(filepath);
-    heap := create_heap(context.allocator);
-    defer destroy_heap(heap);
-    toml := Toml.deserialize(contents, Toml.Value,, allocator=heap);
+    toml := Toml.deserialize(contents, Toml.Value);
     print("File: % ", filepath);
     Toml.print_value(toml);
     print("\n");

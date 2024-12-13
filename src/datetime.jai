@@ -1,4 +1,4 @@
-// Toml Dates / times which are based on RFC 3339
+// Toml dates / times which are based on RFC 3339
 // https://datatracker.ietf.org/doc/html/rfc3339
 
 Chrono :: struct {
@@ -19,7 +19,7 @@ Chrono :: struct {
 Time :: struct {
     hour       : u8;
     minute     : u8;
-    second     : u8; // Can be 60 leap second
+    second     : u8; // Can be 60, leap second
     millisecond: u16;
 }
 Date :: struct {

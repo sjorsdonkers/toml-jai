@@ -28,7 +28,7 @@ Location :: struct {
 
 tokenize :: (data: string) -> tokens: [..]Token {
     lexer := Lexer.{data=data};
-    lexer.scope_stack.allocator = temp;
+    defer array_free(lexer.scope_stack);
     array_reserve(*lexer.tokens, data.count / 2); // Rough estimate of token count
 
     while has_next(lexer) {

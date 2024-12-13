@@ -1,15 +1,14 @@
 
 deserialize :: (contents: string, $Target: Type) -> Target {
     #if Target == Value return parse(contents); // Prevents unnecessarily copying
-    value := parse(contents,, allocator=temp);
+    value := parse(contents,, scoped_pool());   // Using scoped_pool since Value can be a bit big for temp
     return deserialize(value, Target);
 }
 
 deserialize :: (value: Value, $Target: Type) -> Target {
     info :: type_info(Target);
     target :Target;
-    reinitialize_all_unions(*target, info); // TODO remove when union init is normal Jai behavior (not the case in: Version: beta 0.1.096)
-    deserialize(value, *target, info);
+    deserialize(value, *target, info, info.name);
     return target;
 }
 
@@ -18,11 +17,7 @@ deserialize :: (value: Value, $Target: Type) -> Target {
 // slot is already initialized memory
 // Currently all fields are optional. TODO check TomlOptional Note and require_all true/false
 deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="", name:string="") {
-    value_info :: type_info(Value);
-    if info == value_info { // If encounter we Toml.Value at any point just copy it
-        <<cast(*Value) slot = copy(toml);
-        return;
-    }
+    if info == type_info(Value) { (cast(*Value) slot).* = copy(toml); return; } // If we encounter a Toml.Value at any point just copy it
 
     if #complete info.type == {
     case .INTEGER;
@@ -31,44 +26,39 @@ deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="
         if !valid { exit_with_error("Value for %.% is out of range. Given % expected min % max %", parent_name, name, toml.int_value, low, high); }
     case .FLOAT;
         expect(toml.type, .FLOAT, parent_name, name);
-        if      info.runtime_size == 4 { <<cast(*float)   slot = cast(float) toml.float_value; }
-        else if info.runtime_size == 8 { <<cast(*float64) slot = toml.float_value; }
+        if      info.runtime_size == 4 { (cast(*float)   slot).* = cast(float) toml.float_value; }
+        else if info.runtime_size == 8 { (cast(*float64) slot).* = toml.float_value; }
         else { exit_with_error("Unsupported float size %", info.runtime_size); }
     case .BOOL;
         expect(toml.type, .BOOL, parent_name, name);
-        <<cast(*bool) slot = toml.bool_value;
+        (cast(*bool) slot).* = toml.bool_value;
     case .STRING;
         if toml.type != .DATETIME expect(toml.type, .STRING, parent_name, name);
-        <<cast(*string) slot = copy_string(toml.string_value); // Note: datetime is string as well so same memory layout
+        (cast(*string) slot).* = copy_string(toml.string_value); // Note: datetime is string as well so same memory layout
     case .POINTER;
         pointer_info := cast(*Type_Info_Pointer) info;
         memory := alloc(pointer_info.pointer_to.runtime_size);
         initialize_memory(memory, pointer_info.pointer_to);
-        <<cast(**void)slot = memory;
+        (cast(**void) slot).* = memory;
         deserialize(toml, memory, pointer_info.pointer_to, parent_name, name);
     case .VOID;
         if toml.type == {
-        case .STRING; if toml.string_value != "void" { exit_with_error("Expected 'void' for %.%, got %", parent_name, name, toml.string_value);     }
-        case .TABLE ; if toml.table.count  != 0      { exit_with_error("Expected empty table for %.%, got %", parent_name, name, toml.table.count); }
+        case .STRING; if toml.string_value != "void" { exit_with_error("Expected 'void' for %.%, got %",      parent_name, name, toml.string_value); }
+        case .TABLE ; if toml.table.count  != 0      { exit_with_error("Expected empty table for %.%, got %", parent_name, name, toml.table.count);  }
         case; exit_with_error("Expected 'void' or empty table for %.%, got %", parent_name, name, toml.type);
         }
     case .STRUCT;
         if deserialize_chrono(toml, slot, info) return;
-
         expect(toml.type, .TABLE, parent_name, name);
-        if toml.table.count == 0 return; // Use defaults
 
-        struct_info := cast(*Type_Info_Struct) info;
-        if struct_info.textual_flags & .UNION { exit_with_error("Union are not supported unless they are in a sum-type (struct with enum tag and union where union.members.count == tag.values.count)"); }
-
-        struct_members := collect_members(struct_info);
-        if deserialize_sumtype(toml, slot, struct_members, struct_info.name) return;
-
-        for member: struct_members { for toml.table { if it.key == member.name {
-            member_slot := slot + member.offset_in_bytes;
-            deserialize(it.value, member_slot, member.type, parent_name, member.name);
-            break;
-        } } }
+        members := flat_members(xx info); defer array_free(members);
+        for member: members if !(member.flags & .USING && member.type.type == .STRUCT) {
+            for toml.table if it.key == member.name {
+                deserialize(it.value, slot + member.offset_in_bytes, member.type, parent_name, member.name);
+                break; // TODO catch multiple members from the same union, works but leaky, will also needed to determine required members are set
+            }
+        }
+        enforce_uniontag_note(toml.table, slot, members, parent_name);
     case .ARRAY;
         expect(toml.type, .ARRAY, parent_name, name);
         array_info := cast(*Type_Info_Array) info;
@@ -106,20 +96,20 @@ deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="
             if first_type == .ARRAY || first_type == .TABLE { return false, null; } // Not going down multiple levels
             for array { if it.type != first_type { return false, null; }}
             if first_type == {
-            case .BOOL;   return true, type_info([]type_of(Value.bool_value));
-            case .INT;    return true, type_info([]type_of(Value.int_value));
-            case .FLOAT;  return true, type_info([]type_of(Value.float_value));
-            case .STRING; return true, type_info([]type_of(Value.string_value));
+            case .BOOL;     return true, type_info([]type_of(Value.bool_value));
+            case .INT;      return true, type_info([]type_of(Value.int_value));
+            case .FLOAT;    return true, type_info([]type_of(Value.float_value));
+            case .STRING;   return true, type_info([]type_of(Value.string_value));
             case .DATETIME; return true, type_info([]type_of(Value.datetime));
             }
             return false, null;
         }
 
         if #complete toml.type == {
-        case .BOOL;   any_value.type = type_info(type_of(Value.bool_value));
-        case .INT;    any_value.type = type_info(type_of(Value.int_value));
-        case .FLOAT;  any_value.type = type_info(type_of(Value.float_value));
-        case .STRING; any_value.type = type_info(type_of(Value.string_value));
+        case .BOOL;     any_value.type = type_info(type_of(Value.bool_value));
+        case .INT;      any_value.type = type_info(type_of(Value.int_value));
+        case .FLOAT;    any_value.type = type_info(type_of(Value.float_value));
+        case .STRING;   any_value.type = type_info(type_of(Value.string_value));
         case .DATETIME; any_value.type = type_info(type_of(Value.datetime));
         case .ARRAY;
             is_same, array_type := homogeneous_array_info(toml.array);
@@ -154,119 +144,66 @@ deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="
     }
 }
 
-expect :: inline (given: Value.Type, expected: Value.Type, struct_name: string, member_name: string) {
-    if given != expected { exit_with_error("Wrong type for %.%, expected %, got % ", struct_name, member_name, expected, given); }
-}
-
 deserialize_chrono ::  (toml: Value, slot: *void, info: *Type_Info) -> is_chrono:bool {
     if toml.type != .DATETIME return false;
     success, chrono := parse_datetime(toml.datetime);
     if !success return false;
     if #complete chrono.type == {
-    case .LOCAL_TIME;       if info == type_info(Time)           { <<cast(*Time) slot           = chrono.time;            return true; }
-    case .LOCAL_DATE;       if info == type_info(Date)           { <<cast(*Date) slot           = chrono.date;            return true; }
-    case .LOCAL_DATETIME;   if info == type_info(DateTime)       { <<cast(*DateTime) slot       = chrono.datetime;        return true; }
-    case .OFFSET_DATETIME;  if info == type_info(DateTimeOffset) { <<cast(*DateTimeOffset) slot = chrono.datetime_offset; return true; }
+    case .LOCAL_TIME;       if info == type_info(Time)           { (cast(*Time) slot).*           = chrono.time;            return true; }
+    case .LOCAL_DATE;       if info == type_info(Date)           { (cast(*Date) slot).*           = chrono.date;            return true; }
+    case .LOCAL_DATETIME;   if info == type_info(DateTime)       { (cast(*DateTime) slot).*       = chrono.datetime;        return true; }
+    case .OFFSET_DATETIME;  if info == type_info(DateTimeOffset) { (cast(*DateTimeOffset) slot).* = chrono.datetime_offset; return true; }
     }
     return false;
 }
 
-deserialize_sumtype :: (toml: Value, slot: *void, struct_members: []Type_Info_Struct_Member, struct_name:string) -> is_sumtype:bool {
-    if struct_members.count != 2 return false;
-
-    tag_idx :s64=---;
-    if struct_members[0].type.type == .ENUM && struct_members[1].type.type == .STRUCT      then tag_idx = 0;
-    else if struct_members[0].type.type == .STRUCT && struct_members[1].type.type == .ENUM then tag_idx = 1;
-    else return false;
-    union_idx := 1 - tag_idx;
-
-    tag_info   := cast(*Type_Info_Enum)  struct_members[tag_idx].type;
-    union_info := cast(*Type_Info_Struct)struct_members[union_idx].type;
-    if !union_info.textual_flags & .UNION return false;
-    if union_info.members.count != tag_info.values.count return false;
-    // It's a sum-type!
-
-    tag_slot   := slot + struct_members[tag_idx].offset_in_bytes;
-    union_slot := slot + struct_members[union_idx].offset_in_bytes;
-    union_members := collect_union_members(union_info);
-
-    if toml.table.count != 1 { exit_with_error("Exactly 1 field expected for sum-type %, got %", struct_name, toml.table.count); }
-    found, idx := array_find(tag_info.names, toml.table[0].key);
-    if !found { exit_with_error("String % is not a variant of sum-type % %", toml.table[0].key, struct_name, tag_info.names); }
-
-    set_enum_value(tag_slot, tag_info, idx);
-    deserialize(toml.table[0].value, union_slot, union_members[idx].type, tag_info.names[idx], union_info.members[idx].name);
-    return true;
-}
-
-// Collect all variables members and flattens non-union using structs
-collect_members :: (struct_info:*Type_Info_Struct) -> [..]Type_Info_Struct_Member {
-    collect_members :: (struct_members:*[..]Type_Info_Struct_Member, struct_info:*Type_Info_Struct, offset_in_bytes: s64) {
-        for member: struct_info.members {
+// Collect all variables members and flattens using structs incl. unions, keeps original using members as well, needed for uniontag
+flat_members :: (info:*Type_Info_Struct) -> [..]Type_Info_Struct_Member { // TODO change to for_expansion?
+    flat_members :: (flattened:*[..]Type_Info_Struct_Member, info:*Type_Info_Struct, offset_in_bytes: s64) {
+        for member: info.members {
             if member.flags & .CONSTANT { continue; }
-            if member.flags & .USING {
-                if (member.type.type == .STRUCT) { // NOTE: Enums can be using too, but they don't have members to flatten
-                    member_struct_info:= cast(*Type_Info_Struct) member.type;
-                    if !(member_struct_info.textual_flags & .UNION) { // Don't flatten unions
-                        collect_members(struct_members, member_struct_info, offset_in_bytes + member.offset_in_bytes);
-                        continue; // Don't add the using itself
-                    }
-                }
+            if member.flags & .USING && member.type.type == .STRUCT { // NOTE: Enums can be using too
+                flat_members(flattened, xx member.type, offset_in_bytes + member.offset_in_bytes);
             }
-
-            array_add(struct_members, member);
-            (<<struct_members)[struct_members.count-1].offset_in_bytes += offset_in_bytes;
+            array_add(flattened, member);
+            (<<flattened)[flattened.count-1].offset_in_bytes += offset_in_bytes;
         }
     }
-    struct_members: [..]Type_Info_Struct_Member;
-    collect_members(*struct_members, struct_info, 0);
-    return struct_members;
+    flattened: [..]Type_Info_Struct_Member;
+    flat_members(*flattened, info, 0);
+    return flattened;
 }
 
-// Flatten variants of the union, only needed for Sum_Type support
-collect_union_members :: (union_info:*Type_Info_Struct) -> [..]Type_Info_Struct_Member {
-    union_members: [..]Type_Info_Struct_Member;
-    array_reserve(*union_members, union_info.members.count);
-    for member: union_info.members {
-        if member.type.type == .STRUCT {  // Check if type is a wrapped Sum_Type variant
-            variant_info := cast(*Type_Info_Struct) member.type;
-            if variant_info.members.count == 1 && variant_info.members[0].name == "value" {
-                array_add(*union_members, variant_info.members[0]);
-                continue;
-            }
-        }
-        array_add(*union_members, member);
-    }
-    return union_members;
-}
+enforce_uniontag_note :: (toml_table: []KeyValue, slot: *void, flat_members: []Type_Info_Struct_Member, parent_name: string) {
+    for member: flat_members {
+        // Find union member with @UnionTag note
+        if member.type.type != .STRUCT continue;
+        member_info := cast(*Type_Info_Struct) member.type;
+        if !(member_info.textual_flags & .UNION) continue;
+        tag_name: string;
+        for note: member.notes if begins_with(note, "UnionTag:") { tag_name = slice(note, 9, note.count-9); break; }
+        if !tag_name continue;
 
-// Initializes union members to their first variant at every level within the given memory/info
-reinitialize_all_unions :: (memory: *void, info: *Type_Info) {
-    if info.type == {
-    case .STRUCT;
-        struct_info := cast(*Type_Info_Struct) info;
-        if struct_info.textual_flags & .UNION {
-            if struct_info.members.count <= 0 { return; }
-            initialize_memory(memory, struct_info.members[0].type);
-            return;
-        }
+        // Find it's tag member
+        tag : *Type_Info_Struct_Member;
+        for * flat_members if it.name == tag_name { tag = it; break; }
+        if !tag { exit_with_error("Union %.%'s tag member `%` cannot be found", parent_name, member.name, tag_name); }
 
-        for member: struct_info.members {
-            if member.flags & .CONSTANT { continue; }
-            reinitialize_all_unions(memory + member.offset_in_bytes, member.type);
+        // Determine which union member is was set (if any) and set the tag to its index
+        for #v2 < union_member, union_idx: member_info.members for toml_table if it.key == union_member.name { // Reverse in case of multiple
+            deserialize(.{type=.INT, int_value=union_idx}, slot + tag.offset_in_bytes, tag.type, parent_name, union_member.name);
+            break union_member;
         }
-    case .ARRAY;
-        array_info := cast(*Type_Info_Array) info;
-        if array_info.array_type == .FIXED {
-            for 0..array_info.array_count-1 {
-                reinitialize_all_unions(memory + array_info.element_type.runtime_size * it, array_info.element_type);
-            }
-        }
-    case .VARIANT;
-        variant_info := cast(*Type_Info_Variant) info;
-        reinitialize_all_unions(memory, variant_info.variant_of);
     }
 }
+
+expect :: inline (given: Value.Type, expected: Value.Type, struct_name: string, member_name: string) {
+    if given != expected { exit_with_error("Wrong type for %.%, expected %, got % ", struct_name, member_name, expected, given); }
+}
+
+//
+// Generic memory utilities
+//
 
 initialize_memory :: (memory: *void, info: *Type_Info, count:s64=1) {
     if count <= 0 || info.runtime_size <= 0 return;
@@ -275,16 +212,10 @@ initialize_memory :: (memory: *void, info: *Type_Info, count:s64=1) {
     if info.type == {
     case .STRUCT;
         struct_info := cast(*Type_Info_Struct) info;
-        if struct_info.textual_flags & .UNION {
-            assert(struct_info.members.count > 0); // Note if members.count where 0 runtime_size would be 0, so there should at least be 1 member
-            initialize_memory(memory, struct_info.members[0].type, count); // TODO Hack to deal with inconsistent union initialization
-            return;
-        }
         if struct_info.initializer {
             current := memory;
             for 0..count-1 {
                 struct_info.initializer(current);
-                reinitialize_all_unions(current, struct_info); // Same hack
                 current += struct_info.runtime_size;
             }
             return;
@@ -303,5 +234,15 @@ initialize_memory :: (memory: *void, info: *Type_Info, count:s64=1) {
     memset(memory, 0, total_size);
 }
 
+scoped_pool :: () -> Allocator #expand {
+    pool: Flat_Pool; // TBD does this needs to be backticked?
+    a: Allocator;
+    a.proc = flat_pool_allocator_proc;
+    a.data = *pool;
+    `defer fini(*pool);
+    return a;
+}
+
 #load "parser.jai";
 #import "Reflection";
+#import "Flat_Pool";

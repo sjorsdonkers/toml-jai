@@ -45,33 +45,31 @@ DONE
     my_struct := Toml.deserialize(THE_STRING, MyStruct);
     print("MyStruct: %\n", my_struct);
 
-    // Except for untagged-unions all run-time types are supported.
-    // Meaning, union are only supported if they are in the shape of a sum-type. A sum-type is defined as a struct with a tag enum
-    // and a union, where both have the same number of members. The tag indices should correspond to those of the union variants.
+    // All run-time types are supported.
+    // A tagged union / sum-type requires the tag in the toml to be correctly matching the set union
+    // To make the TAG optional and prevent incorrect tags you can declare the union's tag member with a note like @UnionTag:mytag
+    // NOTE: Make sure the union initializes to the first variant by disabling initialization of the other variants with ---.
     Guy :: struct {
-        union {
-            Banana: void;
-            Apple: struct { a: u8; b: string;};
-            Orange: string;
-        };
-        tag: enum {
-            Banana;
-            Apple;
-            Orange;
+        using joost: union { // @compiler It would be nice if we could add a tag to anonymous using unions
+            banana: void;
+            apple: struct { a: u8; b: string;} = ---;
+            orange: string = ---;
+        }; @UnionTag:mytag
+        mytag: enum {
+            BANANA;
+            APPLE;
+            ORANGE;
         };
     }
-    SUM :: #string DONE
-Apple = {a = 32, b = 'Y'}
-DONE
-    apple := Toml.deserialize(SUM, Guy);
+    apple := Toml.deserialize("apple = {a = 32, b = 'Y'}", Guy);
     print("struct_apple: %\n", apple);
-    print("struct_apple: %\n", apple.Apple);
+    print("struct_apple: %: %\n", apple.mytag, apple.apple);
 
     // If the TOML data does not contain a field that is present in the struct, the field will be initialized to its default value.
     // Jai's initialization of unions is wack. So instead unions are initialized always initialized to the first variant.
     void_banana := Toml.deserialize("", Guy);
     print("void_banana: %\n", void_banana);
-    print("void_banana: %\n", void_banana.Banana);
+    print("void_banana: %: %\n", void_banana.mytag, void_banana.banana);
 
     // For convenience Toml.Value comes with an equality operator and copy procedure.
     left := Toml.deserialize("a.b = {c.d = 1}", Toml.Value);
@@ -107,8 +105,8 @@ reference_types :: () {
     }
     pointers_toml := Toml.deserialize("p_s16 = 36\np_inner = {str = 'Barry'}", Outer);
     print("pointers_toml: %\n", pointers_toml);
-    print("pointers_toml.p_s16: %\n",   <<pointers_toml.p_s16  );
-    print("pointers_toml.p_inner: %\n", <<pointers_toml.p_inner);
+    print("pointers_toml.p_s16: %\n",   pointers_toml.p_s16.*  );
+    print("pointers_toml.p_inner: %\n", pointers_toml.p_inner.*);
 
     Getal :: #type,distinct u8;
 
@@ -121,9 +119,9 @@ reference_types :: () {
         p_quatre: *[4]Vingt;
     }
     quatre_vingt := Toml.deserialize("p_quatre = [{getal = 9}, {getal = 4}, {number = 3}, {}]", Fixed_Array);
-    log("quatre_vingt: %\n", <<quatre_vingt.p_quatre);
-    assert((<<quatre_vingt.p_quatre)[0].number == 20);
-    assert((<<quatre_vingt.p_quatre)[2].getal == 23);
+    log("quatre_vingt: %\n", quatre_vingt.p_quatre.*);
+    assert(quatre_vingt.p_quatre.*[0].number == 20);
+    assert(quatre_vingt.p_quatre.*[2].getal == 23);
 
     // Pointer to variant
     DefaultStruct :: struct {
@@ -135,7 +133,7 @@ reference_types :: () {
         p_variant: *DefaultVariant;
     }
     mutant := Toml.deserialize("p_variant.b = 3", MyVar);
-    print("mutant: %\n", <<mutant.p_variant);
+    print("mutant: %\n", mutant.p_variant.*);
     assert(mutant.p_variant.a == "Anton");
 
     // Pointer to struct with using (no impl required)
@@ -146,7 +144,7 @@ reference_types :: () {
         p_using: *MyUsing;
     }
     use20 := Toml.deserialize("[p_using]\nnumber = 6", MyPtrUsing);
-    print("use20: %\n", <<use20.p_using);
+    print("use20: %\n", use20.p_using.*);
     assert(use20.p_using.getal == 23);
 
     // Union with first having an initializer
@@ -157,7 +155,7 @@ reference_types :: () {
         }
         union {
             first: Vingt;
-            second: string;
+            second: string = ---;
         }
     }
     un := Toml.deserialize("", MyUnionStruct);
@@ -169,8 +167,8 @@ reference_types :: () {
     MyUnionPtr :: struct {
         p_union: *MyUnionStruct;
     }
-    un_ptr := Toml.deserialize("p_union.FIRST.number = 3", MyUnionPtr);
-    print("un_ptr: %\n", un_ptr.p_union.first);
+    un_ptr := Toml.deserialize("tag = 'FIRST' \n p_union.first.number = 3", MyUnionPtr);
+    print("un_ptr: %: %\n", un_ptr.p_union.tag, un_ptr.p_union.first);
     assert(un_ptr.p_union.first.number == 3);
     assert(un_ptr.p_union.first.getal == 23);
 
@@ -209,9 +207,9 @@ reference_types :: () {
     }
     toml5 := Toml.deserialize("[[andy]]\nany_andy = 9\nany_amy = 8\n[[andy]]\nother_andy = 'Peter'\nother_amy = 'Derick'", Amy);
     andies := cast(*[]Toml.Value) toml5.andy.value_pointer;
-    any_andy := Toml.deserialize((<<andies)[0], AnyAndy);
+    any_andy := Toml.deserialize(andies.*[0], AnyAndy);
     assert("{9, 8}" == tprint("%", any_andy));
-    other_andy := Toml.deserialize((<<andies)[1], OtherAndy);
+    other_andy := Toml.deserialize(andies.*[1], OtherAndy);
     assert("{\"Peter\", \"Derick\"}" == tprint("%", other_andy));
 }
 
