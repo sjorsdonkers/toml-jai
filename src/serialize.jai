@@ -45,8 +45,6 @@ serialize :: (value: Value, builder: *String_Builder) {
     }
 }
 
-#scope_file
-
 print_to_builder_escaped :: (builder: *String_Builder, str: string) {
     append(builder, "\"");
 	for str if it == { // @speed
