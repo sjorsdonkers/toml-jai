@@ -25,7 +25,7 @@ serialize :: (value: Value, builder: *String_Builder) {
         to_lower_in_place(tmp); // for Inf->inf / NaN->nan
         print_item_to_builder(builder, tmp);
     case .STRING;   print_to_builder_escaped(builder, value.string_value);
-    case .DATETIME; print_item_to_builder(builder, value.datetime);
+    case .DATETIME; print_item_to_builder(builder, value.datetime, false); // Does not validate datetime string
     case .ARRAY;
         append(builder, "[");
         for value.array {
@@ -34,7 +34,6 @@ serialize :: (value: Value, builder: *String_Builder) {
         }
         append(builder, "]");
     case .TABLE;
-        // TODO empty table
         append(builder, "{");
         for value.table {
             print_to_builder_escaped(builder, it.key);
