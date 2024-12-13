@@ -30,8 +30,8 @@ main :: () {
     assert(0 == unwrap(unwrap(pine0, MyFood.Fruit), MyFruit.Pineapple));
 
     kiwi_food  := Toml.deserialize("fruit.kiwi = {spaghetti = 3, macaroni = true, why = 9, anonymous = 88, try = 'B'}", MyFood); print("kiwi_food: %\n", kiwi_food);
-    kiwi_fruit := unwrap(kiwi_food, MyFood.Fruit); print("kiwi_fruit: %\n", kiwi_fruit);
-    kiwi := unwrap(kiwi_fruit, MyFruit.Kiwi);      print("kiwi: %\n", kiwi);
+    kiwi_fruit := kiwi_food.fruit; print("kiwi_fruit: %\n", kiwi_fruit);
+    kiwi       := kiwi_fruit.kiwi; print("kiwi: %\n", kiwi);
     assert("{3, true, {9, 88}, B}" == tprint("%", kiwi)); // Using sub-members need to have their offset_in_bytes combined with the using member's offset_in_bytes
 
     // Test toml of array of optionals
@@ -40,11 +40,11 @@ main :: () {
         expected: [..]Option(s64);
     }
     array := Toml.deserialize("nom = 'Tim'\nexpected = [{some=23}, {some=46}]", Expect2);
-    for array.expected { print("% ", unwrap(it)); assert(unwrap(it) == (1+it_index)*23); }
+    for array.expected { print("% ", it.some); assert(unwrap(it) == (1+it_index)*23); }
     print("array!\n");
 
-    none_array := Toml.deserialize("nom = 'Tim'\n[[expected]]\n[[expected]]\n[[expected]]\n", Expect2);
-    print("% none array!\n", none_array); // Kinda useless here as you can't mix some/none in an array
+    none_array := Toml.deserialize("nom = 'Tim'\n[[expected]]\n[[expected]]\nsome=3\n[[expected]]\n", Expect2);
+    print("% none some none array!\n", none_array);
 
     Expect3 :: struct {
         nom: string;
