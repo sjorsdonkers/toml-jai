@@ -32,21 +32,21 @@ tokenize :: (data: string) -> tokens: [..]Token {
     array_reserve(*lexer.tokens, data.count / 2); // Rough estimate of token count
 
     while has_next(lexer) {
-        c := peak_char(lexer);
+        c := peek_char(lexer);
         if c == #char " " || c == #char "\t" {
             eat_char(*lexer);
             continue;
         }
 
         if c == #char "\n" { eat_newline(*lexer); continue;}
-        if has_next(lexer, 2) && peak_slice(lexer, 2) == "\r\n" {
+        if has_next(lexer, 2) && peek_slice(lexer, 2) == "\r\n" {
             eat_char(*lexer);
             eat_newline(*lexer);
             continue;
         }
 
         if c == #char "#" { // NOTE: Also eats \r if any
-            while has_next(lexer) && peak_char(lexer) != #char "\n" { eat_char(*lexer); }
+            while has_next(lexer) && peek_char(lexer) != #char "\n" { eat_char(*lexer); }
             continue;
         }
 
@@ -54,7 +54,7 @@ tokenize :: (data: string) -> tokens: [..]Token {
         is_raw :: (c: u8) -> bool { return is_alnum(c) || c == #char "+" || c == #char "-" || c == #char "." || c == #char ":"; }
         if is_raw(c) {
             start := lexer.pos;
-            while has_next(lexer) && is_raw(peak_char(lexer)) { eat_char(*lexer); }
+            while has_next(lexer) && is_raw(peek_char(lexer)) { eat_char(*lexer); }
             token := Token.{ type=.RAW, str=slice(lexer.data, start, lexer.pos - start), loc=Location.{lexer.loc.line, lexer.loc.char - xx (lexer.pos - start)} };
             array_add(*lexer.tokens, token);
             continue;
@@ -63,13 +63,13 @@ tokenize :: (data: string) -> tokens: [..]Token {
         // Quoted string
         if c == #char "'" || c == #char "\"" {
             tripple_quote := ifx c == #char "'" then "'''" else "\"\"\"";
-            if has_next(lexer, 3) && peak_slice(lexer, 3) == tripple_quote {
+            if has_next(lexer, 3) && peek_slice(lexer, 3) == tripple_quote {
                 // Multi-line quoted string
                 eat_char(*lexer, 3);
                 /// Trim newline immediately following ''' if present
                 if has_next(lexer) {
-                    if peak_char(lexer) == #char "\n" { eat_newline(*lexer); }
-                    if has_next(lexer, 2) && peak_slice(lexer, 2) == "\r\n" {
+                    if peek_char(lexer) == #char "\n" { eat_newline(*lexer); }
+                    if has_next(lexer, 2) && peek_slice(lexer, 2) == "\r\n" {
                         eat_char(*lexer);
                         eat_newline(*lexer);
                     }
@@ -77,15 +77,15 @@ tokenize :: (data: string) -> tokens: [..]Token {
                 start := lexer.pos;
 
                 // Eat string contents till the end
-                while has_next(lexer, 3) && peak_slice(lexer, 3) != tripple_quote {
-                    if c == #char "\"" && has_next(lexer, 2) && peak_slice(lexer, 2) == "\\\"" { eat_char(*lexer, 2); continue; }
-                    if peak_char(lexer) == #char "\n" { eat_newline(*lexer); }
+                while has_next(lexer, 3) && peek_slice(lexer, 3) != tripple_quote {
+                    if c == #char "\"" && has_next(lexer, 2) && peek_slice(lexer, 2) == "\\\"" { eat_char(*lexer, 2); continue; }
+                    if peek_char(lexer) == #char "\n" { eat_newline(*lexer); }
                     else                              { eat_char(*lexer); }
                 }
                 if !has_next(lexer) { exit_with_error_line(lexer.data, lexer.loc, "Unterminated multi-line string."); }
                 // 1 or 2 quotes at the end are allowed, like """"abra""""" -> "abra""
-                if has_next(lexer, 4) && peak_char(lexer, 4) == c { eat_char(*lexer); }
-                if has_next(lexer, 4) && peak_char(lexer, 4) == c { eat_char(*lexer); }
+                if has_next(lexer, 4) && peek_char(lexer, 4) == c { eat_char(*lexer); }
+                if has_next(lexer, 4) && peek_char(lexer, 4) == c { eat_char(*lexer); }
 
                 token_type :Token.Type= ifx c == #char "\"" then .BASIC_MULTI else .LITERAL_MULTI;
                 token := Token.{ type=token_type, str=slice(data, start, lexer.pos - start), loc=Location.{lexer.loc.line, lexer.loc.char - xx (lexer.pos - start)} };
@@ -97,12 +97,12 @@ tokenize :: (data: string) -> tokens: [..]Token {
                 eat_char(*lexer);
                 start := lexer.pos;
                 // Eat string contents till the end
-                while has_next(lexer) && peak_char(lexer) != c {
+                while has_next(lexer) && peek_char(lexer) != c {
                     if c == #char "\"" && has_next(lexer, 2) {
-                        next_two := peak_slice(lexer, 2);
+                        next_two := peek_slice(lexer, 2);
                         if next_two == "\\\""  || next_two == "\\\\" { eat_char(*lexer, 2); continue; }
                     }
-                    if peak_char(lexer) == #char "\n" { exit_with_error_line(lexer.data, lexer.loc, "Newline in string. Escape `\\n` or use a multi-line string (tripple quote) instead."); }
+                    if peek_char(lexer) == #char "\n" { exit_with_error_line(lexer.data, lexer.loc, "Newline in string. Escape `\\n` or use a multi-line string (tripple quote) instead."); }
                     eat_char(*lexer);
                 }
                 if !has_next(lexer) { exit_with_error_line(lexer.data, lexer.loc, "Unterminated string."); }
@@ -162,8 +162,8 @@ Lexer :: struct {
     scope_stack: [..]int;    // Indices into `tokens` for scopes that have not been closed yet `{` and `[`
 }
 has_next   :: (lexer: Lexer, count:=1) -> bool   { return lexer.pos + count -1 < lexer.data.count; }
-peak_char  :: (lexer: Lexer, forward:=1) -> u8   { return lexer.data[lexer.pos + forward -1]; }
-peak_slice :: (lexer: Lexer, count:s64) -> string { return slice(lexer.data, lexer.pos, count); }
+peek_char  :: (lexer: Lexer, forward:=1) -> u8   { return lexer.data[lexer.pos + forward -1]; }
+peek_slice :: (lexer: Lexer, count:s64) -> string { return slice(lexer.data, lexer.pos, count); }
 eat_char :: (lexer: *Lexer, count:s32=1) {
     lexer.pos += count;
     lexer.loc.char += count;

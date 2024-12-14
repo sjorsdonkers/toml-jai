@@ -13,7 +13,7 @@ parse :: (contents: string) -> root_table:Value {
     root_table := Value.{type=.TABLE, table=resizable(KeyValue.[])};
     current_table := *root_table;
     while has_next(scope) {
-        token := peak_token(scope);
+        token := peek_token(scope);
         if token.type == Token.Type.SCOPE_BRACKET {
             current_table = parse_header(*root_table, eat_scope(*scope, token));
         } else {
@@ -27,7 +27,7 @@ parse :: (contents: string) -> root_table:Value {
 #scope_file
 
 parse_header :: (root_table: *Value, scope: Scope) -> *Value {
-    if !has_next(scope) || peak_token(scope).type != Token.Type.SCOPE_BRACKET{
+    if !has_next(scope) || peek_token(scope).type != Token.Type.SCOPE_BRACKET{
         // Parse [table] header
         current_table, is_new := parse_key(root_table, scope);
         if !is_new && current_table.type != Value.Type.TABLE {
@@ -80,7 +80,7 @@ parse_key :: (parent: *Value, scope: Scope) -> leaf:*Value, leaf_is_new:bool {
 parse_value :: (current_table: *Value, scope: *Scope) -> value:Value { // TODO only assign value if key is empty table
     if !has_next(scope) { exit_with_error("Unexpected end of file while parsing value"); }
 
-    token := peak_token(scope);
+    token := peek_token(scope);
     if token.type == {
     case .SCOPE_BRACE;   return parse_inline_table(current_table, eat_scope(scope, token));;
     case .SCOPE_BRACKET; return parse_array(eat_scope(scope, token));
@@ -156,7 +156,7 @@ parse_literal :: (scope: *Scope) -> Value {
         // If date, check if next token is time separated by single space: 1979-05-27 07:32:00Z
         date_input := token.str;
         if has_next(scope) {
-            next := peak_token(scope);
+            next := peek_token(scope);
             if next.type == .RAW
             && (token.str.data + token.str.count).* == #char " "
             && token.str.data + token.str.count + 1 == next.str.data {
@@ -232,11 +232,11 @@ Scope :: struct {
 has_next :: (scope: Scope, count:=1) -> bool {
     return scope.pos + count -1 < scope.tokens.count;
 }
-peak_token :: (scope: Scope) -> Token {
+peek_token :: (scope: Scope) -> Token {
     return scope.tokens[scope.pos];
 }
 eat_token :: (scope: *Scope) -> Token {
-    token := peak_token(scope);
+    token := peek_token(scope);
     scope.pos += 1;
     return token;
 }
@@ -246,7 +246,7 @@ eat_expected :: (scope: *Scope, expected: Token.Type) {
 }
 // * Return: Only DOT or LITERAL tokens
 eat_key :: (scope: *Scope) -> Token {
-    original := peak_token(scope);
+    original := peek_token(scope);
     if scope.remaining_key.count == 0 {
         if original.type == {
         case .RAW;    scope.remaining_key = original.str; // A raw token may contain several dot separated keys
