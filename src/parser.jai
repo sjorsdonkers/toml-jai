@@ -291,9 +291,8 @@ eat_scope_until :: (scope: *Scope, scope_end: Token.Type) -> sub_scope:Scope {
     return scope;
 }
 
-// .   -> `.`  ``   // .ab -> `.`  `ab`
-// ab  -> `ab` ``   // a.b -> `a`  `.b`
-//     -> ``   ``   // ab. -> `ab` `.`
+// .   -> `.`  ``   //     -> ``   ``    // a.b -> `a`  `.b`
+// ab  -> `ab` ``   // .ab -> `.`  `ab`  // ab. -> `ab` `.`
 split_from_left_incl :: (s: string, separator: u8) -> (left: string, right: string) {
     index := inline find_index_from_left(s, separator);
     if index == -1  return s, "";

@@ -161,8 +161,8 @@ Lexer :: struct {
     loc: Location = .{1, 1}; // Location of the current char
     scope_stack: [..]int;    // Indices into `tokens` for scopes that have not been closed yet `{` and `[`
 }
-has_next   :: (lexer: Lexer, count:=1) -> bool   { return lexer.pos + count -1 < lexer.data.count; }
-peek_char  :: (lexer: Lexer, forward:=1) -> u8   { return lexer.data[lexer.pos + forward -1]; }
+has_next   :: (lexer: Lexer, count:=1) -> bool    { return lexer.pos + count -1 < lexer.data.count; }
+peek_char  :: (lexer: Lexer, forward:=1) -> u8    { return lexer.data[lexer.pos + forward -1]; }
 peek_slice :: (lexer: Lexer, count:s64) -> string { return slice(lexer.data, lexer.pos, count); }
 eat_char :: (lexer: *Lexer, count:s32=1) {
     lexer.pos += count;
