@@ -58,9 +58,13 @@ parse_key :: (parent: *Value, scope: Scope) -> leaf:*Value, leaf_is_new:bool {
     if parent.type != Value.Type.TABLE { exit_with_error("Cannot use key as table as it already has a value: %", parent.type); }
 
     // Get or insert key
+    find_or_insert_new :: (array: *[..]KeyValue, key: string) -> is_new:bool, *Value {
+        for array.* if it.key == key { return false, *it.value; }
+        array_add(array, KeyValue.{key=copy_string(key), value=.{type=.TABLE, table=resizable(KeyValue.[])}});
+        return true, *array.*[array.count-1].value;
+    }
     token := eat_expected_key(*scope, .LITERAL);
-    current_is_new, index := array_add_copy_if_unique(*parent.table, .{key=token.str, value=Value.{type=.TABLE, table=resizable(KeyValue.[])}});
-    current_table := *parent.table[index].value;
+    current_is_new, current_table := find_or_insert_new(*parent.table, token.str);
 
     // Check for dotted keys
     if has_next(scope) {
@@ -300,23 +304,8 @@ split_from_left_incl :: (s: string, separator: u8) -> (left: string, right: stri
     return slice(s, 0, index), slice(s, index, s.count - index);
 }
 
-array_add_copy_if_unique :: (array: *[..]KeyValue, item: KeyValue) -> is_new:bool, index:s64 {
-    found, index := array_find(array.*, item);
-    if found return false, index;
-
-    array_add(array, item);
-    array.*[array.count-1].key = copy_string(item.key);
-    return true, array.count-1;
-}
-
-operator == :: inline (a: KeyValue, b: KeyValue) -> bool {
-    // Not a full comparison, just used for array_find
-    return a.key == b.key;
-}
-
 #load "lexer.jai";
-using Basic :: #import "Basic";
-#poke_name Basic operator==;
+#import "Basic";
 #import "File";
 #import "String";
 #import "Math";
