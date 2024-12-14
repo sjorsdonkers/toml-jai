@@ -163,7 +163,7 @@ flat_members :: (info:*Type_Info_Struct) -> [..]Type_Info_Struct_Member { // TOD
                 flat_members(flattened, xx member.type, offset_in_bytes + member.offset_in_bytes);
             }
             array_add(flattened, member);
-            (<<flattened)[flattened.count-1].offset_in_bytes += offset_in_bytes;
+            peek_pointer(flattened.*).offset_in_bytes += offset_in_bytes;
         }
     }
     flattened: [..]Type_Info_Struct_Member;

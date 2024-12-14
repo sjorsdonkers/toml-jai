@@ -31,7 +31,7 @@ parse_header :: (root_table: *Value, scope: Scope) -> *Value {
         // Parse [table] header
         current_table, is_new := parse_key(root_table, scope);
         if !is_new && current_table.type != Value.Type.TABLE {
-            exit_with_error_line(scope.source, last(scope).loc, "Cannot use key as Tables as it already has a value: %", current_table.type);
+            exit_with_error_line(scope.source, peek(scope.tokens).loc, "Cannot use key as Tables as it already has a value: %", current_table.type);
         }
         return current_table;
     } else {
@@ -44,11 +44,11 @@ parse_header :: (root_table: *Value, scope: Scope) -> *Value {
 
         current_table, is_new := parse_key(root_table, aot_scope);
         if current_table.type != .ARRAY {
-            if !is_new { exit_with_error_line(aot_scope.source, last(aot_scope).loc, "Cannot use key as Array of Tables as it already has a value: %", current_table.type); }
+            if !is_new { exit_with_error_line(aot_scope.source, peek(aot_scope.tokens).loc, "Cannot use key as Array of Tables as it already has a value: %", current_table.type); }
             current_table.* = .{type=.ARRAY, array=resizable(Value.[])};
         }
         array_add(*current_table.array, Value.{type=.TABLE, table=resizable(KeyValue.[])});
-        return *current_table.array[current_table.array.count-1];
+        return peek_pointer(current_table.array);
     }
 }
 
@@ -61,7 +61,7 @@ parse_key :: (parent: *Value, scope: Scope) -> leaf:*Value, leaf_is_new:bool {
     find_or_insert_new :: (array: *[..]KeyValue, key: string) -> is_new:bool, *Value {
         for array.* if it.key == key { return false, *it.value; }
         array_add(array, KeyValue.{key=copy_string(key), value=.{type=.TABLE, table=resizable(KeyValue.[])}});
-        return true, *array.*[array.count-1].value;
+        return true, *peek_pointer(array.*).value;
     }
     token := eat_expected_key(*scope, .LITERAL);
     current_is_new, current_table := find_or_insert_new(*parent.table, token.str);
@@ -70,7 +70,7 @@ parse_key :: (parent: *Value, scope: Scope) -> leaf:*Value, leaf_is_new:bool {
     if has_next(scope) {
         eat_expected_key(*scope, .DOT);
         // If this is an Array of Tables header then we are going to add into its last table
-        if current_table.type == Value.Type.ARRAY then { current_table = *current_table.array[current_table.array.count-1]; }
+        if current_table.type == Value.Type.ARRAY then { current_table = peek_pointer(current_table.array); }
         current_table, current_is_new = parse_key(current_table, scope);
     }
     return current_table, current_is_new;
@@ -289,9 +289,6 @@ eat_scope_until :: (scope: *Scope, scope_end: Token.Type) -> sub_scope:Scope {
     }
     exit_with_error_line(scope.source, scope.tokens[start_pos].loc, "Unexpected end of scope. Expected %", scope_end);
     return scope;
-}
-last :: (scope: Scope) -> Token {
-    return scope.tokens[scope.tokens.count-1];
 }
 
 // .   -> `.`  ``   // .ab -> `.`  `ab`
