@@ -44,7 +44,9 @@ DONE
 
     my_struct := Toml.deserialize(THE_STRING, MyStruct);
     print("MyStruct: %\n", my_struct);
-
+    as_value := Toml.serialize(my_struct);
+    log("as_value: %\n", as_value);
+    assert(false);
     // All run-time types are supported.
     // A tagged union / sum-type requires the tag in the toml to be correctly matching the set union
     // To make the TAG optional and prevent incorrect tags you can declare the union's tag member with a note like @UnionTag:mytag

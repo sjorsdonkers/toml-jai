@@ -5,8 +5,7 @@
 // - Error propagation
 
 parse :: (contents: string) -> root_table:Value {
-    tokens := tokenize(contents);
-    defer array_free(tokens);
+    tokens := tokenize(contents);  defer array_free(tokens);
     scope  := Scope.{contents, tokens, 0, ""};
 
     // At top level we can expect ([[keys]], [keys], keys = value)
@@ -139,14 +138,14 @@ parse_literal :: (scope: *Scope) -> Value {
             oct_value, success, remainder := string_to_int(clean_str, 8, s64);
             if success && remainder.count == 0 { return Value.{type=.INT, int_value=oct_value}; }
         } else {
-            // TODO detect leading zeros error, note 00 can be the start of a time
             int_value, success, remainder := string_to_int(clean_str, 10, s64);
+            // TODO detect leading zeros error, note 00 can be the start of a time
             if success && remainder.count == 0 { return Value.{type=.INT, int_value=int_value}; }
         }
 
         // Parse float
-        // TODO detect illegal floats: .7  7.  3.e+20 ... leading zeros
         float_value, success, remainder := string_to_float64(clean_str);
+        // TODO detect illegal floats: .7  7.  3.e+20 ... leading zeros
         if success && remainder.count == 0 { return Value.{type=.FLOAT, float_value=float_value}; }
         if token.str == "inf" || token.str == "+inf" { return Value.{type=.FLOAT, float_value=FLOAT64_INFINITY}; }
         if token.str == "-inf"                       { return Value.{type=.FLOAT, float_value=-FLOAT64_INFINITY}; }

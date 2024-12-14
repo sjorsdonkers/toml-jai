@@ -68,21 +68,21 @@ deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="
             }
         }
         if #complete array_info.array_type == {
-            case .FIXED;
-                if toml.array.count != array_info.array_count { exit_with_error("Fixed array %.% expected % items, got %", parent_name, name, array_info.array_count, toml.array.count); }
-                fill_array(toml.array, slot, element_type, name); // NOTE .FIXED is inside the struct so already initialized
-            case .VIEW;
-                array := cast(*[] u8) slot;
-                array.data = alloc(toml.array.count * element_type.runtime_size);
-                array.count = toml.array.count;
-                initialize_memory(array.data, element_type, array.count);
-                fill_array(toml.array, array.data, element_type, name);
-            case .RESIZABLE;
-                array := cast(*[..] u8) slot;
-                array_reserve(array, toml.array.count * element_type.runtime_size);
-                array.count = toml.array.count;
-                initialize_memory(array.data, element_type, array.count);
-                fill_array(toml.array, array.data, element_type, name);
+        case .FIXED;
+            if toml.array.count != array_info.array_count { exit_with_error("Fixed array %.% expected % items, got %", parent_name, name, array_info.array_count, toml.array.count); }
+            fill_array(toml.array, slot, element_type, name); // NOTE .FIXED is inside the struct so already initialized
+        case .VIEW;
+            array := cast(*[] u8) slot;
+            array.data = alloc(toml.array.count * element_type.runtime_size);
+            array.count = toml.array.count;
+            initialize_memory(array.data, element_type, array.count);
+            fill_array(toml.array, array.data, element_type, name);
+        case .RESIZABLE;
+            array := cast(*[..] u8) slot;
+            array_reserve(array, toml.array.count * element_type.runtime_size);
+            array.count = toml.array.count;
+            initialize_memory(array.data, element_type, array.count);
+            fill_array(toml.array, array.data, element_type, name);
         }
     case .ANY;
         any_value := cast(*Any_Struct) slot;
