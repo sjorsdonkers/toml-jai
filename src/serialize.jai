@@ -40,43 +40,34 @@ serialize :: (slot: *void, info: *Type_Info, builder: *String_Builder) {
         print_item_to_builder(builder, tmp, false);
     case .BOOL;   print_item_to_builder(builder, Any.{info, slot});
     case .STRING; print_to_builder_escaped(builder, (cast(*string)slot).*);
-    case .POINTER;
-        pointer_info := cast(*Type_Info_Pointer) info;
-        serialize((cast(**void) slot).*, pointer_info.pointer_to, builder); // Should already have been checked for null
+    case .POINTER; serialize((cast(**void) slot).*, (cast(*Type_Info_Pointer) info).pointer_to, builder); // Should already have been checked for null
     case .VOID; append(builder, "{}");
     case .STRUCT;
-        struct_info := cast(*Type_Info_Struct) info;
+        if info == type_info(Value) { serialize(cast(*Value) slot, builder); return; }
         // TODO DATETIME
+
+        flattened := flat_members(xx info);
+        replace_uniontag(*flattened, slot);
         append(builder, "{");
-        for member: struct_info.members {
-            if member.flags & .CONSTANT { continue; }
-            // TODO using and union
-            // TODO null pointers / null any
+        first := true;
+        for member: flattened {
+            if is_null(slot + member.offset_in_bytes, member.type) continue;
+            if !first append(builder, ","); // Here since, never sure if this is last and replacing last written byte to builder is not trivial
+            first = false;
             print_to_builder(builder, member.name);
             append(builder, "=");
             serialize(slot + member.offset_in_bytes, member.type, builder);
-            // if it_index + 1 != value.table.count then // // todo determine when last
-            append(builder, ",");
         }
         append(builder, "}");
     case .ARRAY;
-        array_info := cast(*Type_Info_Array) info;
-        element_info := array_info.element_type;
-        array_slot :=  slot;
-        array_count := array_info.array_count;
-        if #complete array_info.array_type == {
-        case .FIXED; // nothing
-        case .VIEW; #through;
-        case .RESIZABLE;
-            array := cast(*[] u8) slot; // u8 for no particular reason
-            array_count = array.count; // (cast(*s64) slot).*
-            array_slot = array.data; // (cast(**void)(slot+8)).*
-        }
+        array_info   := cast(*Type_Info_Array) info;
+        array_count  := ifx array_info.array_type == .FIXED then array_info.array_count else (cast(*s64) slot).*;
+        array_slot   := ifx array_info.array_type == .FIXED then slot                   else (cast(**void)(slot+8)).*;
 
         append(builder, "[");
         for idx: 0..array_count-1 {
-            element_slot := array_slot + element_info.runtime_size * idx;
-            serialize(element_slot, element_info, builder);
+            element_slot := array_slot + array_info.element_type.runtime_size * idx;
+            serialize(element_slot, array_info.element_type, builder);
             append(builder, ",");
         }
         append(builder, "]");
@@ -85,7 +76,7 @@ serialize :: (slot: *void, info: *Type_Info, builder: *String_Builder) {
         serialize(any_value.value_pointer, any_value.type, builder);
     case .ENUM;
         append(builder, #char "\"");
-        print_item_to_builder(builder, Any.{info, slot}); // TODO check
+        print_item_to_builder(builder, Any.{info, slot});
         append(builder, #char "\"");
     case .VARIANT;
         variant_info := cast(*Type_Info_Variant) info;
@@ -100,12 +91,9 @@ serialize :: (slot: *void, info: *Type_Info, builder: *String_Builder) {
 
 serialize :: (value: Value, builder: *String_Builder) {
     if #complete value.type == {
-    case .BOOL; print_item_to_builder(builder, value.bool_value);
-    case .INT;  print_item_to_builder(builder, value.int_value);
-    case .FLOAT;
-        tmp := tprint("%", value.float_value);
-        to_lower_in_place(tmp); // for Inf->inf / NaN->nan
-        print_item_to_builder(builder, tmp, false);
+    case .BOOL;     print_item_to_builder(builder, value.bool_value);
+    case .INT;      print_item_to_builder(builder, value.int_value);
+    case .FLOAT;    serialize(*value.float_value, type_info(type_of(value.float_value)), builder);
     case .STRING;   print_to_builder_escaped(builder, value.string_value);
     case .DATETIME; print_item_to_builder(builder, value.datetime, false); // Does not validate datetime string // TODO not item not false?
     case .ARRAY;
@@ -140,6 +128,61 @@ print_to_builder_escaped :: (builder: *String_Builder, str: string) {
         case;              append(builder, it);
     }
     append(builder, "\"");
+}
+
+// Collect all variables members and flattens using structs incl. unions, keeps original using members as well, needed for uniontag
+flat_members :: (info:*Type_Info_Struct) -> [..]Type_Info_Struct_Member { // TODO change to for_expansion?
+    flat_members :: (flattened:*[..]Type_Info_Struct_Member, info:*Type_Info_Struct, offset_in_bytes: s64) {
+        for member: info.members {
+            if member.flags & .CONSTANT { continue; }
+            if member.flags & .USING && member.type.type == .STRUCT { // NOTE: Enums can be using too
+                member_info: *Type_Info_Struct = xx member.type;
+                if !(member_info.textual_flags & .UNION) {
+                    flat_members(flattened, xx member.type, offset_in_bytes + member.offset_in_bytes);
+                    continue;
+                }
+            }
+            array_add(flattened, member);
+            peek_pointer(flattened.*).offset_in_bytes += offset_in_bytes;
+        }
+    }
+    flattened: [..]Type_Info_Struct_Member;
+    flat_members(*flattened, info, 0);
+    return flattened;
+}
+
+replace_uniontag :: (flattened:*[..]Type_Info_Struct_Member, slot: *void) {
+    index := flattened.count-1;
+    while outer:= index >= 0 {
+        defer index -= 1;
+        member := flattened.*[index];
+        // Find union member with @UnionTag note
+        if member.type.type != .STRUCT continue;
+        member_info := cast(*Type_Info_Struct) member.type;
+        if !(member_info.textual_flags & .UNION) continue;
+        tag_name: string;
+        for note: member.notes if begins_with(note, "UnionTag:") { tag_name = slice(note, 9, note.count-9); break; }
+        if !tag_name exit_with_error("Cannot serialize union without knowing which variant is active, @UnionTag:[member_name] is missing");
+
+        // Remove it's tag member, replace union by its active variant
+        for flattened.* if it.name == tag_name { // find instead of loop
+            assert(it.type.type == .ENUM);
+            tag_idx := get_enum_value(slot + it.offset_in_bytes, xx it.type);
+            current_variant := member_info.members[tag_idx];
+            current_variant.offset_in_bytes += member.offset_in_bytes;
+            flattened.*[index] = current_variant;
+
+            array_ordered_remove_by_index(flattened, it_index);
+            if it_index < index { index -= 1; }
+            continue outer;
+        }
+        exit_with_error("Union .%'s tag member `%` cannot be found", member.name, tag_name);
+    }
+}
+is_null :: (slot: *void, info: *Type_Info) -> bool {
+    if info.type == .POINTER return slot == null;
+    if info.type == .ANY     return (cast(*Any_Struct) slot).value_pointer == null;
+    return false;
 }
 
 #import "Basic";
