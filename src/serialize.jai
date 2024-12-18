@@ -1,60 +1,20 @@
 serialize :: (input: $T) -> string {
+    a := scoped_pool();
+    value := parse(*input, type_info(T),, a);
     builder: String_Builder;
-    serialize(*builder, input);
+    serialize(*builder, value,, a);
     return builder_to_string(*builder);
-}
-serialize :: (builder: *String_Builder, input: $T) {
-    value := parse(input,, temp); // Using temp instead of pool as all array sizes are known
-    log("Parsed value: %\n", value);
-    serialize(builder, value);
 }
 
 serialize :: (value: Value) -> string {
     builder: String_Builder;
-    serialize(*builder, value);
+    serialize(*builder, value,, scoped_pool());
     return builder_to_string(*builder);
-}
-
-serialize :: (builder: *String_Builder, value: Value, parent_key: string = "") {
-    assert(value.type == .TABLE, "Only tables can be serialized at the top level, got %", value.type);
-    // Key=Value pairs
-    for value.table {
-        if it.type == .TABLE && !is_inline_table(it.table) continue;
-        if it.type == .ARRAY && is_array_of_tables(it.array) continue;
-        print_single_keyvalue(builder, it);
-        append(builder, "\n");
-    }
-    // [Table.Header]
-    for value.table  if it.type == .TABLE && !is_inline_table(it.table) {
-        dotted_key := build_dotted_key(parent_key, it.key);
-        has_inline := it.table.count == 0; // Do not start a [table.header] if there are no inline values // TODO check this
-        for it.table if it.type != .TABLE || is_inline_table(it.table) { has_inline = true; break; }
-        if has_inline {
-            append(builder, "[");
-            append(builder, dotted_key);
-            append(builder, "]\n");
-        }
-        serialize(builder, it.value, dotted_key);
-    }
-    // [[Array.Of.Tables.Header]]
-    for value.table  if it.type == .ARRAY && is_array_of_tables(it.array) {
-        dotted_key := build_dotted_key(parent_key, it.key);
-        for it.array {
-            append(builder, "[[");
-            append(builder, dotted_key);
-            append(builder, "]]\n");
-            serialize(builder, it, dotted_key);
-        }
-    }
 }
 
 #scope_file
 
-// In file scope as it does not deep copy strings
-parse :: (input: $T) -> Value {
-    log("infoL %\n", T);
-    return parse(*input, type_info(T));
-}
+// In file_scope as it does not deep copy strings
 parse :: (slot: *void, info: *Type_Info) -> Value {
     if #complete info.type == {
     case .INTEGER; return .{type=.INT, int_value=get_integer_value(slot, xx info)};
@@ -67,15 +27,14 @@ parse :: (slot: *void, info: *Type_Info) -> Value {
     case .POINTER; return parse((cast(**void) slot).*, (cast(*Type_Info_Pointer) info).pointer_to); // Should already have been checked for null?
     case .VOID;  return .{type=.TABLE, table=resizable(KeyValue.[])};
     case .STRUCT;
-        if info == type_info(Value)  return (cast(*Value) slot).*;
+        if info == type_info(Value)  return (cast(*Value) slot).*; // No copy!
         // TODO DATETIME
 
-        flattened := flat_members(xx info);
-        replace_uniontag(*flattened, slot);
+        flattened := flat_nonnull_members(slot, xx info);
+        replace_uniontag(slot, *flattened);
         table := Value.{type=.TABLE, table=resizable(KeyValue.[])};
-        array_reserve(*table.table, flattened.count); // Might be a bit more than needed due to nulls
+        array_reserve(*table.table, flattened.count);
         for member: flattened {
-            if is_null(slot + member.offset_in_bytes, member.type) continue;
             kv := KeyValue.{key=member.name, value=parse(slot + member.offset_in_bytes, member.type)};
             array_add(*table.table, kv);
         }
@@ -114,12 +73,43 @@ parse :: (slot: *void, info: *Type_Info) -> Value {
     return .{};
 }
 
+serialize :: (builder: *String_Builder, value: Value, parent_key: string = "") {
+    assert(value.type == .TABLE, "Only tables can be serialized at the top level, got %", value.type);
+    // Key=Value pairs
+    for value.table  if !is_table_header(it.value) && !is_array_of_tables(it.value) {
+        print_single_keyvalue(builder, it);
+        append(builder, "\n");
+    }
+    // [Table.Header]
+    for value.table  if is_table_header(it.value) {
+        dotted_key := build_dotted_key(parent_key, it.key);
+        has_inline := it.table.count == 0; // Do not start a [table.header] if there are no inline values
+        for it.table if it.type != .TABLE || !is_table_header(it.value) { has_inline = true; break; }
+        if has_inline {
+            append(builder, "[");
+            append(builder, dotted_key);
+            append(builder, "]\n");
+        }
+        serialize(builder, it.value, dotted_key);
+    }
+    // [[Array.Of.Tables.Header]]
+    for value.table  if is_array_of_tables(it.value) {
+        dotted_key := build_dotted_key(parent_key, it.key);
+        for it.array {
+            append(builder, "[[");
+            append(builder, dotted_key);
+            append(builder, "]]\n");
+            serialize(builder, it, dotted_key);
+        }
+    }
+}
+
 serialize_inline :: (value: Value, builder: *String_Builder) {
     if #complete value.type == {
     case .BOOL;     print_item_to_builder(builder, value.bool_value);
     case .INT;      print_item_to_builder(builder, value.int_value);
-    case .FLOAT; // tmp := tprint("%", Any.{info, slot}); and also append(builder, tmp) give the wrong result for large values: 49999999999999995800000
-        tmp := tprint("%", value.float_value);
+    case .FLOAT; // tmp := sprint("%", Any.{info, slot}); and also append(builder, tmp) give the wrong result for large values: 49999999999999995800000
+        tmp := sprint("%", value.float_value);
         to_lower_in_place(tmp); // for Inf->inf / NaN->nan
         print_item_to_builder(builder, tmp);
     case .STRING;   print_to_builder_escaped(builder, value.string_value, false);
@@ -161,27 +151,28 @@ print_to_builder_escaped :: (builder: *String_Builder, str: string, $is_key: boo
 }
 
 // Collect all variables members and flattens using structs incl. unions, keeps original using members as well, needed for uniontag
-flat_members :: (info:*Type_Info_Struct) -> [..]Type_Info_Struct_Member { // TODO change to for_expansion?
-    flat_members :: (flattened:*[..]Type_Info_Struct_Member, info:*Type_Info_Struct, offset_in_bytes: s64) {
+flat_nonnull_members :: (slot: *void, info:*Type_Info_Struct) -> [..]Type_Info_Struct_Member { // TODO change to for_expansion?
+    flat_nonnull_members :: (slot: *void, flattened:*[..]Type_Info_Struct_Member, info:*Type_Info_Struct, offset_in_bytes: s64) {
         for member: info.members {
             if member.flags & .CONSTANT { continue; }
             if member.flags & .USING && member.type.type == .STRUCT { // NOTE: Enums can be using too
                 member_info: *Type_Info_Struct = xx member.type;
                 if !(member_info.textual_flags & .UNION) {
-                    flat_members(flattened, xx member.type, offset_in_bytes + member.offset_in_bytes);
+                    flat_nonnull_members(slot, flattened, xx member.type, offset_in_bytes + member.offset_in_bytes);
                     continue;
                 }
             }
+            if is_null(slot + offset_in_bytes + member.offset_in_bytes, member.type) continue;
             array_add(flattened, member);
             peek_pointer(flattened.*).offset_in_bytes += offset_in_bytes;
         }
     }
     flattened: [..]Type_Info_Struct_Member;
-    flat_members(*flattened, info, 0);
+    flat_nonnull_members(slot, *flattened, info, 0);
     return flattened;
 }
 
-replace_uniontag :: (flattened:*[..]Type_Info_Struct_Member, slot: *void) {
+replace_uniontag :: (slot: *void, flattened:*[..]Type_Info_Struct_Member) {
     index := flattened.count-1;
     while outer:= index >= 0 {
         defer index -= 1;
@@ -209,36 +200,38 @@ replace_uniontag :: (flattened:*[..]Type_Info_Struct_Member, slot: *void) {
         exit_with_error("Union .%'s tag member `%` cannot be found", member.name, tag_name);
     }
 }
+
 is_null :: (slot: *void, info: *Type_Info) -> bool {
     if info.type == .POINTER return slot == null;
     if info.type == .ANY     return (cast(*Any_Struct) slot).value_pointer == null;
     return false;
 }
 
-// false if it would introduce additional braces or brackets, so no inline tables or arrays,
+// true if it would introduce additional braces or brackets, so no in-line tables or arrays in in-line arrays,
 // additionally also not a = {b.c = 1, b.d = 2, e = 3} as it is equivalent to a = { b= {c = 1, d = 2}, e = 3}
-is_inline_table :: (table: []KeyValue) -> bool {
-    for table if it.type == {
-    case .TABLE;
-        if !is_single_value(it.table) return false;
-    case .ARRAY; return false;
+is_table_header :: (value: Value) -> bool {
+    if value.type != .TABLE return false;
+    is_single_value :: (table: []KeyValue) -> bool {
+        if table.count != 1 return false;
+        if table[0].type == {
+        case .TABLE;
+            return is_single_value(table[0].table);
+        case .ARRAY; return false;
+        case; return true;
+        }
     }
-    return table.count != 0;
+    for value.table if it.type == {
+    case .TABLE;
+        if !is_single_value(it.table) return true;
+    case .ARRAY; return true;
+    }
+    return value.table.count == 0;
 }
 
-is_single_value :: (table: []KeyValue) -> bool {
-    if table.count != 1 return false;
-    if table[0].type == {
-    case .TABLE;
-        return is_single_value(table[0].table);
-    case .ARRAY; return false;
-    case; return true;
-    }
-}
-
-is_array_of_tables :: (array: []Value) -> bool {
-    if array.count == 0 return false;
-    for array if it.type != .TABLE return false;
+is_array_of_tables :: (value: Value) -> bool {
+    if value.type != .ARRAY return false;
+    if value.array.count == 0 return false;
+    for value.array if it.type != .TABLE return false;
     return true;
 }
 
@@ -284,12 +277,11 @@ get_integer_value :: (data: *void, info: *Type_Info_Integer) -> s64 {
             case 8;
                 output := (cast(*u64) data).*;
                 S64_MAX :u64:   0x7fff_ffff_ffff_ffff;
-                if output > S64_MAX { exit_with_error("Value % is out of integer range", output); }
+                if output > S64_MAX { exit_with_error("Value % is out of s64 range", output); }
                 return xx,no_check output;
             case; assert(false); return 0;
         }
     }
 }
-
 
 #import "Basic";
