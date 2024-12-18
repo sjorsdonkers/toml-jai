@@ -149,7 +149,7 @@ print_to_builder_escaped :: (builder: *String_Builder, str: string, $is_key: boo
     #if is_key {
         if is_bare_key(str) { append(builder, str); return; }
     }
-
+    // TODO consider single ' and multiline strings, Note multiline should impact is_inline_table
     append(builder, "\"");
 	for str if it == {
         case #char "\x08"; append(builder, "\\b");
