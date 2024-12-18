@@ -4,37 +4,12 @@ serialize :: (value: Value) -> string {
     return builder_to_string(*builder);
 }
 
-is_single_value :: (table: []KeyValue) -> bool {
-    if table.count != 1 return false;
-    if table[0].type == {
-    case .TABLE;
-        return is_single_value(table[0].table);
-    case .ARRAY; return false;
-    }
-    return true;
-}
-
-// false if it would introduce braces or brackets, so not inline tables or arrays,
-// additionally also not a = {b.c = 1, b.d = 2, e = 3} as it is equivalent to a = { b= {c = 1, d = 2}, e = 3}
-is_inline_value :: (table: []KeyValue) -> bool {
-    for table if it.type == {
-    case .TABLE;
-        if !is_single_value(it.table) return false;
-    case .ARRAY; return false;
-    }
-    return table.count != 0;
-}
-
 serialize :: (builder: *String_Builder, value: Value, parent_key: string = "") {
     assert(value.type == .TABLE);
+    // Key=Value pairs
     for value.table {
-        // Only do inline values
-        if it.type == .TABLE && !is_inline_value(it.table) continue;
-        // if it.type == .ARRAY { // TODO
-        //     is_array_of_tables := true;
-        //     for it.array { if it.type != .TABLE is_array_of_tables = false; }
-        //     if it.array.count > 0 && is_array_of_tables continue;
-        // }
+        if it.type == .TABLE && !is_inline_table(it.table) continue;
+        if it.type == .ARRAY && is_array_of_tables(it.array) continue;
 
         print_single_value_table :: (builder: *String_Builder, key_value: KeyValue) {
             print_to_builder_escaped(builder, key_value.key);
@@ -42,32 +17,37 @@ serialize :: (builder: *String_Builder, value: Value, parent_key: string = "") {
                 append(builder, ".");
                 print_single_value_table(builder, key_value.table[0]); return;
             }
-            append(builder, "=");
+            append(builder, " = ");
             serialize_inline(key_value.value, builder);
             append(builder, "\n");
         }
         print_single_value_table(builder, it);
     }
+    // [Table.Header]
     for value.table {
-        if it.type != .TABLE || is_inline_value(it.table) continue;
-        // Build full key
-        key_builder: String_Builder;
-        if parent_key {
-            append(*key_builder, parent_key);
-            append(*key_builder, ".");
-        }
-        print_to_builder_escaped(*key_builder, it.key);
-        full_key := builder_to_string(*key_builder);
+        if it.type != .TABLE || is_inline_table(it.table) continue;
 
-        // Start a [table.header] unless there are no inline values
-        has_inline := it.table.count == 0;
-        for it.table if it.type != .TABLE || is_inline_value(it.table) { has_inline = true; break; }
+        full_key := build_full_key(parent_key, it.key);
+        has_inline := it.table.count == 0; // Do not start a [table.header] if there are no inline values
+        for it.table if it.type != .TABLE || is_inline_table(it.table) { has_inline = true; break; }
         if has_inline {
             append(builder, "[");
             append(builder, full_key);
             append(builder, "]\n");
         }
         serialize(builder, it.value, full_key);
+    }
+    // [[Array.Of.Tables.Header]]
+    for value.table {
+        if it.type != .ARRAY || !is_array_of_tables(it.array) continue;
+
+        full_key := build_full_key(parent_key, it.key);
+        for it.array {
+            append(builder, "[[");
+            append(builder, full_key);
+            append(builder, "]]\n");
+            serialize(builder, it, full_key);
+        }
     }
 }
 
@@ -246,6 +226,43 @@ is_null :: (slot: *void, info: *Type_Info) -> bool {
     if info.type == .POINTER return slot == null;
     if info.type == .ANY     return (cast(*Any_Struct) slot).value_pointer == null;
     return false;
+}
+
+// false if it would introduce additional braces or brackets, so no inline tables or arrays,
+// additionally also not a = {b.c = 1, b.d = 2, e = 3} as it is equivalent to a = { b= {c = 1, d = 2}, e = 3}
+is_inline_table :: (table: []KeyValue) -> bool {
+    for table if it.type == {
+    case .TABLE;
+        if !is_single_value(it.table) return false;
+    case .ARRAY; return false;
+    }
+    return table.count != 0;
+}
+
+is_single_value :: (table: []KeyValue) -> bool {
+    if table.count != 1 return false;
+    if table[0].type == {
+    case .TABLE;
+        return is_single_value(table[0].table);
+    case .ARRAY; return false;
+    case; return true;
+    }
+}
+
+is_array_of_tables :: (array: []Value) -> bool {
+    if array.count == 0 return false;
+    for array if it.type != .TABLE return false;
+    return true;
+}
+
+build_full_key :: (parent_key: string, key: string) -> string {
+    key_builder: String_Builder;
+    if parent_key {
+        append(*key_builder, parent_key);
+        append(*key_builder, ".");
+    }
+    print_to_builder_escaped(*key_builder, key);
+    return builder_to_string(*key_builder);
 }
 
 #import "Basic";

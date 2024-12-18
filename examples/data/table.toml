@@ -52,7 +52,7 @@ member_since = 1999-08-04
 fruit.apple.color = "red"
 # Defines a table named fruit
 # Defines a table named fruit.apple
-fruit.apple.taste.sweet = true
+# fruit.apple.taste.sweet = true
 # Defines a table named fruit.apple.taste
 # fruit and fruit.apple were already created
 
