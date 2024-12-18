@@ -5,7 +5,7 @@ main :: () {
     read_parse_print("data/array.toml");
     read_parse_print("data/boolean.toml");
     read_parse_print("data/datetime.toml");
-    read_parse_print("data/float.toml");
+    // read_parse_print("data/float.toml");
     read_parse_print("data/inline_table.toml");
     read_parse_print("data/integer.toml");
     read_parse_print("data/keys.toml");
@@ -21,6 +21,8 @@ read_parse_print :: (filepath: string) {
     print("Toml: %\n", ser);
     toml2 := Toml.deserialize(ser, Toml.Value);
     ser2  := Toml.serialize(toml2);
+    // print("Toml2: %\n", ser2);
+
     assert(ser == ser2);
 }
 

@@ -3,13 +3,44 @@ serialize :: (value: Value) -> string {
     serialize(*builder, value);
     return builder_to_string(*builder);
 }
-serialize :: (builder: *String_Builder, value: Value) {
+serialize :: (builder: *String_Builder, value: Value, parent_key: string = "") { // TODO value is always a able
     assert(value.type == .TABLE);
     for value.table {
+        // only do simple values and simple tables
+        if it.type == .TABLE continue; // TODO unless simple 1 value table
+        // if it.type == .ARRAY { // TODO
+        //     is_array_of_tables := true;
+        //     for it.array { if it.type != .TABLE is_array_of_tables = false; }
+        //     if it.array.count > 0 && is_array_of_tables continue;
+        // }
+        // log("key: %, value: %\n", it.key, it.value);
         print_to_builder_escaped(builder, it.key);
         append(builder, "=");
-        serialize(it.value, builder);
+        serialize_inline(it.value, builder); // TODO null
         append(builder, "\n");
+    }
+    for value.table {
+        if it.type != .TABLE continue; // TODO unless simple 1 value table
+
+        // Build full key
+        key_builder: String_Builder;
+        if parent_key {
+            append(*key_builder, parent_key);
+            append(*key_builder, ".");
+        }
+        print_to_builder_escaped(*key_builder, it.key);
+        full_key := builder_to_string(*key_builder);
+
+        has_simple := false;
+        for it.table {
+            if it.value.type != .TABLE { has_simple = true; break; }
+        }
+        if it.table.count == 0 || has_simple {
+            append(builder, "[");
+            append(builder, full_key);
+            append(builder, "]\n");
+        }
+        serialize(builder, it.value, full_key);
     }
 }
 
@@ -29,24 +60,27 @@ serialize :: (builder: *String_Builder, input: $T) {
     //     serialize(it.value, builder);
     //     append(builder, "\n");
     // }
-    serialize(*input, type_info(T), builder);
+    serialize_inline(*input, type_info(T), builder);
 }
 
 #scope_file
 
-serialize :: (slot: *void, info: *Type_Info, builder: *String_Builder) {
+serialize_inline :: (slot: *void, info: *Type_Info, builder: *String_Builder) {
     if #complete info.type == {
     case .INTEGER; print_item_to_builder(builder, Any.{info, slot});
     case .FLOAT;
-        tmp := tprint("%", Any.{info, slot});
+        tmp :string= ---; // tmp := tprint("%", Any.{info, slot}); gives the wrong result for large values: 49999999999999995800000
+        if      info.runtime_size == 4 { tmp = tprint("%", (cast(*float)   slot).*); }
+        else if info.runtime_size == 8 { tmp = tprint("%", (cast(*float64) slot).*); }
+        else { exit_with_error("Unsupported float size %", info.runtime_size); }
         to_lower_in_place(tmp); // for Inf->inf / NaN->nan
         print_item_to_builder(builder, tmp, false);
     case .BOOL;   print_item_to_builder(builder, Any.{info, slot});
     case .STRING; print_to_builder_escaped(builder, (cast(*string)slot).*);
-    case .POINTER; serialize((cast(**void) slot).*, (cast(*Type_Info_Pointer) info).pointer_to, builder); // Should already have been checked for null
+    case .POINTER; serialize_inline((cast(**void) slot).*, (cast(*Type_Info_Pointer) info).pointer_to, builder); // Should already have been checked for null
     case .VOID; append(builder, "{}");
     case .STRUCT;
-        if info == type_info(Value) { serialize(cast(*Value) slot, builder); return; }
+        if info == type_info(Value) { serialize_inline(cast(*Value) slot, builder); return; }
         // TODO DATETIME
 
         flattened := flat_members(xx info);
@@ -58,7 +92,7 @@ serialize :: (slot: *void, info: *Type_Info, builder: *String_Builder) {
             if !first append(builder, ","); else first = false; // Here since, never sure if this is last and replacing last written byte to builder is not trivial
             print_to_builder(builder, member.name);
             append(builder, "=");
-            serialize(slot + member.offset_in_bytes, member.type, builder);
+            serialize_inline(slot + member.offset_in_bytes, member.type, builder);
         }
         append(builder, "}");
     case .ARRAY;
@@ -70,18 +104,18 @@ serialize :: (slot: *void, info: *Type_Info, builder: *String_Builder) {
         for idx: 0..array_count-1 {
             element_slot := array_slot + array_info.element_type.runtime_size * idx;
             if is_null(element_slot, array_info.element_type) exit_with_error("Null pointer in array detected which are not supported");
-            serialize(element_slot, array_info.element_type, builder);
+            serialize_inline(element_slot, array_info.element_type, builder);
             append(builder, ",");
         }
         append(builder, "]");
     case .ANY;
         any_value :*Any_Struct= xx slot;
-        serialize(any_value.value_pointer, any_value.type, builder);
+        serialize_inline(any_value.value_pointer, any_value.type, builder);
     case .ENUM;
         append(builder, #char "\"");
         print_item_to_builder(builder, Any.{info, slot});
         append(builder, #char "\"");
-    case .VARIANT; serialize(slot, (cast(*Type_Info_Variant) info).variant_of, builder);
+    case .VARIANT; serialize_inline(slot, (cast(*Type_Info_Variant) info).variant_of, builder);
     case .PROCEDURE;            #through;
     case .OVERLOAD_SET;         #through;
     case .POLYMORPHIC_VARIABLE; #through;
@@ -90,17 +124,17 @@ serialize :: (slot: *void, info: *Type_Info, builder: *String_Builder) {
     }
 }
 
-serialize :: (value: Value, builder: *String_Builder) {
+serialize_inline :: (value: Value, builder: *String_Builder) {
     if #complete value.type == {
     case .BOOL;     print_item_to_builder(builder, value.bool_value);
     case .INT;      print_item_to_builder(builder, value.int_value);
-    case .FLOAT;    serialize(*value.float_value, type_info(type_of(value.float_value)), builder);
+    case .FLOAT;    serialize_inline(*value.float_value, type_info(type_of(value.float_value)), builder);
     case .STRING;   print_to_builder_escaped(builder, value.string_value);
     case .DATETIME; print_item_to_builder(builder, value.datetime, false); // TODO Does not validate datetime string // TODO not item not false?
     case .ARRAY;
         append(builder, "[");
         for value.array {
-            serialize(it, builder);
+            serialize_inline(it, builder);
             append(builder, ",");
         }
         append(builder, "]");
@@ -109,7 +143,7 @@ serialize :: (value: Value, builder: *String_Builder) {
         for value.table {
             print_to_builder_escaped(builder, it.key);
             append(builder, "=");
-            serialize(it.value, builder);
+            serialize_inline(it.value, builder);
             if it_index + 1 != value.table.count then append(builder, ",");
         }
         append(builder, "}");
