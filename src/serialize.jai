@@ -3,25 +3,53 @@ serialize :: (value: Value) -> string {
     serialize(*builder, value);
     return builder_to_string(*builder);
 }
-serialize :: (builder: *String_Builder, value: Value, parent_key: string = "") { // TODO value is always a able
+
+is_single_value :: (table: []KeyValue) -> bool {
+    if table.count != 1 return false;
+    if table[0].type == {
+    case .TABLE;
+        return is_single_value(table[0].table);
+    case .ARRAY; return false;
+    }
+    return true;
+}
+
+// false if it would introduce braces or brackets, so not inline tables or arrays,
+// additionally also not a = {b.c = 1, b.d = 2, e = 3} as it is equivalent to a = { b= {c = 1, d = 2}, e = 3}
+is_inline_value :: (table: []KeyValue) -> bool {
+    for table if it.type == {
+    case .TABLE;
+        if !is_single_value(it.table) return false;
+    case .ARRAY; return false;
+    }
+    return table.count != 0;
+}
+
+serialize :: (builder: *String_Builder, value: Value, parent_key: string = "") {
     assert(value.type == .TABLE);
     for value.table {
-        // only do simple values and simple tables
-        if it.type == .TABLE continue; // TODO unless simple 1 value table
+        // Only do inline values
+        if it.type == .TABLE && !is_inline_value(it.table) continue;
         // if it.type == .ARRAY { // TODO
         //     is_array_of_tables := true;
         //     for it.array { if it.type != .TABLE is_array_of_tables = false; }
         //     if it.array.count > 0 && is_array_of_tables continue;
         // }
-        // log("key: %, value: %\n", it.key, it.value);
-        print_to_builder_escaped(builder, it.key);
-        append(builder, "=");
-        serialize_inline(it.value, builder); // TODO null
-        append(builder, "\n");
+
+        print_single_value_table :: (builder: *String_Builder, key_value: KeyValue) {
+            print_to_builder_escaped(builder, key_value.key);
+            if key_value.type == .TABLE && key_value.table.count == 1 {
+                append(builder, ".");
+                print_single_value_table(builder, key_value.table[0]); return;
+            }
+            append(builder, "=");
+            serialize_inline(key_value.value, builder);
+            append(builder, "\n");
+        }
+        print_single_value_table(builder, it);
     }
     for value.table {
-        if it.type != .TABLE continue; // TODO unless simple 1 value table
-
+        if it.type != .TABLE || is_inline_value(it.table) continue;
         // Build full key
         key_builder: String_Builder;
         if parent_key {
@@ -31,11 +59,10 @@ serialize :: (builder: *String_Builder, value: Value, parent_key: string = "") {
         print_to_builder_escaped(*key_builder, it.key);
         full_key := builder_to_string(*key_builder);
 
-        has_simple := false;
-        for it.table {
-            if it.value.type != .TABLE { has_simple = true; break; }
-        }
-        if it.table.count == 0 || has_simple {
+        // Start a [table.header] unless there are no inline values
+        has_inline := it.table.count == 0;
+        for it.table if it.type != .TABLE || is_inline_value(it.table) { has_inline = true; break; }
+        if has_inline {
             append(builder, "[");
             append(builder, full_key);
             append(builder, "]\n");
@@ -55,6 +82,7 @@ serialize :: (builder: *String_Builder, input: $T) {
 
     // assert(value.type == .TABLE);
     // for value.table {
+    //     // TODO null
     //     print_to_builder_escaped(builder, it.key);
     //     append(builder, "=");
     //     serialize(it.value, builder);
@@ -135,7 +163,7 @@ serialize_inline :: (value: Value, builder: *String_Builder) {
         append(builder, "[");
         for value.array {
             serialize_inline(it, builder);
-            append(builder, ",");
+            if it_index + 1 != value.array.count then append(builder, ", ");
         }
         append(builder, "]");
     case .TABLE;
@@ -144,7 +172,7 @@ serialize_inline :: (value: Value, builder: *String_Builder) {
             print_to_builder_escaped(builder, it.key);
             append(builder, "=");
             serialize_inline(it.value, builder);
-            if it_index + 1 != value.table.count then append(builder, ",");
+            if it_index + 1 != value.table.count then append(builder, ", ");
         }
         append(builder, "}");
     }
