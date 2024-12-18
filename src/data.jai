@@ -14,7 +14,7 @@ Value :: struct {
         int_value      : s64;
         float_value    : float64;
         string_value   : string;
-        datetime       : string;
+        datetime       : Chrono;
         array          : [..]Value;
         table          : [..]KeyValue;
     };
@@ -26,11 +26,11 @@ KeyValue :: struct {
 
 copy :: (value: Value) -> Value {
     if #complete value.type == {
-    case .BOOL; #through;
-    case .INT;  #through;
-    case .FLOAT;  return value;
-    case .DATETIME; #through;
-    case .STRING; return Value.{type=value.type, string_value=copy_string(value.string_value)};
+    case .BOOL;  #through;
+    case .INT;   #through;
+    case .FLOAT; #through;
+    case .DATETIME; return value;
+    case .STRING;   return Value.{type=value.type, string_value=copy_string(value.string_value)};
     case .ARRAY;
         output:= Value.{type=.ARRAY, array=resizable(Value.[])};
         array_reserve(*output.array, value.array.count);
@@ -67,7 +67,29 @@ operator == :: (left: Value, right: Value) -> bool {
         return true;
     }
 }
-
 operator == :: (left: KeyValue, right: KeyValue) -> bool {
     return left.key == right.key && left.value == right.value;
 }
+operator == :: (left: Chrono, right: Chrono) -> bool {
+    if left.type != right.type { return false; }
+    if #complete left.type == {
+    case .LOCAL_TIME; return left.time == right.time;
+    case .LOCAL_DATE; return left.date == right.date;
+    case .LOCAL_DATETIME; return left.datetime == right.datetime;
+    case .OFFSET_DATETIME; return left.datetime_offset == right.datetime_offset;
+    }
+}
+operator == :: (left: Time, right: Time) -> bool {
+    return left.hour == right.hour && left.minute == right.minute && left.second == right.second && left.millisecond == right.millisecond;
+}
+operator == :: (left: Date, right: Date) -> bool {
+    return left.year == right.year && left.month == right.month && left.day == right.day;
+}
+operator == :: (left: DateTime, right: DateTime) -> bool {
+    return left.date == right.date && left.time == right.time;
+}
+operator == :: (left: DateTimeOffset, right: DateTimeOffset) -> bool { // Note exact match
+    return left.date == right.date && left.time == right.time && left.offset_hour == right.offset_hour && left.offset_minute == right.offset_minute && left.offset_is_negative == right.offset_is_negative;
+}
+
+#load "datetime.jai";

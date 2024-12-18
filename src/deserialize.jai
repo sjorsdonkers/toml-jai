@@ -32,8 +32,8 @@ deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="
         expect(toml.type, .BOOL, parent_name, name);
         (cast(*bool) slot).* = toml.bool_value;
     case .STRING;
-        if toml.type != .DATETIME expect(toml.type, .STRING, parent_name, name);
-        (cast(*string) slot).* = copy_string(toml.string_value); // Note: datetime is string as well so same memory layout
+        expect(toml.type, .STRING, parent_name, name);
+        (cast(*string) slot).* = copy_string(toml.string_value);
     case .POINTER;
         pointer_info := cast(*Type_Info_Pointer) info;
         memory := alloc(pointer_info.pointer_to.runtime_size);
@@ -141,13 +141,13 @@ deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="
 
 deserialize_chrono ::  (toml: Value, slot: *void, info: *Type_Info) -> is_chrono:bool {
     if toml.type != .DATETIME return false;
-    success, chrono := parse_datetime(toml.datetime);
-    if !success return false;
-    if #complete chrono.type == {
-    case .LOCAL_TIME;       if info == type_info(Time)           { (cast(*Time) slot).*           = chrono.time;            return true; }
-    case .LOCAL_DATE;       if info == type_info(Date)           { (cast(*Date) slot).*           = chrono.date;            return true; }
-    case .LOCAL_DATETIME;   if info == type_info(DateTime)       { (cast(*DateTime) slot).*       = chrono.datetime;        return true; }
-    case .OFFSET_DATETIME;  if info == type_info(DateTimeOffset) { (cast(*DateTimeOffset) slot).* = chrono.datetime_offset; return true; }
+
+    if info == type_info(Chrono) { (cast(*Chrono) slot).* = toml.datetime; return true;}
+    if #complete toml.datetime.type == {
+    case .LOCAL_TIME;       if info == type_info(Time)           { (cast(*Time) slot).*           = toml.datetime.time;            return true; }
+    case .LOCAL_DATE;       if info == type_info(Date)           { (cast(*Date) slot).*           = toml.datetime.date;            return true; }
+    case .LOCAL_DATETIME;   if info == type_info(DateTime)       { (cast(*DateTime) slot).*       = toml.datetime.datetime;        return true; }
+    case .OFFSET_DATETIME;  if info == type_info(DateTimeOffset) { (cast(*DateTimeOffset) slot).* = toml.datetime.datetime_offset; return true; }
     }
     return false;
 }

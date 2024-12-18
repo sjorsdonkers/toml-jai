@@ -80,7 +80,9 @@ parse_time :: (input: string) -> success:bool=false, value:Time=.{} {
         if input[8] != #char "." return;
         ms_digit_count := min(3, input.count - 9);
         millisecond  = slice_to_int(input, 9, ms_digit_count, u16);
-        ignored     := slice_to_int(input, 9 + ms_digit_count, input.count - 9 - ms_digit_count, u64);
+        if ms_digit_count > 3 {
+            ignored     := slice_to_int(input, 9 + ms_digit_count, input.count - 9 - ms_digit_count, u64);
+        }
     }
     return true, Time.{hour=hour, minute=minute, second=second, millisecond=millisecond};
 }
@@ -92,6 +94,45 @@ parse_date :: (input: string) -> success:bool=false, value:Date=.{} {
     month := slice_to_int(input, 5, 2, u8);
     day   := slice_to_int(input, 8, 2, u8);
     return true, Date.{year=year, month=month, day=day};
+}
+
+print_time_to_builder :: (builder: *String_Builder, time: Time) {
+    print_integer(builder, formatInt(time.hour, minimum_digits=2));
+    append(builder, ":");
+    print_integer(builder, formatInt(time.minute, minimum_digits=2));
+    append(builder, ":");
+    print_integer(builder, formatInt(time.second, minimum_digits=2));
+    append(builder, ".");
+    print_integer(builder, formatInt(time.millisecond, minimum_digits=3));
+}
+print_date_to_builder :: (builder: *String_Builder, date: Date) {
+    print_integer(builder, formatInt(date.year, minimum_digits=4));
+    append(builder, "-");
+    print_integer(builder, formatInt(date.month, minimum_digits=2));
+    append(builder, "-");
+    print_integer(builder, formatInt(date.day, minimum_digits=2));
+}
+print_datetime_to_builder :: (builder: *String_Builder, datetime: DateTime) {
+    print_date_to_builder(builder, datetime.date);
+    append(builder, "T");
+    print_time_to_builder(builder, datetime.time);
+}
+print_datetime_offset_to_builder :: (builder: *String_Builder, datetime_offset: DateTimeOffset) {
+    print_date_to_builder(builder, datetime_offset.date);
+    append(builder, "T");
+    print_time_to_builder(builder, datetime_offset.time);
+    append(builder, ifx datetime_offset.offset_is_negative then "-" else "+");
+    print_integer(builder, formatInt(datetime_offset.offset_hour, minimum_digits=2));
+    append(builder, ":");
+    print_integer(builder, formatInt(datetime_offset.offset_minute, minimum_digits=2));
+}
+print_datetime_to_builder :: (builder: *String_Builder, chrono: Chrono) {
+    if #complete chrono.type == {
+    case .LOCAL_TIME; print_time_to_builder(builder, chrono.time);
+    case .LOCAL_DATE; print_date_to_builder(builder, chrono.date);
+    case .LOCAL_DATETIME; print_datetime_to_builder(builder, chrono.datetime);
+    case .OFFSET_DATETIME; print_datetime_offset_to_builder(builder, chrono.datetime_offset);
+    }
 }
 
 #scope_file

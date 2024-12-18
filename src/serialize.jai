@@ -27,9 +27,14 @@ parse :: (slot: *void, info: *Type_Info) -> Value {
     case .POINTER; return parse((cast(**void) slot).*, (cast(*Type_Info_Pointer) info).pointer_to); // Should already have been checked for null?
     case .VOID;  return .{type=.TABLE, table=resizable(KeyValue.[])};
     case .STRUCT;
-        if info == type_info(Value)  return (cast(*Value) slot).*; // No copy!
-        // TODO DATETIME
-
+        if info == {
+        case type_info(Value);          return (cast(*Value) slot).*; // No copy!
+        case type_info(Chrono);         return .{type=.DATETIME, datetime=(cast(*Chrono) slot).*};
+        case type_info(Time);           return .{type=.DATETIME, datetime=.{type=.LOCAL_TIME, time=(cast(*Time) slot).*}};
+        case type_info(Date);           return .{type=.DATETIME, datetime=.{type=.LOCAL_DATE, date=(cast(*Date) slot).*}};
+        case type_info(DateTime);       return .{type=.DATETIME, datetime=.{type=.LOCAL_DATETIME, datetime=(cast(*DateTime) slot).*}};
+        case type_info(DateTimeOffset); return .{type=.DATETIME, datetime=.{type=.OFFSET_DATETIME, datetime_offset=(cast(*DateTimeOffset) slot).*}};
+        }
         flattened := flat_nonnull_members(slot, xx info);
         replace_uniontag(slot, *flattened);
         table := Value.{type=.TABLE, table=resizable(KeyValue.[])};
@@ -113,7 +118,7 @@ serialize_inline :: (value: Value, builder: *String_Builder) {
         to_lower_in_place(tmp); // for Inf->inf / NaN->nan
         print_item_to_builder(builder, tmp);
     case .STRING;   print_to_builder_escaped(builder, value.string_value, false);
-    case .DATETIME; print_item_to_builder(builder, value.datetime, false); // TODO Does not validate datetime string // TODO not item not false?
+    case .DATETIME; print_datetime_to_builder(builder, value.datetime);
     case .ARRAY;
         append(builder, "[");
         for value.array {
