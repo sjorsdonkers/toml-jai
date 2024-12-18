@@ -79,13 +79,11 @@ DONE
     right := Toml.deserialize("a.b.c.d = 1", Toml.Value);
     assert(left == right);
 
-    // Jai does not have commonly used types for dates and times. Most likely you do not want those provided by some Toml module.
-    // As such date/times are returned as strings in Toml.Value. You the user can choose to use their own RFC 3339 parser. Or use the one defined here in Toml/datetime.jai.
-    // Deserialization does support directly parsing into the date/time structs defined in Toml/datetime.jai or as string.
-    MyTime :: struct   { t: string; }
+    // Jai does not have commonly used types for dates and times. This module provides date/time types until the languages does.
+    MyTime :: struct   { t: DateTimeOffset; }
     mytime := Toml.deserialize("t = 1979-05-27 07:32:00Z", MyTime);
     print("time: %\n", mytime);
-    assert(mytime.t == "1979-05-27 07:32:00Z");
+    assert(mytime.t == DateTimeOffset.{date=Date.{year=1979, month=5, day=27}, time=Time.{hour=7, minute=32, second=0, millisecond=0}, offset_hour=0, offset_minute=0, offset_is_negative=false});
 
     MyChrono :: struct { t: Toml.DateTimeOffset; }
     mychrono := Toml.deserialize("t = 1979-05-27 07:32:00Z", MyChrono);

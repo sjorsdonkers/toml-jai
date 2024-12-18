@@ -162,8 +162,8 @@ parse_literal :: (scope: *Scope) -> Value {
                 date_input.count += 1 + eat_token(scope).str.count;
             }
         }
-        success = parse_datetime(date_input);
-        if success { return Value.{type=.DATETIME, datetime=copy_string(date_input)}; }
+        success=, chrono := parse_datetime(date_input);
+        if success { return Value.{type=.DATETIME, datetime=chrono}; }
 
         exit_with_error_line(scope.source, token.loc, "Unable to parse literal %", token.str);
     case;
