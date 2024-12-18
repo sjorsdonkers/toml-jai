@@ -228,6 +228,7 @@ is_table_header :: (value: Value) -> bool {
     return value.table.count == 0;
 }
 
+// true if all elements are tables of any kind
 is_array_of_tables :: (value: Value) -> bool {
     if value.type != .ARRAY return false;
     if value.array.count == 0 return false;
