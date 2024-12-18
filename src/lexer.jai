@@ -214,4 +214,9 @@ exit_with_error_line :: (source: string, loc: Location, format: string, argument
     exit(1);
 }
 
+is_bare_key :: (str: string) -> bool {
+    for str  if !is_alnum(it) && it != #char "-" return false;
+    return str.count > 0;
+}
+
 #import "Basic";

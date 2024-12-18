@@ -70,7 +70,7 @@ serialize_inline :: (slot: *void, info: *Type_Info, builder: *String_Builder) {
         to_lower_in_place(tmp); // for Inf->inf / NaN->nan
         print_item_to_builder(builder, tmp, false);
     case .BOOL;   print_item_to_builder(builder, Any.{info, slot});
-    case .STRING; print_to_builder_escaped(builder, (cast(*string)slot).*);
+    case .STRING; print_to_builder_escaped(builder, (cast(*string)slot).*, false);
     case .POINTER; serialize_inline((cast(**void) slot).*, (cast(*Type_Info_Pointer) info).pointer_to, builder); // Should already have been checked for null
     case .VOID; append(builder, "{}");
     case .STRUCT;
@@ -123,7 +123,7 @@ serialize_inline :: (value: Value, builder: *String_Builder) {
     case .BOOL;     print_item_to_builder(builder, value.bool_value);
     case .INT;      print_item_to_builder(builder, value.int_value);
     case .FLOAT;    serialize_inline(*value.float_value, type_info(type_of(value.float_value)), builder);
-    case .STRING;   print_to_builder_escaped(builder, value.string_value);
+    case .STRING;   print_to_builder_escaped(builder, value.string_value, false);
     case .DATETIME; print_item_to_builder(builder, value.datetime, false); // TODO Does not validate datetime string // TODO not item not false?
     case .ARRAY;
         append(builder, "[");
@@ -142,9 +142,13 @@ serialize_inline :: (value: Value, builder: *String_Builder) {
     }
 }
 
-print_to_builder_escaped :: (builder: *String_Builder, str: string) {
+print_to_builder_escaped :: (builder: *String_Builder, str: string, $is_key: bool) {
+    #if is_key {
+        if is_bare_key(str) { append(builder, str); return; }
+    }
+
     append(builder, "\"");
-	for str if it == { // @speed find index of next escape char and append all in one go
+	for str if it == {
         case #char "\x08"; append(builder, "\\b");
         case #char "\t";   append(builder, "\\t");
         case #char "\n";   append(builder, "\\n");
@@ -245,13 +249,13 @@ build_dotted_key :: (parent_key: string, key: string) -> string {
         append(*key_builder, parent_key);
         append(*key_builder, ".");
     }
-    print_to_builder_escaped(*key_builder, key);
+    print_to_builder_escaped(*key_builder, key, true);
     return builder_to_string(*key_builder);
 }
 
 print_single_keyvalue :: (builder: *String_Builder, key_value: KeyValue) {
     // Recursively print a dotted key
-    print_to_builder_escaped(builder, key_value.key);
+    print_to_builder_escaped(builder, key_value.key, true);
     if key_value.type == .TABLE && key_value.table.count == 1 {
         append(builder, ".");
         print_single_keyvalue(builder, key_value.table[0]);

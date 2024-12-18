@@ -266,7 +266,10 @@ eat_key :: (scope: *Scope) -> Token {
     next:, scope.remaining_key = split_from_left_incl(scope.remaining_key, #char ".");
     if scope.remaining_key.count == 0 { eat_token(scope); }
     if next == "." { return Token.{type=Token.Type.DOT, loc=Location.{original.loc.line, char_num}}; }
-    else           { return Token.{type=Token.Type.LITERAL, str=next, loc=Location.{original.loc.line, char_num}}; }
+    else           {
+        if !is_bare_key(next) { exit_with_error_line(scope.source, .{original.loc.line, char_num}, "Invalid key % Bare keys may contain only A-Za-z0-9_- otherwise use quotes", next); }
+        return Token.{type=Token.Type.LITERAL, str=next, loc=Location.{original.loc.line, char_num}};
+    }
 }
 eat_expected_key :: (scope: *Scope, expected: Token.Type) -> Token {
     token := eat_key(scope);
