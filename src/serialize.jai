@@ -19,6 +19,9 @@ serialize :: (input: $T) -> string {
     return builder_to_string(*builder);
 }
 serialize :: (builder: *String_Builder, input: $T) {
+    // TODO use inline table only when it does not contain arrays, or tables with more than 1 value (/1 union+tag)
+    // Use Array of tables for any array containing tables
+
     // assert(value.type == .TABLE);
     // for value.table {
     //     print_to_builder_escaped(builder, it.key);
@@ -52,8 +55,7 @@ serialize :: (slot: *void, info: *Type_Info, builder: *String_Builder) {
         first := true;
         for member: flattened {
             if is_null(slot + member.offset_in_bytes, member.type) continue;
-            if !first append(builder, ","); // Here since, never sure if this is last and replacing last written byte to builder is not trivial
-            first = false;
+            if !first append(builder, ","); else first = false; // Here since, never sure if this is last and replacing last written byte to builder is not trivial
             print_to_builder(builder, member.name);
             append(builder, "=");
             serialize(slot + member.offset_in_bytes, member.type, builder);
@@ -67,20 +69,19 @@ serialize :: (slot: *void, info: *Type_Info, builder: *String_Builder) {
         append(builder, "[");
         for idx: 0..array_count-1 {
             element_slot := array_slot + array_info.element_type.runtime_size * idx;
+            if is_null(element_slot, array_info.element_type) exit_with_error("Null pointer in array detected which are not supported");
             serialize(element_slot, array_info.element_type, builder);
             append(builder, ",");
         }
         append(builder, "]");
     case .ANY;
-        any_value := cast(*Any_Struct) slot;
+        any_value :*Any_Struct= xx slot;
         serialize(any_value.value_pointer, any_value.type, builder);
     case .ENUM;
         append(builder, #char "\"");
         print_item_to_builder(builder, Any.{info, slot});
         append(builder, #char "\"");
-    case .VARIANT;
-        variant_info := cast(*Type_Info_Variant) info;
-        serialize(slot, variant_info.variant_of, builder);
+    case .VARIANT; serialize(slot, (cast(*Type_Info_Variant) info).variant_of, builder);
     case .PROCEDURE;            #through;
     case .OVERLOAD_SET;         #through;
     case .POLYMORPHIC_VARIABLE; #through;
@@ -95,7 +96,7 @@ serialize :: (value: Value, builder: *String_Builder) {
     case .INT;      print_item_to_builder(builder, value.int_value);
     case .FLOAT;    serialize(*value.float_value, type_info(type_of(value.float_value)), builder);
     case .STRING;   print_to_builder_escaped(builder, value.string_value);
-    case .DATETIME; print_item_to_builder(builder, value.datetime, false); // Does not validate datetime string // TODO not item not false?
+    case .DATETIME; print_item_to_builder(builder, value.datetime, false); // TODO Does not validate datetime string // TODO not item not false?
     case .ARRAY;
         append(builder, "[");
         for value.array {
@@ -117,7 +118,7 @@ serialize :: (value: Value, builder: *String_Builder) {
 
 print_to_builder_escaped :: (builder: *String_Builder, str: string) {
     append(builder, "\"");
-	for str if it == { // @speed
+	for str if it == { // @speed find index of next escape char and append all in one go
         case #char "\x08"; append(builder, "\\b");
         case #char "\t";   append(builder, "\\t");
         case #char "\n";   append(builder, "\\n");
