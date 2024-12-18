@@ -10,34 +10,29 @@ serialize :: (builder: *String_Builder, value: Value, parent_key: string = "") {
     for value.table {
         if it.type == .TABLE && !is_inline_table(it.table) continue;
         if it.type == .ARRAY && is_array_of_tables(it.array) continue;
-
         print_single_keyvalue(builder, it);
         append(builder, "\n");
     }
     // [Table.Header]
-    for value.table {
-        if it.type != .TABLE || is_inline_table(it.table) continue;
-
-        full_key := build_full_key(parent_key, it.key);
-        has_inline := it.table.count == 0; // Do not start a [table.header] if there are no inline values
+    for value.table  if it.type == .TABLE && !is_inline_table(it.table) {
+        dotted_key := build_dotted_key(parent_key, it.key);
+        has_inline := it.table.count == 0; // Do not start a [table.header] if there are no inline values // TODO check this
         for it.table if it.type != .TABLE || is_inline_table(it.table) { has_inline = true; break; }
         if has_inline {
             append(builder, "[");
-            append(builder, full_key);
+            append(builder, dotted_key);
             append(builder, "]\n");
         }
-        serialize(builder, it.value, full_key);
+        serialize(builder, it.value, dotted_key);
     }
     // [[Array.Of.Tables.Header]]
-    for value.table {
-        if it.type != .ARRAY || !is_array_of_tables(it.array) continue;
-
-        full_key := build_full_key(parent_key, it.key);
+    for value.table  if it.type == .ARRAY && is_array_of_tables(it.array) {
+        dotted_key := build_dotted_key(parent_key, it.key);
         for it.array {
             append(builder, "[[");
-            append(builder, full_key);
+            append(builder, dotted_key);
             append(builder, "]]\n");
-            serialize(builder, it, full_key);
+            serialize(builder, it, dotted_key);
         }
     }
 }
@@ -244,7 +239,7 @@ is_array_of_tables :: (array: []Value) -> bool {
     return true;
 }
 
-build_full_key :: (parent_key: string, key: string) -> string {
+build_dotted_key :: (parent_key: string, key: string) -> string {
     key_builder: String_Builder;
     if parent_key {
         append(*key_builder, parent_key);
@@ -255,11 +250,15 @@ build_full_key :: (parent_key: string, key: string) -> string {
 }
 
 print_single_keyvalue :: (builder: *String_Builder, key_value: KeyValue) {
+    // Recursively print a dotted key
     print_to_builder_escaped(builder, key_value.key);
     if key_value.type == .TABLE && key_value.table.count == 1 {
         append(builder, ".");
-        print_single_keyvalue(builder, key_value.table[0]); return;
-    }
+        print_single_keyvalue(builder, key_value.table[0]);
+        return;
+    } // If this is a table with multiple values we print it as an inline table.
+
+    // We print the value inside this procedure as only the very last value needs to be printed
     append(builder, "=");
     serialize_inline(key_value.value, builder);
 }
