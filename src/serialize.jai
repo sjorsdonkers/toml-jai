@@ -11,17 +11,8 @@ serialize :: (builder: *String_Builder, value: Value, parent_key: string = "") {
         if it.type == .TABLE && !is_inline_table(it.table) continue;
         if it.type == .ARRAY && is_array_of_tables(it.array) continue;
 
-        print_single_value_table :: (builder: *String_Builder, key_value: KeyValue) {
-            print_to_builder_escaped(builder, key_value.key);
-            if key_value.type == .TABLE && key_value.table.count == 1 {
-                append(builder, ".");
-                print_single_value_table(builder, key_value.table[0]); return;
-            }
-            append(builder, " = ");
-            serialize_inline(key_value.value, builder);
-            append(builder, "\n");
-        }
-        print_single_value_table(builder, it);
+        print_single_keyvalue(builder, it);
+        append(builder, "\n");
     }
     // [Table.Header]
     for value.table {
@@ -149,9 +140,7 @@ serialize_inline :: (value: Value, builder: *String_Builder) {
     case .TABLE;
         append(builder, "{");
         for value.table {
-            print_to_builder_escaped(builder, it.key);
-            append(builder, "=");
-            serialize_inline(it.value, builder);
+            print_single_keyvalue(builder, it);
             if it_index + 1 != value.table.count then append(builder, ", ");
         }
         append(builder, "}");
@@ -263,6 +252,16 @@ build_full_key :: (parent_key: string, key: string) -> string {
     }
     print_to_builder_escaped(*key_builder, key);
     return builder_to_string(*key_builder);
+}
+
+print_single_keyvalue :: (builder: *String_Builder, key_value: KeyValue) {
+    print_to_builder_escaped(builder, key_value.key);
+    if key_value.type == .TABLE && key_value.table.count == 1 {
+        append(builder, ".");
+        print_single_keyvalue(builder, key_value.table[0]); return;
+    }
+    append(builder, "=");
+    serialize_inline(key_value.value, builder);
 }
 
 #import "Basic";
