@@ -4,50 +4,154 @@ serialize :: (value: Value) -> string {
     return builder_to_string(*builder);
 }
 
-serialize :: (builder: *String_Builder, value: Value) {
+serialize :: (builder: *String_Builder, value: Value, parent_key: string = "") {
     assert(value.type == .TABLE);
+    // Key=Value pairs
     for value.table {
-        print_to_builder_escaped(builder, it.key);
-        append(builder, "=");
-        serialize(it.value, builder);
+        if it.type == .TABLE && !is_inline_table(it.table) continue;
+        if it.type == .ARRAY && is_array_of_tables(it.array) continue;
+        print_single_keyvalue(builder, it);
         append(builder, "\n");
     }
+    // [Table.Header]
+    for value.table  if it.type == .TABLE && !is_inline_table(it.table) {
+        dotted_key := build_dotted_key(parent_key, it.key);
+        has_inline := it.table.count == 0; // Do not start a [table.header] if there are no inline values // TODO check this
+        for it.table if it.type != .TABLE || is_inline_table(it.table) { has_inline = true; break; }
+        if has_inline {
+            append(builder, "[");
+            append(builder, dotted_key);
+            append(builder, "]\n");
+        }
+        serialize(builder, it.value, dotted_key);
+    }
+    // [[Array.Of.Tables.Header]]
+    for value.table  if it.type == .ARRAY && is_array_of_tables(it.array) {
+        dotted_key := build_dotted_key(parent_key, it.key);
+        for it.array {
+            append(builder, "[[");
+            append(builder, dotted_key);
+            append(builder, "]]\n");
+            serialize(builder, it, dotted_key);
+        }
+    }
+}
+
+serialize :: (input: $T) -> string {
+    builder: String_Builder;
+    serialize(*builder, input);
+    return builder_to_string(*builder);
+}
+serialize :: (builder: *String_Builder, input: $T) {
+    // TODO use inline table only when it does not contain arrays, or tables with more than 1 value (/1 union+tag)
+    // Use Array of tables for any array containing tables
+
+    // assert(value.type == .TABLE);
+    // for value.table {
+    //     // TODO null
+    //     print_to_builder_escaped(builder, it.key);
+    //     append(builder, "=");
+    //     serialize(it.value, builder);
+    //     append(builder, "\n");
+    // }
+    serialize_inline(*input, type_info(T), builder);
 }
 
 #scope_file
 
-serialize :: (value: Value, builder: *String_Builder) {
-    if #complete value.type == {
-    case .BOOL; print_item_to_builder(builder, value.bool_value);
-    case .INT;  print_item_to_builder(builder, value.int_value);
+serialize_inline :: (slot: *void, info: *Type_Info, builder: *String_Builder) {
+    if #complete info.type == {
+    case .INTEGER; print_item_to_builder(builder, Any.{info, slot});
     case .FLOAT;
+        tmp :string= ---; // tmp := tprint("%", Any.{info, slot}); gives the wrong result for large values: 49999999999999995800000
+        if      info.runtime_size == 4 { tmp = tprint("%", (cast(*float)   slot).*); }
+        else if info.runtime_size == 8 { tmp = tprint("%", (cast(*float64) slot).*); }
+        else { exit_with_error("Unsupported float size %", info.runtime_size); }
+        to_lower_in_place(tmp); // for Inf->inf / NaN->nan
+        print_item_to_builder(builder, tmp, false);
+    case .BOOL;   print_item_to_builder(builder, Any.{info, slot});
+    case .STRING; print_to_builder_escaped(builder, (cast(*string)slot).*, false);
+    case .POINTER; serialize_inline((cast(**void) slot).*, (cast(*Type_Info_Pointer) info).pointer_to, builder); // Should already have been checked for null
+    case .VOID; append(builder, "{}");
+    case .STRUCT;
+        if info == type_info(Value) { serialize_inline(cast(*Value) slot, builder); return; }
+        // TODO DATETIME
+
+        flattened := flat_members(xx info);
+        replace_uniontag(*flattened, slot);
+        append(builder, "{");
+        first := true;
+        for member: flattened {
+            if is_null(slot + member.offset_in_bytes, member.type) continue;
+            if !first append(builder, ","); else first = false; // Here since, never sure if this is last and replacing last written byte to builder is not trivial
+            print_to_builder(builder, member.name);
+            append(builder, "=");
+            serialize_inline(slot + member.offset_in_bytes, member.type, builder);
+        }
+        append(builder, "}");
+    case .ARRAY;
+        array_info   := cast(*Type_Info_Array) info;
+        array_count  := ifx array_info.array_type == .FIXED then array_info.array_count else (cast(*s64) slot).*;
+        array_slot   := ifx array_info.array_type == .FIXED then slot                   else (cast(**void)(slot+8)).*;
+
+        append(builder, "[");
+        for idx: 0..array_count-1 {
+            element_slot := array_slot + array_info.element_type.runtime_size * idx;
+            if is_null(element_slot, array_info.element_type) exit_with_error("Null pointer in array detected which are not supported");
+            serialize_inline(element_slot, array_info.element_type, builder);
+            append(builder, ",");
+        }
+        append(builder, "]");
+    case .ANY;
+        any_value :*Any_Struct= xx slot;
+        serialize_inline(any_value.value_pointer, any_value.type, builder);
+    case .ENUM;
+        append(builder, #char "\"");
+        print_item_to_builder(builder, Any.{info, slot});
+        append(builder, #char "\"");
+    case .VARIANT; serialize_inline(slot, (cast(*Type_Info_Variant) info).variant_of, builder);
+    case .PROCEDURE;            #through;
+    case .OVERLOAD_SET;         #through;
+    case .POLYMORPHIC_VARIABLE; #through;
+    case .TYPE;                 #through;
+    case .CODE; exit_with_error("Serialization of type % is not supported", info.type);
+    }
+}
+
+serialize_inline :: (value: Value, builder: *String_Builder) {
+    if #complete value.type == {
+    case .BOOL;     print_item_to_builder(builder, value.bool_value);
+    case .INT;      print_item_to_builder(builder, value.int_value);
+    case .FLOAT; // tmp := tprint("%", Any.{info, slot}); and also append(builder, tmp) give the wrong result for large values: 49999999999999995800000
         tmp := tprint("%", value.float_value);
         to_lower_in_place(tmp); // for Inf->inf / NaN->nan
         print_item_to_builder(builder, tmp);
-    case .STRING;   print_to_builder_escaped(builder, value.string_value);
-    case .DATETIME; print_item_to_builder(builder, value.datetime, false); // Does not validate datetime string
+    case .STRING;   print_to_builder_escaped(builder, value.string_value, false);
+    case .DATETIME; print_item_to_builder(builder, value.datetime, false); // TODO Does not validate datetime string // TODO not item not false?
     case .ARRAY;
         append(builder, "[");
         for value.array {
-            serialize(it, builder);
-            append(builder, ",");
+            serialize_inline(it, builder);
+            if it_index + 1 != value.array.count then append(builder, ", ");
         }
         append(builder, "]");
     case .TABLE;
         append(builder, "{");
         for value.table {
-            print_to_builder_escaped(builder, it.key);
-            append(builder, "=");
-            serialize(it.value, builder);
-            if it_index + 1 != value.table.count then append(builder, ",");
+            print_single_keyvalue(builder, it);
+            if it_index + 1 != value.table.count then append(builder, ", ");
         }
         append(builder, "}");
     }
 }
 
-print_to_builder_escaped :: (builder: *String_Builder, str: string) {
+print_to_builder_escaped :: (builder: *String_Builder, str: string, $is_key: bool) {
+    #if is_key {
+        if is_bare_key(str) { append(builder, str); return; }
+    }
+    // TODO consider single ' and multiline strings, Note multiline should impact is_inline_table
     append(builder, "\"");
-	for str if it == { // @speed
+	for str if it == {
         case #char "\x08"; append(builder, "\\b");
         case #char "\t";   append(builder, "\\t");
         case #char "\n";   append(builder, "\\n");
@@ -58,6 +162,112 @@ print_to_builder_escaped :: (builder: *String_Builder, str: string) {
         case;              append(builder, it);
     }
     append(builder, "\"");
+}
+
+// Collect all variables members and flattens using structs incl. unions, keeps original using members as well, needed for uniontag
+flat_members :: (info:*Type_Info_Struct) -> [..]Type_Info_Struct_Member { // TODO change to for_expansion?
+    flat_members :: (flattened:*[..]Type_Info_Struct_Member, info:*Type_Info_Struct, offset_in_bytes: s64) {
+        for member: info.members {
+            if member.flags & .CONSTANT { continue; }
+            if member.flags & .USING && member.type.type == .STRUCT { // NOTE: Enums can be using too
+                member_info: *Type_Info_Struct = xx member.type;
+                if !(member_info.textual_flags & .UNION) {
+                    flat_members(flattened, xx member.type, offset_in_bytes + member.offset_in_bytes);
+                    continue;
+                }
+            }
+            array_add(flattened, member);
+            peek_pointer(flattened.*).offset_in_bytes += offset_in_bytes;
+        }
+    }
+    flattened: [..]Type_Info_Struct_Member;
+    flat_members(*flattened, info, 0);
+    return flattened;
+}
+
+replace_uniontag :: (flattened:*[..]Type_Info_Struct_Member, slot: *void) {
+    index := flattened.count-1;
+    while outer:= index >= 0 {
+        defer index -= 1;
+        member := flattened.*[index];
+        // Find union member with @UnionTag note
+        if member.type.type != .STRUCT continue;
+        member_info := cast(*Type_Info_Struct) member.type;
+        if !(member_info.textual_flags & .UNION) continue;
+        tag_name: string;
+        for note: member.notes if begins_with(note, "UnionTag:") { tag_name = slice(note, 9, note.count-9); break; }
+        if !tag_name exit_with_error("Cannot serialize union without knowing which variant is active, @UnionTag:[member_name] is missing");
+
+        // Remove it's tag member, replace union by its active variant
+        for flattened.* if it.name == tag_name { // find instead of loop
+            assert(it.type.type == .ENUM);
+            tag_idx := get_enum_value(slot + it.offset_in_bytes, xx it.type);
+            current_variant := member_info.members[tag_idx];
+            current_variant.offset_in_bytes += member.offset_in_bytes;
+            flattened.*[index] = current_variant;
+
+            array_ordered_remove_by_index(flattened, it_index);
+            if it_index < index { index -= 1; }
+            continue outer;
+        }
+        exit_with_error("Union .%'s tag member `%` cannot be found", member.name, tag_name);
+    }
+}
+is_null :: (slot: *void, info: *Type_Info) -> bool {
+    if info.type == .POINTER return slot == null;
+    if info.type == .ANY     return (cast(*Any_Struct) slot).value_pointer == null;
+    return false;
+}
+
+// false if it would introduce additional braces or brackets, so no inline tables or arrays,
+// additionally also not a = {b.c = 1, b.d = 2, e = 3} as it is equivalent to a = { b= {c = 1, d = 2}, e = 3}
+is_inline_table :: (table: []KeyValue) -> bool {
+    for table if it.type == {
+    case .TABLE;
+        if !is_single_value(it.table) return false;
+    case .ARRAY; return false;
+    }
+    return table.count != 0;
+}
+
+is_single_value :: (table: []KeyValue) -> bool {
+    if table.count != 1 return false;
+    if table[0].type == {
+    case .TABLE;
+        return is_single_value(table[0].table);
+    case .ARRAY; return false;
+    case; return true;
+    }
+}
+
+is_array_of_tables :: (array: []Value) -> bool {
+    if array.count == 0 return false;
+    for array if it.type != .TABLE return false;
+    return true;
+}
+
+build_dotted_key :: (parent_key: string, key: string) -> string {
+    key_builder: String_Builder;
+    if parent_key {
+        append(*key_builder, parent_key);
+        append(*key_builder, ".");
+    }
+    print_to_builder_escaped(*key_builder, key, true);
+    return builder_to_string(*key_builder);
+}
+
+print_single_keyvalue :: (builder: *String_Builder, key_value: KeyValue) {
+    // Recursively print a dotted key
+    print_to_builder_escaped(builder, key_value.key, true);
+    if key_value.type == .TABLE && key_value.table.count == 1 {
+        append(builder, ".");
+        print_single_keyvalue(builder, key_value.table[0]);
+        return;
+    } // If this is a table with multiple values we print it as an inline table.
+
+    // We print the value inside this procedure as only the very last value needs to be printed
+    append(builder, "=");
+    serialize_inline(key_value.value, builder);
 }
 
 #import "Basic";

@@ -44,6 +44,8 @@ DONE
 
     my_struct := Toml.deserialize(THE_STRING, MyStruct);
     print("MyStruct: %\n", my_struct);
+    as_value := Toml.serialize(my_struct);
+    log("as_value: %\n", as_value);
 
     // All run-time types are supported.
     // A tagged union / sum-type requires the tag in the toml to be correctly matching the set union
@@ -64,6 +66,7 @@ DONE
     apple := Toml.deserialize("apple = {a = 32, b = 'Y'}", Guy);
     print("struct_apple: %\n", apple);
     print("struct_apple: %: %\n", apple.mytag, apple.apple);
+    log("struct_apple_as_value: %\n", Toml.serialize(apple));
 
     // If the TOML data does not contain a field that is present in the struct, the field will be initialized to its default value.
     // Jai's initialization of unions is wack. So instead unions are initialized always initialized to the first variant.

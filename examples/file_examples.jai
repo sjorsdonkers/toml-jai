@@ -21,6 +21,8 @@ read_parse_print :: (filepath: string) {
     print("Toml: %\n", ser);
     toml2 := Toml.deserialize(ser, Toml.Value);
     ser2  := Toml.serialize(toml2);
+    // print("Toml2: %\n", ser2);
+
     assert(ser == ser2);
 }
 
