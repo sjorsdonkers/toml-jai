@@ -5,7 +5,8 @@ main :: () {
     heap := create_heap(context.allocator);
     defer destroy_heap(heap);
     toml_value := Toml.deserialize(contents, Toml.Value,, allocator=heap);
-    print("%\n", Toml.serialize(toml_value));
+    ok_toml, toml := Toml.serialize(toml_value); assert(ok_toml);
+    print("%\n", toml);
 
     // We can also deserialize the TOML data into a struct. The struct must have the same fields as the TOML data.
     // The struct can have additional fields that are not present in the TOML data, in this case the fields will be initialized to their default values.
@@ -44,7 +45,7 @@ DONE
 
     my_struct := Toml.deserialize(THE_STRING, MyStruct);
     print("MyStruct: %\n", my_struct);
-    as_value := Toml.serialize(my_struct);
+    ok, as_value := Toml.serialize(my_struct); assert(ok);
     log("serialize:\n%", as_value);
 
     // All run-time types are supported.
@@ -66,7 +67,8 @@ DONE
     apple := Toml.deserialize("apple = {a = 32, b = 'Y'}", Guy);
     print("struct_apple: %\n", apple);
     print("struct_apple: %: %\n", apple.mytag, apple.apple);
-    log("struct_apple serialized:\n%", Toml.serialize(apple));
+    ok_apple, toml_apple := Toml.serialize(apple); assert(ok_apple);
+    log("struct_apple serialized:\n%", toml_apple);
 
     // If the TOML data does not contain a field that is present in the struct, the field will be initialized to its default value.
     // Jai's initialization of unions is wack. So instead unions are initialized always initialized to the first variant.
@@ -90,17 +92,47 @@ DONE
     using mychrono.t;
     print("chrono: %1-%2-%3 %4:%5:%6%7%8:%9\n", year, month, day, hour, minute, second, ifx offset_is_negative "-" else "+", offset_hour, offset_minute);
 
-    // Pointers, ANY, VIEW and RESIZABLE arrays are supported at any depth in the struct definition.
-    // These types that are referencing memory elsewhere will have new memory allocated for them with the context allocator.
-    reference_types();
-
     // Due to differences in formatting dotted keys may become tables headers and vise versa.
     // Dotted key-values are always printed before table headers for correctness
     // This may reorder the keys in the serialized TOML data.
     header_order := Toml.deserialize("a.b = [1,2,3]\nc.d = 4", Toml.Value);
-    header := Toml.serialize(header_order);
+    ok_header, header := Toml.serialize(header_order); assert(ok_header);
     print("header_order:\n%", header);
     assert(header == "c.d=4\n[a]\nb=[1, 2, 3]\n");
+
+    // Pointers, ANY, VIEW and RESIZABLE arrays are supported at any depth in the struct definition.
+    // These types that are referencing memory elsewhere will have new memory allocated for them with the context allocator.
+    reference_types();
+
+    // Success is returned as a boolean as the first return value. At this time there is no clear need to return an enum.
+    // When an operation failed the error message can be found in the error log. If needed the error log can be captured as shown in this procedure.
+    error_handling();
+}
+
+error_handling :: () {
+    // To capture the error log without disturbing the normal logging behavior we can wrap the logger.
+    Log_Wrap :: struct {
+        logger: Logger;          // The original logger
+        logger_data: *void;      // The original logger data
+        capture: String_Builder; // The captured log
+    }
+    capture_log :: (message: string, data: *void, info: Log_Info) {
+        // Log to the original logger
+        wrap := cast(*Log_Wrap) data;
+        wrap.logger(message, wrap.logger_data, info);
+
+        // Log only error messages to the capture
+        if info.common_flags & .ERROR {
+            append(*wrap.capture, message);
+            if message && message[message.count-1] != #char "\n"  append(*wrap.capture, "\n");
+        }
+    }
+
+    wrap:= Log_Wrap.{context.logger, context.logger_data, .{}};                                // Store the current logger in the wrap
+    Invalid :: struct { nullptr_array:[1]*void; }                                              // Invalid struct for which we know an error will be given
+    inv_ok := Toml.serialize(Invalid.{.[null]},, logger=capture_log, logger_data=*wrap); // Call to serialize with the invalid struct and setting the context to the wrapped logger
+    if !inv_ok print("capture_log: %", builder_to_string(*wrap.capture));                      // The operation failed and the error message is captured in the wrap
+    else assert(false);
 }
 
 reference_types :: () {

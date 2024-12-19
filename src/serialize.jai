@@ -1,52 +1,56 @@
-serialize :: (input: $T) -> string {
+serialize :: (input: $T) -> ok:=false, toml:string="" {
     a := scoped_pool();
-    value := parse(*input, type_info(T),, a);
+    ok, value := parse(*input, type_info(T),, a); if !ok return;
     builder: String_Builder;
     serialize(*builder, value,, a);
-    return builder_to_string(*builder);
+    return true, builder_to_string(*builder);
 }
 
-serialize :: (value: Value) -> string {
+serialize :: (value: Value) -> ok:=false, toml:string="" {
     builder: String_Builder;
     serialize(*builder, value,, scoped_pool());
-    return builder_to_string(*builder);
+    return true, builder_to_string(*builder);
 }
 
 #scope_file
 
 // In file_scope as it does not deep copy strings
-parse :: (slot: *void, info: *Type_Info) -> Value {
+parse :: (slot: *void, info: *Type_Info) -> ok:=false, toml:Value=.{} {
     if #complete info.type == {
-    case .INTEGER; return .{type=.INT, int_value=get_integer_value(slot, xx info)};
+    case .INTEGER;
+        ok, value := get_integer_value(slot, xx info); if !ok return;
+        return true, .{type=.INT, int_value=value};
     case .FLOAT;
-        if      info.runtime_size == 4 { return .{type=.FLOAT, float_value=(cast(*float)   slot).*}; }
-        else if info.runtime_size == 8 { return .{type=.FLOAT, float_value=(cast(*float64)  slot).*}; }
-        else { exit_with_error("Unsupported float size %", info.runtime_size); }
-    case .BOOL;   return .{type=.BOOL, bool_value=(cast(*bool) slot).*};
-    case .STRING; return .{type=.STRING, string_value=(cast(*string) slot).*}; // No copy!
+        if      info.runtime_size == 4 { return true, .{type=.FLOAT, float_value=(cast(*float)   slot).*}; }
+        else if info.runtime_size == 8 { return true, .{type=.FLOAT, float_value=(cast(*float64) slot).*}; }
+        else { assert(false, "Unsupported float size %", info.runtime_size); }
+    case .BOOL;   return true, .{type=.BOOL, bool_value=(cast(*bool) slot).*};
+    case .STRING; return true, .{type=.STRING, string_value=(cast(*string) slot).*}; // No copy!
     case .POINTER;
         assert(cast(**void) slot != null, "Implementation error: null pointers should be filtered out");
-        return parse((cast(**void) slot).*, (cast(*Type_Info_Pointer) info).pointer_to);
-    case .VOID;  return .{type=.TABLE, table=resizable(KeyValue.[])};
+        ok, value := parse((cast(**void) slot).*, (cast(*Type_Info_Pointer) info).pointer_to);
+        return ok, value;
+    case .VOID;  return true, .{type=.TABLE, table=resizable(KeyValue.[])};
     case .STRUCT;
         if info == {
-        case type_info(Value);          return (cast(*Value) slot).*; // No copy!
-        case type_info(Chrono);         return .{type=.DATETIME, datetime=(cast(*Chrono) slot).*};
-        case type_info(Time);           return .{type=.DATETIME, datetime=.{type=.LOCAL_TIME,      time=           (cast(*Time) slot).*}};
-        case type_info(Date);           return .{type=.DATETIME, datetime=.{type=.LOCAL_DATE,      date=           (cast(*Date) slot).*}};
-        case type_info(DateTime);       return .{type=.DATETIME, datetime=.{type=.LOCAL_DATETIME,  datetime=       (cast(*DateTime) slot).*}};
-        case type_info(DateTimeOffset); return .{type=.DATETIME, datetime=.{type=.OFFSET_DATETIME, datetime_offset=(cast(*DateTimeOffset) slot).*}};
+        case type_info(Value);          return true, (cast(*Value) slot).*; // No copy!
+        case type_info(Chrono);         return true, .{type=.DATETIME, datetime=(cast(*Chrono) slot).*};
+        case type_info(Time);           return true, .{type=.DATETIME, datetime=.{type=.LOCAL_TIME,      time=           (cast(*Time) slot).*}};
+        case type_info(Date);           return true, .{type=.DATETIME, datetime=.{type=.LOCAL_DATE,      date=           (cast(*Date) slot).*}};
+        case type_info(DateTime);       return true, .{type=.DATETIME, datetime=.{type=.LOCAL_DATETIME,  datetime=       (cast(*DateTime) slot).*}};
+        case type_info(DateTimeOffset); return true, .{type=.DATETIME, datetime=.{type=.OFFSET_DATETIME, datetime_offset=(cast(*DateTimeOffset) slot).*}};
         }
         flattened := flat_nonnull_members(slot, xx info);
-        replace_uniontag(slot, *flattened);
+        ok := replace_uniontag(slot, *flattened); if !ok return;
 
         table: [..]KeyValue;
         array_reserve(*table, flattened.count);
         for member: flattened {
-            kv := KeyValue.{key=member.name, value=parse(slot + member.offset_in_bytes, member.type)};
+            ok, value := parse(slot + member.offset_in_bytes, member.type); if !ok return;
+            kv := KeyValue.{key=member.name, value=value};
             array_add(*table, kv);
         }
-        return .{type=.TABLE, table=table};
+        return true, .{type=.TABLE, table=table};
     case .ARRAY;
         array_info   := cast(*Type_Info_Array) info;
         array_count  := ifx array_info.array_type == .FIXED then array_info.array_count else (cast(*s64) slot).*;
@@ -56,30 +60,32 @@ parse :: (slot: *void, info: *Type_Info) -> Value {
         array_reserve(*array, array_count);
         for idx: 0..array_count-1 {
             element_slot := array_slot + array_info.element_type.runtime_size * idx;
-            if is_null(element_slot, array_info.element_type) exit_with_error("Null pointer in array detected which is not supported");
-            v := parse(element_slot, array_info.element_type);
+            if is_null(element_slot, array_info.element_type) return_with_error("Null pointer in array detected which is not supported");
+            ok, v := parse(element_slot, array_info.element_type); if !ok return;
             array_add(*array, v);
         }
-        return .{type=.ARRAY, array=array};
+        return true, .{type=.ARRAY, array=array};
     case .ANY;
         any_value :*Any_Struct= xx slot;
         assert(any_value.value_pointer != null, "Implementation error: null pointers should be filtered out");
-        return parse(any_value.value_pointer, any_value.type);
+        ok, value := parse(any_value.value_pointer, any_value.type);
+        return ok, value;
     case .ENUM;
         enum_info :*Type_Info_Enum= xx info;
         for enum_info.values  if it == get_enum_value(slot, enum_info) {
-            return .{type=.STRING, string_value=enum_info.names[it_index]};
+            return true, .{type=.STRING, string_value=enum_info.names[it_index]};
         }
         assert(false, "Enum value % not found in enum %", get_enum_value(slot, enum_info), enum_info.name);
-    case .VARIANT; return parse(slot, (cast(*Type_Info_Variant) info).variant_of);
+    case .VARIANT;
+        ok, value := parse(slot, (cast(*Type_Info_Variant) info).variant_of);
+        return ok, value;
     case .PROCEDURE;            #through;
     case .OVERLOAD_SET;         #through;
     case .POLYMORPHIC_VARIABLE; #through;
     case .TYPE;                 #through;
     case .CODE;
     }
-    exit_with_error("Parsing of type % is not supported", info.type);
-    return .{};
+    return_with_error("Parsing of type % is not supported", info.type);
 }
 
 serialize :: (builder: *String_Builder, value: Value, parent_key: string = "") {
@@ -181,7 +187,7 @@ flat_nonnull_members :: (slot: *void, info:*Type_Info_Struct) -> [..]Type_Info_S
     return flattened;
 }
 
-replace_uniontag :: (slot: *void, flattened:*[..]Type_Info_Struct_Member) {
+replace_uniontag :: (slot: *void, flattened:*[..]Type_Info_Struct_Member) -> ok:=false {
     index := flattened.count-1;
     while outer:= index >= 0 {
         defer index -= 1;
@@ -192,7 +198,7 @@ replace_uniontag :: (slot: *void, flattened:*[..]Type_Info_Struct_Member) {
         if !(member_info.textual_flags & .UNION) continue;
         tag_name: string;
         for note: member.notes if begins_with(note, "UnionTag:") { tag_name = slice(note, 9, note.count-9); break; }
-        if !tag_name exit_with_error("Cannot serialize union without knowing which variant is active, @UnionTag:[member_name] is missing");
+        if !tag_name return_with_error("Cannot serialize union without knowing which variant is active, @UnionTag:[member_name] is missing");
 
         // Remove it's tag member, replace union by its active variant
         for flattened.* if it.name == tag_name { // find instead of loop
@@ -206,12 +212,13 @@ replace_uniontag :: (slot: *void, flattened:*[..]Type_Info_Struct_Member) {
             if it_index < index { index -= 1; }
             continue outer;
         }
-        exit_with_error("Union .%'s tag member `%` cannot be found", member.name, tag_name);
+        return_with_error("Union .%'s tag member `%` cannot be found", member.name, tag_name);
     }
+    return true;
 }
 
 is_null :: (slot: *void, info: *Type_Info) -> bool {
-    if info.type == .POINTER return slot == null;
+    if info.type == .POINTER return (cast(**void) slot).* == null;
     if info.type == .ANY     return (cast(*Any_Struct) slot).value_pointer == null;
     return false;
 }
@@ -219,7 +226,6 @@ is_null :: (slot: *void, info: *Type_Info) -> bool {
 // true if it would otherwise introduce additional braces or brackets, so no in-line tables or arrays in in-line tables,
 // additionally also not: a = {b.c = 1, b.d = 2, e = 3} as it is equivalent to: a = { b= {c = 1, d = 2}, e = 3}
 is_table_header :: (value: Value) -> bool {
-    if value.type != .TABLE return false;
     is_single_value :: (table: []KeyValue) -> bool {
         if table.count != 1 return false;
         if table[0].type == {
@@ -229,6 +235,7 @@ is_table_header :: (value: Value) -> bool {
         case; return true;
         }
     }
+    if value.type != .TABLE return false;
     for value.table if it.type == {
     case .TABLE;
         if !is_single_value(it.table) return true;
@@ -273,26 +280,26 @@ print_single_keyvalue :: (builder: *String_Builder, key_value: KeyValue) {
 // Generic memory utilities
 //
 
-get_integer_value :: (data: *void, info: *Type_Info_Integer) -> s64 {
+get_integer_value :: (data: *void, info: *Type_Info_Integer) -> ok:=false, value:s64=0 {
     if info.signed {
         if info.runtime_size == {
-            case 1; return (cast(*s8)  data).*;
-            case 2; return (cast(*s16) data).*;
-            case 4; return (cast(*s32) data).*;
-            case 8; return (cast(*s64) data).*;
-            case; assert(false); return 0;
+            case 1; return true, (cast(*s8)  data).*;
+            case 2; return true, (cast(*s16) data).*;
+            case 4; return true, (cast(*s32) data).*;
+            case 8; return true, (cast(*s64) data).*;
+            case; assert(false); return;
         }
     } else {
         if info.runtime_size == {
-            case 1; return             (cast(*u8)  data).*;
-            case 2; return             (cast(*u16) data).*;
-            case 4; return             (cast(*u32) data).*;
+            case 1; return true, (cast(*u8)  data).*;
+            case 2; return true, (cast(*u16) data).*;
+            case 4; return true, (cast(*u32) data).*;
             case 8;
                 output := (cast(*u64) data).*;
                 S64_MAX :u64:   0x7fff_ffff_ffff_ffff;
-                if output > S64_MAX { exit_with_error("Value % is out of s64 range", output); }
-                return xx,no_check output;
-            case; assert(false); return 0;
+                if output > S64_MAX { return_with_error("Value % is out of s64 range", output); }
+                return true, xx,no_check output;
+            case; assert(false); return;
         }
     }
 }

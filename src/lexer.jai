@@ -191,6 +191,11 @@ get_line :: (data: string, line_number: s32) -> line: string, found:bool {
 
 #scope_module
 
+return_with_error :: (format: string, arguments: .. Any) #expand {
+    log_error(format, ..arguments);
+    `return;
+}
+
 exit_with_error :: (format: string, arguments: .. Any) {
     log_error(format, ..arguments);
     exit(1);
