@@ -128,10 +128,10 @@ error_handling :: () {
         }
     }
 
-    wrap:= Log_Wrap.{context.logger, context.logger_data, .{}};                                // Store the current logger in the wrap
-    Invalid :: struct { nullptr_array:[1]*void; }                                              // Invalid struct for which we know an error will be given
+    wrap:= Log_Wrap.{context.logger, context.logger_data, .{}};                          // Store the current logger in the wrap
+    Invalid :: struct { nullptr_array:[1]*void; }                                        // Invalid struct for which we know an error will be given
     inv_ok := Toml.serialize(Invalid.{.[null]},, logger=capture_log, logger_data=*wrap); // Call to serialize with the invalid struct and setting the context to the wrapped logger
-    if !inv_ok print("capture_log: %", builder_to_string(*wrap.capture));                      // The operation failed and the error message is captured in the wrap
+    if !inv_ok print("capture_log: %", builder_to_string(*wrap.capture));                // The operation failed and the error message is captured in the wrap
     else assert(false);
 }
 

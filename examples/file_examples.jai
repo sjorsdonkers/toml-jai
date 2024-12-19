@@ -17,10 +17,10 @@ read_parse_print :: (filepath: string) {
     contents := read_entire_file(filepath);
     toml := Toml.deserialize(contents, Toml.Value);
     print("File: %\n", filepath);
-    ser   := Toml.serialize(toml);
+    ok, ser := Toml.serialize(toml); assert(ok);
     print("Toml: %\n", ser);
     toml2 := Toml.deserialize(ser, Toml.Value);
-    ser2  := Toml.serialize(toml2);
+    ok=,ser2  := Toml.serialize(toml2); assert(ok);
     // print("Toml2: %\n", ser2);
 
     assert(ser == ser2);

@@ -39,7 +39,7 @@ DateTimeOffset :: struct {
     offset_is_negative: bool;
 }
 
-parse_datetime :: (input: string) -> success:bool=false, value:Chrono=.{} {
+parse_datetime :: (input: string) -> ok:=false, value:Chrono=.{} {
     success, time := parse_time(input);
     if success { return true, .{type=.LOCAL_TIME, time=time}; }
 
@@ -69,7 +69,7 @@ parse_datetime :: (input: string) -> success:bool=false, value:Chrono=.{} {
     }
 }
 
-parse_time :: (input: string) -> success:bool=false, value:Time=.{} {
+parse_time :: (input: string) -> ok:=false, value:Time=.{} {
     if input.count < 8 return;
     if input[2] != #char ":" || input[5] != #char ":" return;
     hour   := slice_to_int(input, 0, 2, u8);
@@ -87,7 +87,7 @@ parse_time :: (input: string) -> success:bool=false, value:Time=.{} {
     return true, Time.{hour=hour, minute=minute, second=second, millisecond=millisecond};
 }
 
-parse_date :: (input: string) -> success:bool=false, value:Date=.{} {
+parse_date :: (input: string) -> ok:=false, value:Date=.{} {
     if input.count < 10 return;
     if input[4] != #char "-" || input[7] != #char "-" return;
     year  := slice_to_int(input, 0, 4, u16);
