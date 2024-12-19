@@ -24,42 +24,46 @@ parse :: (slot: *void, info: *Type_Info) -> Value {
         else { exit_with_error("Unsupported float size %", info.runtime_size); }
     case .BOOL;   return .{type=.BOOL, bool_value=(cast(*bool) slot).*};
     case .STRING; return .{type=.STRING, string_value=(cast(*string) slot).*}; // No copy!
-    case .POINTER; return parse((cast(**void) slot).*, (cast(*Type_Info_Pointer) info).pointer_to); // Should already have been checked for null?
+    case .POINTER;
+        assert(cast(**void) slot != null, "Implementation error: null pointers should be filtered out");
+        return parse((cast(**void) slot).*, (cast(*Type_Info_Pointer) info).pointer_to);
     case .VOID;  return .{type=.TABLE, table=resizable(KeyValue.[])};
     case .STRUCT;
         if info == {
         case type_info(Value);          return (cast(*Value) slot).*; // No copy!
         case type_info(Chrono);         return .{type=.DATETIME, datetime=(cast(*Chrono) slot).*};
-        case type_info(Time);           return .{type=.DATETIME, datetime=.{type=.LOCAL_TIME, time=(cast(*Time) slot).*}};
-        case type_info(Date);           return .{type=.DATETIME, datetime=.{type=.LOCAL_DATE, date=(cast(*Date) slot).*}};
-        case type_info(DateTime);       return .{type=.DATETIME, datetime=.{type=.LOCAL_DATETIME, datetime=(cast(*DateTime) slot).*}};
+        case type_info(Time);           return .{type=.DATETIME, datetime=.{type=.LOCAL_TIME,      time=           (cast(*Time) slot).*}};
+        case type_info(Date);           return .{type=.DATETIME, datetime=.{type=.LOCAL_DATE,      date=           (cast(*Date) slot).*}};
+        case type_info(DateTime);       return .{type=.DATETIME, datetime=.{type=.LOCAL_DATETIME,  datetime=       (cast(*DateTime) slot).*}};
         case type_info(DateTimeOffset); return .{type=.DATETIME, datetime=.{type=.OFFSET_DATETIME, datetime_offset=(cast(*DateTimeOffset) slot).*}};
         }
         flattened := flat_nonnull_members(slot, xx info);
         replace_uniontag(slot, *flattened);
-        table := Value.{type=.TABLE, table=resizable(KeyValue.[])};
-        array_reserve(*table.table, flattened.count);
+
+        table: [..]KeyValue;
+        array_reserve(*table, flattened.count);
         for member: flattened {
             kv := KeyValue.{key=member.name, value=parse(slot + member.offset_in_bytes, member.type)};
-            array_add(*table.table, kv);
+            array_add(*table, kv);
         }
-        return table;
+        return .{type=.TABLE, table=table};
     case .ARRAY;
         array_info   := cast(*Type_Info_Array) info;
         array_count  := ifx array_info.array_type == .FIXED then array_info.array_count else (cast(*s64) slot).*;
         array_slot   := ifx array_info.array_type == .FIXED then slot                   else (cast(**void)(slot+8)).*;
 
-        array := Value.{type=.ARRAY, array=resizable(Value.[])};
-        array_reserve(*array.array, array_count);
+        array: [..]Value;
+        array_reserve(*array, array_count);
         for idx: 0..array_count-1 {
             element_slot := array_slot + array_info.element_type.runtime_size * idx;
-            if is_null(element_slot, array_info.element_type) exit_with_error("Null pointer in array detected which are not supported");
+            if is_null(element_slot, array_info.element_type) exit_with_error("Null pointer in array detected which is not supported");
             v := parse(element_slot, array_info.element_type);
-            array_add(*array.array, v);
+            array_add(*array, v);
         }
-        return array;
+        return .{type=.ARRAY, array=array};
     case .ANY;
         any_value :*Any_Struct= xx slot;
+        assert(any_value.value_pointer != null, "Implementation error: null pointers should be filtered out");
         return parse(any_value.value_pointer, any_value.type);
     case .ENUM;
         enum_info :*Type_Info_Enum= xx info;
@@ -109,7 +113,7 @@ serialize :: (builder: *String_Builder, value: Value, parent_key: string = "") {
     }
 }
 
-serialize_inline :: (value: Value, builder: *String_Builder) {
+serialize_inline :: (builder: *String_Builder, value: Value) {
     if #complete value.type == {
     case .BOOL;     print_item_to_builder(builder, value.bool_value);
     case .INT;      print_item_to_builder(builder, value.int_value);
@@ -122,7 +126,7 @@ serialize_inline :: (value: Value, builder: *String_Builder) {
     case .ARRAY;
         append(builder, "[");
         for value.array {
-            serialize_inline(it, builder);
+            serialize_inline(builder, it);
             if it_index + 1 != value.array.count then append(builder, ", ");
         }
         append(builder, "]");
@@ -156,7 +160,7 @@ print_to_builder_escaped :: (builder: *String_Builder, str: string, $is_key: boo
 }
 
 // Collect all variables members and flattens using structs incl. unions, keeps original using members as well, needed for uniontag
-flat_nonnull_members :: (slot: *void, info:*Type_Info_Struct) -> [..]Type_Info_Struct_Member { // TODO change to for_expansion?
+flat_nonnull_members :: (slot: *void, info:*Type_Info_Struct) -> [..]Type_Info_Struct_Member {
     flat_nonnull_members :: (slot: *void, flattened:*[..]Type_Info_Struct_Member, info:*Type_Info_Struct, offset_in_bytes: s64) {
         for member: info.members {
             if member.flags & .CONSTANT { continue; }
@@ -212,8 +216,8 @@ is_null :: (slot: *void, info: *Type_Info) -> bool {
     return false;
 }
 
-// true if it would introduce additional braces or brackets, so no in-line tables or arrays in in-line arrays,
-// additionally also not a = {b.c = 1, b.d = 2, e = 3} as it is equivalent to a = { b= {c = 1, d = 2}, e = 3}
+// true if it would otherwise introduce additional braces or brackets, so no in-line tables or arrays in in-line tables,
+// additionally also not: a = {b.c = 1, b.d = 2, e = 3} as it is equivalent to: a = { b= {c = 1, d = 2}, e = 3}
 is_table_header :: (value: Value) -> bool {
     if value.type != .TABLE return false;
     is_single_value :: (table: []KeyValue) -> bool {
@@ -262,9 +266,12 @@ print_single_keyvalue :: (builder: *String_Builder, key_value: KeyValue) {
 
     // We print the value inside this procedure as only the very last value needs to be printed
     append(builder, "=");
-    serialize_inline(key_value.value, builder);
+    serialize_inline(builder, key_value.value);
 }
 
+//
+// Generic memory utilities
+//
 
 get_integer_value :: (data: *void, info: *Type_Info_Integer) -> s64 {
     if info.signed {
