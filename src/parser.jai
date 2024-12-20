@@ -5,7 +5,9 @@
 // - Error propagation
 
 parse :: (contents: string) -> ok:=false, root_table:Value=.{} {
-    ok, tokens := tokenize(contents); defer array_free(tokens);                       if !ok return; // TODO check if array free does the right thing now that tokens is a view
+     // TODO array_free on the VIEW is fine as it uses the context allocator
+     // Still, the return type of tokenize should change back to a RESIZABLE array when it supports defaults
+    ok, tokens := tokenize(contents); defer array_free(tokens);                       if !ok return;
     scope  := Scope.{contents, tokens, 0, ""};
 
     // At top level we can expect ([[keys]], [keys], keys = value)
