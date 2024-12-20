@@ -4,7 +4,7 @@ main :: () {
     contents := read_entire_file("data/inline_table.toml");
     heap := create_heap(context.allocator);
     defer destroy_heap(heap);
-    toml_value := Toml.deserialize(contents, Toml.Value,, allocator=heap);
+    ok, toml_value := Toml.deserialize(contents, Toml.Value,, allocator=heap); assert(ok);
     ok_toml, toml := Toml.serialize(toml_value); assert(ok_toml);
     print("%\n", toml);
 
@@ -43,9 +43,9 @@ DONE
         horse :Filename;
     }
 
-    my_struct := Toml.deserialize(THE_STRING, MyStruct);
+    ok=, my_struct := Toml.deserialize(THE_STRING, MyStruct); assert(ok);
     print("MyStruct: %\n", my_struct);
-    ok, as_value := Toml.serialize(my_struct); assert(ok);
+    ok=, as_value := Toml.serialize(my_struct); assert(ok);
     log("serialize:\n%", as_value);
 
     // All run-time types are supported.
@@ -64,7 +64,7 @@ DONE
             ORANGE;
         };
     }
-    apple := Toml.deserialize("apple = {a = 32, b = 'Y'}", Guy);
+    ok=, apple := Toml.deserialize("apple = {a = 32, b = 'Y'}", Guy); assert(ok);
     print("struct_apple: %\n", apple);
     print("struct_apple: %: %\n", apple.mytag, apple.apple);
     ok_apple, toml_apple := Toml.serialize(apple); assert(ok_apple);
@@ -72,30 +72,30 @@ DONE
 
     // If the TOML data does not contain a field that is present in the struct, the field will be initialized to its default value.
     // Jai's initialization of unions is wack. So instead unions are initialized always initialized to the first variant.
-    void_banana := Toml.deserialize("", Guy);
+    ok=, void_banana := Toml.deserialize("", Guy); assert(ok);
     print("void_banana: %\n", void_banana);
     print("void_banana: %: %\n", void_banana.mytag, void_banana.banana);
 
     // For convenience Toml.Value comes with an equality operator and copy procedure.
-    left := Toml.deserialize("a.b = {c.d = 1}", Toml.Value);
-    right := Toml.deserialize("a.b.c.d = 1", Toml.Value);
+    ok=, left := Toml.deserialize("a.b = {c.d = 1}", Toml.Value); assert(ok);
+    ok=, right := Toml.deserialize("a.b.c.d = 1", Toml.Value); assert(ok);
     assert(left == right);
 
     // Jai does not have commonly used types for dates and times. This module provides date/time types until the languages does.
     MyTime :: struct   { t: DateTimeOffset; }
-    mytime := Toml.deserialize("t = 1979-05-27 07:32:00Z", MyTime);
+    ok=, mytime := Toml.deserialize("t = 1979-05-27 07:32:00Z", MyTime); assert(ok);
     print("time: %\n", mytime);
     assert(mytime.t == DateTimeOffset.{date=Date.{year=1979, month=5, day=27}, time=Time.{hour=7, minute=32, second=0, millisecond=0}, offset_hour=0, offset_minute=0, offset_is_negative=false});
 
     MyChrono :: struct { t: Toml.DateTimeOffset; }
-    mychrono := Toml.deserialize("t = 1979-05-27 07:32:00Z", MyChrono);
+    ok=, mychrono := Toml.deserialize("t = 1979-05-27 07:32:00Z", MyChrono); assert(ok);
     using mychrono.t;
     print("chrono: %1-%2-%3 %4:%5:%6%7%8:%9\n", year, month, day, hour, minute, second, ifx offset_is_negative "-" else "+", offset_hour, offset_minute);
 
     // Due to differences in formatting dotted keys may become tables headers and vise versa.
     // Dotted key-values are always printed before table headers for correctness
     // This may reorder the keys in the serialized TOML data.
-    header_order := Toml.deserialize("a.b = [1,2,3]\nc.d = 4", Toml.Value);
+    ok=, header_order := Toml.deserialize("a.b = [1,2,3]\nc.d = 4", Toml.Value); assert(ok);
     ok_header, header := Toml.serialize(header_order); assert(ok_header);
     print("header_order:\n%", header);
     assert(header == "c.d=4\n[a]\nb=[1, 2, 3]\n");
@@ -144,7 +144,7 @@ reference_types :: () {
         p_s16: *s16;
         p_inner: *Inner;
     }
-    pointers_toml := Toml.deserialize("p_s16 = 36\np_inner = {str = 'Barry'}", Outer);
+    ok, pointers_toml := Toml.deserialize("p_s16 = 36\np_inner = {str = 'Barry'}", Outer); assert(ok);
     print("pointers_toml: %\n", pointers_toml);
     print("pointers_toml.p_s16: %\n",   pointers_toml.p_s16.*  );
     print("pointers_toml.p_inner: %\n", pointers_toml.p_inner.*);
@@ -159,7 +159,7 @@ reference_types :: () {
     Fixed_Array :: struct {
         p_quatre: *[4]Vingt;
     }
-    quatre_vingt := Toml.deserialize("p_quatre = [{getal = 9}, {getal = 4}, {number = 3}, {}]", Fixed_Array);
+    ok=, quatre_vingt := Toml.deserialize("p_quatre = [{getal = 9}, {getal = 4}, {number = 3}, {}]", Fixed_Array); assert(ok);
     log("quatre_vingt: %\n", quatre_vingt.p_quatre.*);
     assert(quatre_vingt.p_quatre.*[0].number == 20);
     assert(quatre_vingt.p_quatre.*[2].getal == 23);
@@ -173,7 +173,7 @@ reference_types :: () {
     MyVar :: struct {
         p_variant: *DefaultVariant;
     }
-    mutant := Toml.deserialize("p_variant.b = 3", MyVar);
+    ok=, mutant := Toml.deserialize("p_variant.b = 3", MyVar); assert(ok);
     print("mutant: %\n", mutant.p_variant.*);
     assert(mutant.p_variant.a == "Anton");
 
@@ -184,7 +184,7 @@ reference_types :: () {
     MyPtrUsing :: struct {
         p_using: *MyUsing;
     }
-    use20 := Toml.deserialize("[p_using]\nnumber = 6", MyPtrUsing);
+    ok=, use20 := Toml.deserialize("[p_using]\nnumber = 6", MyPtrUsing); assert(ok);
     print("use20: %\n", use20.p_using.*);
     assert(use20.p_using.getal == 23);
 
@@ -199,7 +199,7 @@ reference_types :: () {
             second: string = ---;
         }
     }
-    un := Toml.deserialize("", MyUnionStruct);
+    ok=, un := Toml.deserialize("", MyUnionStruct); assert(ok);
     print("un: %\n", un.first);
     assert(un.first.number == 20);
     assert(un.first.getal == 23);
@@ -208,7 +208,7 @@ reference_types :: () {
     MyUnionPtr :: struct {
         p_union: *MyUnionStruct;
     }
-    un_ptr := Toml.deserialize("tag = 'FIRST' \n p_union.first.number = 3", MyUnionPtr);
+    ok=, un_ptr := Toml.deserialize("tag = 'FIRST' \n p_union.first.number = 3", MyUnionPtr); assert(ok);
     print("un_ptr: %: %\n", un_ptr.p_union.tag, un_ptr.p_union.first);
     assert(un_ptr.p_union.first.number == 3);
     assert(un_ptr.p_union.first.getal == 23);
@@ -217,7 +217,7 @@ reference_types :: () {
     Array_View :: struct {
         ocean: []s16;
     }
-    arrayview_toml := Toml.deserialize("ocean = [1, 2, 3]", Array_View);
+    ok=, arrayview_toml := Toml.deserialize("ocean = [1, 2, 3]", Array_View); assert(ok);
     print("arrayview_toml: %\n", arrayview_toml);
     assert(arrayview_toml.ocean[2] == 3);
 
@@ -225,17 +225,17 @@ reference_types :: () {
     Amy :: struct {
         andy: Any;
     }
-    toml4 := Toml.deserialize("andy = 3", Amy);
+    ok=, toml4 := Toml.deserialize("andy = 3", Amy); assert(ok);
     assert("{3}" == tprint("%", toml4));
-    toml4 = Toml.deserialize("andy = 'hello'", Amy);
+    ok=, toml4 = Toml.deserialize("andy = 'hello'", Amy); assert(ok);
     assert("{\"hello\"}" == tprint("%", toml4));
-    toml4 = Toml.deserialize("andy = 3.3", Amy);
+    ok=, toml4 = Toml.deserialize("andy = 3.3", Amy); assert(ok);
     assert("{3.3}" == tprint("%", toml4));
-    toml4 = Toml.deserialize("andy = true", Amy);
+    ok=, toml4 = Toml.deserialize("andy = true", Amy); assert(ok);
     assert("{true}" == tprint("%", toml4));
-    toml4 = Toml.deserialize("andy = [1, 7, 3]", Amy);
+    ok=, toml4 = Toml.deserialize("andy = [1, 7, 3]", Amy); assert(ok);
     assert("{[1, 7, 3]}" == tprint("%", toml4));
-    toml4 = Toml.deserialize("andy = [1, 'd', 3]", Amy);
+    ok=, toml4 = Toml.deserialize("andy = [1, 'd', 3]", Amy); assert(ok);
     print("%\n", toml4);
 
     AnyAndy :: struct {
@@ -246,11 +246,11 @@ reference_types :: () {
         other_andy: string;
         other_amy: string;
     }
-    toml5 := Toml.deserialize("[[andy]]\nany_andy = 9\nany_amy = 8\n[[andy]]\nother_andy = 'Peter'\nother_amy = 'Derick'", Amy);
+    ok=, toml5 := Toml.deserialize("[[andy]]\nany_andy = 9\nany_amy = 8\n[[andy]]\nother_andy = 'Peter'\nother_amy = 'Derick'", Amy); assert(ok);
     andies := cast(*[]Toml.Value) toml5.andy.value_pointer;
-    any_andy := Toml.deserialize(andies.*[0], AnyAndy);
+    ok=, any_andy := Toml.deserialize(andies.*[0], AnyAndy); assert(ok);
     assert("{9, 8}" == tprint("%", any_andy));
-    other_andy := Toml.deserialize(andies.*[1], OtherAndy);
+    ok=, other_andy := Toml.deserialize(andies.*[1], OtherAndy); assert(ok);
     assert("{\"Peter\", \"Derick\"}" == tprint("%", other_andy));
 }
 

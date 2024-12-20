@@ -26,7 +26,7 @@ Location :: struct {
     line, char: s32; // Line and column number, not index
 }
 
-tokenize :: (data: string) -> tokens: [..]Token {
+tokenize :: (data: string) -> ok:=false, tokens:[]Token=.[] {
     lexer := Lexer.{data=data};
     defer array_free(lexer.scope_stack);
     array_reserve(*lexer.tokens, data.count / 2); // Rough estimate of token count
@@ -82,7 +82,7 @@ tokenize :: (data: string) -> tokens: [..]Token {
                     if peek_char(lexer) == #char "\n" { eat_newline(*lexer); }
                     else                              { eat_char(*lexer); }
                 }
-                if !has_next(lexer) { exit_with_error_line(lexer.data, lexer.loc, "Unterminated multi-line string."); }
+                if !has_next(lexer) { return_with_error_line(lexer.data, lexer.loc, "Unterminated multi-line string."); }
                 // 1 or 2 quotes at the end are allowed, like """"abra""""" -> "abra""
                 if has_next(lexer, 4) && peek_char(lexer, 4) == c { eat_char(*lexer); }
                 if has_next(lexer, 4) && peek_char(lexer, 4) == c { eat_char(*lexer); }
@@ -102,10 +102,10 @@ tokenize :: (data: string) -> tokens: [..]Token {
                         next_two := peek_slice(lexer, 2);
                         if next_two == "\\\""  || next_two == "\\\\" { eat_char(*lexer, 2); continue; }
                     }
-                    if peek_char(lexer) == #char "\n" { exit_with_error_line(lexer.data, lexer.loc, "Newline in string. Escape `\\n` or use a multi-line string (tripple quote) instead."); }
+                    if peek_char(lexer) == #char "\n" { return_with_error_line(lexer.data, lexer.loc, "Newline in string. Escape `\\n` or use a multi-line string (tripple quote) instead."); }
                     eat_char(*lexer);
                 }
-                if !has_next(lexer) { exit_with_error_line(lexer.data, lexer.loc, "Unterminated string."); }
+                if !has_next(lexer) { return_with_error_line(lexer.data, lexer.loc, "Unterminated string."); }
 
                 token_type :Token.Type= ifx c == #char "\"" then .BASIC else .LITERAL;
                 token := Token.{ type=token_type, str=slice(data, start, lexer.pos - start), loc=Location.{lexer.loc.line, lexer.loc.char - xx (lexer.pos - start)} };
@@ -128,10 +128,12 @@ tokenize :: (data: string) -> tokens: [..]Token {
         }
         if c == #char "}"
         || c == #char "]" {
-            if lexer.scope_stack.count == 0 { exit_with_error_line(lexer.data, lexer.loc, "Mismatched braces. No scope opened for: %", to_string(*c, 1)); }
+            if lexer.scope_stack.count == 0 { return_with_error_line(lexer.data, lexer.loc, "Mismatched braces. No scope opened for: %", to_string(*c, 1)); }
 
             scope_token := *lexer.tokens[pop(*lexer.scope_stack)];
-            if scope_token.type != xx matching_open(c) { exit_with_error_line(lexer.data, lexer.loc, "Mismatched scope closure. Scope Opened with: % Attempt to close with: %", to_string(*cast(u8)scope_token.type, 1), to_string(*c,1)); }
+            if !(scope_token.type == #char "{" && c == #char "}") && !(scope_token.type == #char "[" && c == #char "]") {
+                return_with_error_line(lexer.data, lexer.loc, "Mismatched scope closure. Scope Opened with: % Attempt to close with: %", to_string(*cast(u8)scope_token.type, 1), to_string(*c,1));
+            }
 
             tokens_in_scope := lexer.tokens.count - scope_token.scope.count - 1;
             scope_token.scope = array_view(lexer.tokens, scope_token.scope.count+1, tokens_in_scope);
@@ -147,9 +149,9 @@ tokenize :: (data: string) -> tokens: [..]Token {
             continue;
         }
 
-        exit_with_error_line(lexer.data, lexer.loc, "Invalid character %", to_string(*c, 1));
+        return_with_error_line(lexer.data, lexer.loc, "Invalid character %", to_string(*c, 1));
     }
-    return lexer.tokens;
+    return true, lexer.tokens;
 }
 
 #scope_file
@@ -174,13 +176,6 @@ eat_newline :: (lexer: *Lexer) {
     lexer.loc.line += 1;
 }
 
-matching_open :: (close: u8) -> open: u8 {
-    if close == #char "}" { return #char "{"; }
-    if close == #char "]" { return #char "["; }
-    exit_with_error("No matching open for %", to_string(*close, 1));
-    return 0;
-}
-
 get_line :: (data: string, line_number: s32) -> line: string, found:bool {
     #import "Text_File_Handler";
     line: string;
@@ -196,15 +191,11 @@ return_with_error :: (format: string, arguments: .. Any) #expand {
     `return;
 }
 
-exit_with_error :: (format: string, arguments: .. Any) {
-    log_error(format, ..arguments);
-    exit(1);
-}
-exit_with_error_line :: (source: string, loc: Location, format: string, arguments: .. Any) {
+return_with_error_line :: (source: string, loc: Location, format: string, arguments: .. Any) #expand {
     line, found := get_line(source, loc.line);
     if !found {
         log_error("Failed to read line % from file", loc.line);
-        exit(1);
+        `return;
     }
     message := sprint(format, ..arguments);
     log_error("Line % Char %: %", loc.line, loc.char, message);
@@ -216,7 +207,7 @@ exit_with_error_line :: (source: string, loc: Location, format: string, argument
     append(*builder, #char "^");
     log_error(builder_to_string(*builder));
 
-    exit(1);
+    `return;
 }
 
 #scope_file

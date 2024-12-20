@@ -4,11 +4,11 @@ main :: () {
         nom: string;
         expected: Option(s64);
     }
-    none_str := Toml.deserialize("nom = 'Tim'", Expect);
+    ok, none_str := Toml.deserialize("nom = 'Tim'", Expect); assert(ok);
     print("none: %\n", none_str);
-    explicit_none := Toml.deserialize("nom = 'Tim'\nexpected.none={}", Expect);
+    ok=, explicit_none := Toml.deserialize("nom = 'Tim'\nexpected.none={}", Expect); assert(ok);
     print("none: %\n", explicit_none);
-    some := Toml.deserialize("nom = 'Tim'\nexpected.some = 23", Expect);
+    ok=, some := Toml.deserialize("nom = 'Tim'\nexpected.some = 23", Expect); assert(ok);
     print("some: %\n", some.expected.some);
     print("expected: %\n", unwrap(some.expected));
 
@@ -16,20 +16,21 @@ main :: () {
         .{"Bread", #run MyBread},
         .{"Fruit", #run MyFruit},
     );
-    food     := Toml.deserialize("bread = {baguette = 3}", MyFood); print("food: %\n", food);
+    ok=, food     := Toml.deserialize("bread = {baguette = 3}", MyFood); print("food: %\n", food); assert(ok);
     bread    := unwrap(food, MyFood.Bread);                         print("bread: %\n", bread);
     baguette := unwrap(bread, MyBread.Baguette);                    print("baguette: %\n", baguette);
     assert(3 == baguette);
-    other_food  := Toml.deserialize("[fruit.mango]", MyFood);
+    ok=, other_food  := Toml.deserialize("[fruit.mango]", MyFood); assert(ok);
     other_fruit := unwrap(other_food, MyFood.Fruit);   print("other_fruit: %\n", other_fruit);
     other_mango := unwrap(other_fruit, MyFruit.Mango); print("other_mango: %\n", other_mango);
     assert(tprint("%", none(string)) == tprint("%", other_mango));
 
     // Sum_Type makes sure that the first variant is default initialized
-    pine0 := Toml.deserialize("[fruit]", MyFood);
+    ok=, pine0 := Toml.deserialize("[fruit]", MyFood); assert(ok);
     assert(0 == unwrap(unwrap(pine0, MyFood.Fruit), MyFruit.Pineapple));
 
-    kiwi_food  := Toml.deserialize("fruit.kiwi = {spaghetti = 3, macaroni = true, why = 9, anonymous = 88, try = 'B'}", MyFood); print("kiwi_food: %\n", kiwi_food);
+    ok=, kiwi_food  := Toml.deserialize("fruit.kiwi = {spaghetti = 3, macaroni = true, why = 9, anonymous = 88, try = 'B'}", MyFood); assert(ok);
+    print("kiwi_food: %\n", kiwi_food);
     kiwi_fruit := kiwi_food.fruit; print("kiwi_fruit: %\n", kiwi_fruit);
     kiwi       := kiwi_fruit.kiwi; print("kiwi: %\n", kiwi);
     assert("{3, true, {9, 88}, B}" == tprint("%", kiwi)); // Using sub-members need to have their offset_in_bytes combined with the using member's offset_in_bytes
@@ -39,18 +40,18 @@ main :: () {
         nom: string;
         expected: [..]Option(s64);
     }
-    array := Toml.deserialize("nom = 'Tim'\nexpected = [{some=23}, {some=46}]", Expect2);
+    ok=, array := Toml.deserialize("nom = 'Tim'\nexpected = [{some=23}, {some=46}]", Expect2); assert(ok);
     for array.expected { print("% ", it.some); assert(unwrap(it) == (1+it_index)*23); }
     print("array!\n");
 
-    none_array := Toml.deserialize("nom = 'Tim'\n[[expected]]\n[[expected]]\nsome=3\n[[expected]]\n", Expect2);
+    ok=, none_array := Toml.deserialize("nom = 'Tim'\n[[expected]]\n[[expected]]\nsome=3\n[[expected]]\n", Expect2); assert(ok);
     print("% none some none array!\n", none_array);
 
     Expect3 :: struct {
         nom: string;
         expected: [..]MyFruit;
     }
-    fruit_bowl := Toml.deserialize("nom = 'Tim'\nexpected = [{Pineapple=7}, {Mango.Some='arrr'}]\n", Expect3);
+    ok=, fruit_bowl := Toml.deserialize("nom = 'Tim'\nexpected = [{Pineapple=7}, {Mango.Some='arrr'}]\n", Expect3); assert(ok);
     print("fruit_bowl: %\n", fruit_bowl);
 }
 MyStruct :: struct {

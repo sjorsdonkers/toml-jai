@@ -41,7 +41,7 @@ parse :: (slot: *void, info: *Type_Info) -> ok:=false, toml:Value=.{} {
         case type_info(DateTimeOffset); return true, .{type=.DATETIME, datetime=.{type=.OFFSET_DATETIME, datetime_offset=(cast(*DateTimeOffset) slot).*}};
         }
         flattened := flat_nonnull_members(slot, xx info);
-        ok := replace_uniontag(slot, *flattened); if !ok return;
+        replace_uniontag(slot, *flattened);
 
         table: [..]KeyValue;
         array_reserve(*table, flattened.count);
@@ -187,7 +187,7 @@ flat_nonnull_members :: (slot: *void, info:*Type_Info_Struct) -> [..]Type_Info_S
     return flattened;
 }
 
-replace_uniontag :: (slot: *void, flattened:*[..]Type_Info_Struct_Member) -> ok:=false {
+replace_uniontag :: (slot: *void, flattened:*[..]Type_Info_Struct_Member) {
     index := flattened.count-1;
     while outer:= index >= 0 {
         defer index -= 1;
@@ -198,7 +198,7 @@ replace_uniontag :: (slot: *void, flattened:*[..]Type_Info_Struct_Member) -> ok:
         if !(member_info.textual_flags & .UNION) continue;
         tag_name: string;
         for note: member.notes if begins_with(note, "UnionTag:") { tag_name = slice(note, 9, note.count-9); break; }
-        if !tag_name return_with_error("Cannot serialize union without knowing which variant is active, @UnionTag:[member_name] is missing");
+        assert(tag_name!="", "Cannot serialize union without knowing which variant is active, @UnionTag:[member_name] is missing");
 
         // Remove it's tag member, replace union by its active variant
         for flattened.* if it.name == tag_name { // find instead of loop
@@ -212,9 +212,8 @@ replace_uniontag :: (slot: *void, flattened:*[..]Type_Info_Struct_Member) -> ok:
             if it_index < index { index -= 1; }
             continue outer;
         }
-        return_with_error("Union .%'s tag member `%` cannot be found", member.name, tag_name);
+        assert(false, "Union .%'s tag member `%` cannot be found", member.name, tag_name);
     }
-    return true;
 }
 
 is_null :: (slot: *void, info: *Type_Info) -> bool {

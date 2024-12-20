@@ -4,8 +4,8 @@
 // - Full toml validation like newlines in an inline table or numbers with leading zeros or _s
 // - Error propagation
 
-parse :: (contents: string) -> root_table:Value {
-    tokens := tokenize(contents);  defer array_free(tokens);
+parse :: (contents: string) -> ok:=false, root_table:Value=.{} {
+    ok, tokens := tokenize(contents); defer array_free(tokens);                       if !ok return; // TODO check if array free does the right thing now that tokens is a view
     scope  := Scope.{contents, tokens, 0, ""};
 
     // At top level we can expect ([[keys]], [keys], keys = value)
@@ -14,47 +14,48 @@ parse :: (contents: string) -> root_table:Value {
     while has_next(scope) {
         token := peek_token(scope);
         if token.type == Token.Type.SCOPE_BRACKET {
-            current_table = parse_header(*root_table, eat_scope(*scope, token));
+            ok=, current_table = parse_header(*root_table, eat_scope(*scope, token)); if !ok return;
         } else {
-            leaf_value := parse_key(current_table, eat_scope_until(*scope, Token.Type.ASSIGN));
-            leaf_value.* = parse_value(leaf_value, *scope);
+            ok=, key_scope := eat_scope_until(*scope, Token.Type.ASSIGN);             if !ok return;
+            ok=, leaf_value := parse_key(current_table, key_scope);                   if !ok return;
+            ok=, leaf_value.* = parse_value(leaf_value, *scope);                      if !ok return;
         }
     }
-    return root_table;
+    return true, root_table;
 }
 
 #scope_file
 
-parse_header :: (root_table: *Value, scope: Scope) -> *Value {
+parse_header :: (root_table: *Value, scope: Scope) -> ok:=false, value:*Value=null {
     if !has_next(scope) || peek_token(scope).type != Token.Type.SCOPE_BRACKET{
         // Parse [table] header
-        current_table, is_new := parse_key(root_table, scope);
+        ok, current_table, is_new := parse_key(root_table, scope); if !ok return;
         if !is_new && current_table.type != Value.Type.TABLE {
-            exit_with_error_line(scope.source, peek(scope.tokens).loc, "Cannot use key as Tables as it already has a value: %", current_table.type);
+            return_with_error_line(scope.source, peek(scope.tokens).loc, "Cannot use key as Tables as it already has a value: %", current_table.type);
         }
-        return current_table;
+        return true, current_table;
     } else {
         // Parse [[array of tables]] header
         aot_scope := eat_scope(*scope, eat_token(*scope)); // Eat the inner brackets
         if scope.tokens.count > aot_scope.tokens.count + 1 { // No tokens between the closing brackets `]]` allowed
             error_token:= scope.tokens[1 + aot_scope.tokens.count];
-            exit_with_error_line(scope.source, error_token.loc, "Unexpected % in Array of Tables header", error_token.type);
+            return_with_error_line(scope.source, error_token.loc, "Unexpected % in Array of Tables header", error_token.type);
         }
 
-        current_table, is_new := parse_key(root_table, aot_scope);
+        ok, current_table, is_new := parse_key(root_table, aot_scope); if !ok return;
         if current_table.type != .ARRAY {
-            if !is_new { exit_with_error_line(aot_scope.source, peek(aot_scope.tokens).loc, "Cannot use key as Array of Tables as it already has a value: %", current_table.type); }
+            if !is_new { return_with_error_line(aot_scope.source, peek(aot_scope.tokens).loc, "Cannot use key as Array of Tables as it already has a value: %", current_table.type); }
             current_table.* = .{type=.ARRAY, array=resizable(Value.[])};
         }
         array_add(*current_table.array, Value.{type=.TABLE, table=resizable(KeyValue.[])});
-        return peek_pointer(current_table.array);
+        return true, peek_pointer(current_table.array);
     }
 }
 
 // Parse: key. key.'key'."etc"
-parse_key :: (parent: *Value, scope: Scope) -> leaf:*Value, leaf_is_new:bool {
-    if !has_next(scope) { exit_with_error("Unexpected end of scope while parsing key"); }
-    if parent.type != Value.Type.TABLE { exit_with_error("Cannot use key as table as it already has a value: %", parent.type); }
+parse_key :: (parent: *Value, scope: Scope) -> ok:=false, leaf:*Value=null, leaf_is_new:bool=false {
+    if !has_next(scope) { return_with_error("Unexpected end of scope while parsing key"); }
+    if parent.type != Value.Type.TABLE { return_with_error("Cannot use key as table as it already has a value: %", parent.type); }
 
     // Get or insert key
     find_or_insert_new :: (array: *[..]KeyValue, key: string) -> is_new:bool, *Value {
@@ -62,95 +63,98 @@ parse_key :: (parent: *Value, scope: Scope) -> leaf:*Value, leaf_is_new:bool {
         array_add(array, KeyValue.{key=copy_string(key), value=.{type=.TABLE, table=resizable(KeyValue.[])}});
         return true, *peek_pointer(array.*).value;
     }
-    token := eat_expected_key(*scope, .LITERAL);
+    ok, token := eat_expected_key(*scope, .LITERAL); if !ok return;
     current_is_new, current_table := find_or_insert_new(*parent.table, token.str);
 
     // Check for dotted keys
     if has_next(scope) {
-        eat_expected_key(*scope, .DOT);
+        ok = eat_expected_key(*scope, .DOT); if !ok return;
         // If this is an Array of Tables header then we are going to add into its last table
         if current_table.type == Value.Type.ARRAY then { current_table = peek_pointer(current_table.array); }
-        current_table, current_is_new = parse_key(current_table, scope);
+        ok=, current_table, current_is_new = parse_key(current_table, scope); if !ok return;
     }
-    return current_table, current_is_new;
+    return true, current_table, current_is_new;
 }
 
 // * current_table is null for values in arrays
-parse_value :: (current_table: *Value, scope: *Scope) -> value:Value { // TODO only assign value if key is empty table
-    if !has_next(scope) { exit_with_error("Unexpected end of file while parsing value"); }
+parse_value :: (current_table: *Value, scope: *Scope) -> ok:=false, value:Value=.{} { // TODO only assign value if key is empty table
+    if !has_next(scope) { return_with_error("Unexpected end of file while parsing value"); }
 
     token := peek_token(scope);
     if token.type == {
-    case .SCOPE_BRACE;   return parse_inline_table(current_table, eat_scope(scope, token));;
-    case .SCOPE_BRACKET; return parse_array(eat_scope(scope, token));
-    case;                return parse_literal(scope);
+    case .SCOPE_BRACE;   ok, value := parse_inline_table(current_table, eat_scope(scope, token)); return ok, value;
+    case .SCOPE_BRACKET; ok, value := parse_array(eat_scope(scope, token));                       return ok, value;
+    case;                ok, value := parse_literal(scope);                                       return ok, value;
     }
 }
 
-parse_inline_table :: (current_table: *Value, scope: Scope) -> table:Value {
+parse_inline_table :: (current_table: *Value, scope: Scope) -> ok:=false, table:Value=.{} {
     // An inline table is either the right-hand side of an assignment to a key
     // or a value in an array. In case of the former it is important that we continue building
     // on the current key as a.b = {c.d = 1} is the same as in a.b.c.d = 1
     table_root := Value.{type=.TABLE, table=resizable(KeyValue.[])}; // Needed for tables in arrays that have no parent
     if current_table == null { current_table = *table_root; }
     while has_next(scope) {
-        leaf_value := parse_key(current_table, eat_scope_until(*scope, Token.Type.ASSIGN));
-        leaf_value.* = parse_value(leaf_value, *scope);
+        ok, key_scope := eat_scope_until(*scope, Token.Type.ASSIGN); if !ok return;
+        ok=, leaf_value := parse_key(current_table, key_scope);     if !ok return;
+        ok=, leaf_value.* = parse_value(leaf_value, *scope);        if !ok return;
         if has_next(scope, 2) { eat_expected(*scope, Token.Type.COMMA); } // Inline tables are not allowed to have trailing commas
     }
-    return current_table.*;
+    return true, current_table.*;
 }
 
-parse_array :: (scope: Scope) -> array:Value {
+parse_array :: (scope: Scope) -> ok:=false, array:Value=.{} {
     values : [..]Value;
     while has_next(scope) {
-        value := parse_value(null, *scope);
+        ok, value := parse_value(null, *scope); if !ok return;
         array_add(*values, value);
         if has_next(scope) { eat_expected(*scope, Token.Type.COMMA); }
     }
-    return Value.{type=.ARRAY, array=values};
+    return true, .{type=.ARRAY, array=values};
 }
 
-parse_literal :: (scope: *Scope) -> Value {
+parse_literal :: (scope: *Scope) -> ok:=false, literal:Value=.{} {
     token := eat_token(scope);
     if token.type == {
     case .LITERAL;       #through;
-    case .LITERAL_MULTI; return Value.{type=.STRING, string_value=copy_string(token.str)};
+    case .LITERAL_MULTI; return true, .{type=.STRING, string_value=copy_string(token.str)};
     case .BASIC;         #through;
-    case .BASIC_MULTI;   return Value.{type=.STRING, string_value=unescape(token, scope.source)};
+    case .BASIC_MULTI;
+        ok, unescaped := unescape(token, scope.source); if !ok return;
+        return true, .{type=.STRING, string_value=unescaped};
     case .RAW;
         // Parse boolean
-        if token.str == "true" { return Value.{type=.BOOL, bool_value=true}; }
-        if token.str == "false" { return Value.{type=.BOOL, bool_value=false}; }
+        if token.str == "true" { return true, .{type=.BOOL, bool_value=true}; }
+        if token.str == "false" { return true, .{type=.BOOL, bool_value=false}; }
 
         // Parse integer
         clean_str := replace(token.str, "_", ""); // TODO make number specific to check before and after _ is digit / hex etc
         if begins_with(token.str, "0x") {
             advance(*clean_str, 2);
             hex_value, success, remainder := string_to_int(clean_str, 16, s64);
-            if success && remainder.count == 0 { return Value.{type=.INT, int_value=hex_value}; }
+            if success && remainder.count == 0 { return true, .{type=.INT, int_value=hex_value}; }
         } else if begins_with(token.str, "0b") {
             advance(*clean_str, 2);
             bin_value, success, remainder := string_to_int(clean_str, 2, s64);
-            if success && remainder.count == 0 { return Value.{type=.INT, int_value=bin_value}; }
+            if success && remainder.count == 0 { return true, .{type=.INT, int_value=bin_value}; }
         } else if begins_with(token.str, "0o") {
             advance(*clean_str, 2);
             oct_value, success, remainder := string_to_int(clean_str, 8, s64);
-            if success && remainder.count == 0 { return Value.{type=.INT, int_value=oct_value}; }
+            if success && remainder.count == 0 { return true, .{type=.INT, int_value=oct_value}; }
         } else {
             int_value, success, remainder := string_to_int(clean_str, 10, s64);
             // TODO detect leading zeros error, note 00 can be the start of a time
-            if success && remainder.count == 0 { return Value.{type=.INT, int_value=int_value}; }
+            if success && remainder.count == 0 { return true, .{type=.INT, int_value=int_value}; }
         }
 
         // Parse float
         float_value, success, remainder := string_to_float64(clean_str);
         // TODO detect illegal floats: .7  7.  3.e+20 ... leading zeros
-        if success && remainder.count == 0 { return Value.{type=.FLOAT, float_value=float_value}; }
-        if token.str == "inf" || token.str == "+inf" { return Value.{type=.FLOAT, float_value=FLOAT64_INFINITY}; }
-        if token.str == "-inf"                       { return Value.{type=.FLOAT, float_value=-FLOAT64_INFINITY}; }
-        if token.str == "nan" || token.str == "+nan" { return Value.{type=.FLOAT, float_value=FLOAT64_NAN}; }
-        if token.str == "-nan"                       { return Value.{type=.FLOAT, float_value=-FLOAT64_NAN}; }
+        if success && remainder.count == 0 { return true, .{type=.FLOAT, float_value=float_value}; }
+        if token.str == "inf" || token.str == "+inf" { return true, .{type=.FLOAT, float_value=FLOAT64_INFINITY}; }
+        if token.str == "-inf"                       { return true, .{type=.FLOAT, float_value=-FLOAT64_INFINITY}; }
+        if token.str == "nan" || token.str == "+nan" { return true, .{type=.FLOAT, float_value=FLOAT64_NAN}; }
+        if token.str == "-nan"                       { return true, .{type=.FLOAT, float_value=-FLOAT64_NAN}; }
 
         // If date, check if next token is time separated by single space: 1979-05-27 07:32:00Z
         date_input := token.str;
@@ -163,16 +167,14 @@ parse_literal :: (scope: *Scope) -> Value {
             }
         }
         success=, chrono := parse_datetime(date_input);
-        if success { return Value.{type=.DATETIME, datetime=chrono}; }
+        if success { return true, .{type=.DATETIME, datetime=chrono}; }
 
-        exit_with_error_line(scope.source, token.loc, "Unable to parse literal %", token.str);
-    case;
-        exit_with_error_line(scope.source, token.loc, "Unexpected token %, expected a value", token.type);
+        return_with_error_line(scope.source, token.loc, "Unable to parse literal %", token.str);
+    case; return_with_error_line(scope.source, token.loc, "Unexpected token %, expected a value", token.type);
     }
-    return Value.{};
 }
 
-unescape :: (basic_token: Token, source: string) -> string {
+unescape :: (basic_token: Token, source: string) -> ok:=false, escaped:string="" {
     assert(basic_token.type == Token.Type.BASIC || basic_token.type == Token.Type.BASIC_MULTI);
     basic := basic_token.str;
 
@@ -184,7 +186,7 @@ unescape :: (basic_token: Token, source: string) -> string {
             pos += 1;
             continue;
         }
-        if pos + 1 >= basic.count {exit_with_error_line(source, basic_token.loc, "Unterminated escape sequence"); }
+        if pos + 1 >= basic.count {return_with_error_line(source, basic_token.loc, "Unterminated escape sequence"); }
 
         if basic[pos + 1] == {
         case #char "b";  append(*builder, #char "\x08"); pos += 2;
@@ -205,10 +207,10 @@ unescape :: (basic_token: Token, source: string) -> string {
             num_digits: s32 = xx ifx basic[pos + 1] == #char "u" then 4 else 8;
             pos += 2;
 
-            if pos + num_digits > basic.count {exit_with_error_line(source, basic_token.loc, "Expected % characters in the unicode escape sequence", num_digits); }
+            if pos + num_digits > basic.count {return_with_error_line(source, basic_token.loc, "Expected % characters in the unicode escape sequence", num_digits); }
             unicode_hex_str := slice(basic, pos, num_digits);
             hex_value, success, remainder := string_to_int(unicode_hex_str, 16, u32);
-            if !success || remainder.count != 0 { exit_with_error_line(source, basic_token.loc, "not valid unicode"); } // TODO improve loc, including \n
+            if !success || remainder.count != 0 { return_with_error_line(source, basic_token.loc, "not valid unicode"); } // TODO improve loc, including \n
 
             buf: [4]u8;
             tmp := string.{4, buf.data};
@@ -216,10 +218,10 @@ unescape :: (basic_token: Token, source: string) -> string {
 
             append(*builder, tmp);
             pos += num_digits;
-        case; exit_with_error_line(source, basic_token.loc, "Invalid escape sequence."); // TODO improve loc, including \n
+        case; return_with_error_line(source, basic_token.loc, "Invalid escape sequence."); // TODO improve loc, including \n
         }
     }
-    return builder_to_string(*builder);
+    return true, builder_to_string(*builder);
 }
 
 Scope :: struct {
@@ -239,42 +241,43 @@ eat_token :: (scope: *Scope) -> Token {
     scope.pos += 1;
     return token;
 }
-eat_expected :: (scope: *Scope, expected: Token.Type) {
+eat_expected :: (scope: *Scope, expected: Token.Type) -> ok:=false {
     token := eat_token(scope);
-    if token.type != expected { exit_with_error_line(scope.source, token.loc, "Expected %, got %", expected, token.type); }
+    if token.type != expected { return_with_error_line(scope.source, token.loc, "Expected %, got %", expected, token.type); }
+    return true;
 }
 // * Return: Only DOT or LITERAL tokens
-eat_key :: (scope: *Scope) -> Token {
+eat_key :: (scope: *Scope) -> ok:=false, key:Token=.{} {
     original := peek_token(scope);
     if scope.remaining_key.count == 0 {
         if original.type == {
         case .RAW;    scope.remaining_key = original.str; // A raw token may contain several dot separated keys
-        case .LITERAL; return eat_token(scope);           // A quoted token cannot have sub-keys
+        case .LITERAL; return true, eat_token(scope);           // A quoted token cannot have sub-keys
         case .BASIC;                                      // Normalize to LITERAL as the unescaped needs to be compared
             toki := eat_token(scope);
-            toki.str = unescape(toki, scope.source);
+            ok:, toki.str = unescape(toki, scope.source); if !ok return;
             toki.type = Token.Type.LITERAL;
-            return toki;
+            return true, toki;
         case .BASIC_MULTI;   #through;
-        case .LITERAL_MULTI; exit_with_error_line(scope.source, original.loc, "Cannot use multi-line strings as key");
+        case .LITERAL_MULTI; return_with_error_line(scope.source, original.loc, "Cannot use multi-line strings as key");
         case .DOT;           assert(false, "Parser expects lexer to give `.` as RAW, not as DOT");
-        case;                exit_with_error_line(scope.source, original.loc, "Expected key, got %", original.type);
+        case;                return_with_error_line(scope.source, original.loc, "Expected key, got %", original.type);
         }
     }
     // Handling potentially dot separated RAW key
     char_num := cast(s32) inline find_index_from_right(original.str, scope.remaining_key);
     next:, scope.remaining_key = split_from_left_incl(scope.remaining_key, #char ".");
     if scope.remaining_key.count == 0 { eat_token(scope); }
-    if next == "." { return Token.{type=Token.Type.DOT, loc=Location.{original.loc.line, char_num}}; }
+    if next == "." { return true, Token.{type=Token.Type.DOT, loc=Location.{original.loc.line, char_num}}; }
     else           {
-        if !is_bare_key(next) { exit_with_error_line(scope.source, .{original.loc.line, char_num}, "Invalid key % Bare keys may contain only A-Za-z0-9_- otherwise use quotes", next); }
-        return Token.{type=Token.Type.LITERAL, str=next, loc=Location.{original.loc.line, char_num}};
+        if !is_bare_key(next) { return_with_error_line(scope.source, .{original.loc.line, char_num}, "Invalid key % Bare keys may contain only A-Za-z0-9_- otherwise use quotes", next); }
+        return true, Token.{type=Token.Type.LITERAL, str=next, loc=Location.{original.loc.line, char_num}};
     }
 }
-eat_expected_key :: (scope: *Scope, expected: Token.Type) -> Token {
-    token := eat_key(scope);
-    if token.type != expected { exit_with_error_line(scope.source, token.loc, "Expected %, got %", expected, token.type); }
-    return token;
+eat_expected_key :: (scope: *Scope, expected: Token.Type) -> ok:=false, key:Token=.{} {
+    ok, token := eat_key(scope); if !ok return;
+    if token.type != expected { return_with_error_line(scope.source, token.loc, "Expected %, got %", expected, token.type); }
+    return true, token;
 }
 eat_scope :: (scope: *Scope, edible: Token) -> Scope {
     assert(edible.type == .SCOPE_BRACE || edible.type == .SCOPE_BRACKET);
@@ -282,15 +285,14 @@ eat_scope :: (scope: *Scope, edible: Token) -> Scope {
     return Scope.{scope.source, edible.scope, 0, ""};
 }
 // * sub_scope does not contain the scope_end token
-eat_scope_until :: (scope: *Scope, scope_end: Token.Type) -> sub_scope:Scope {
+eat_scope_until :: (scope: *Scope, scope_end: Token.Type) -> ok:=false, sub_scope:Scope=.{} {
     start_pos := scope.pos;
     while has_next(scope) { // TODO impl for for Scope
         if eat_token(scope).type == scope_end {
-            return Scope.{scope.source, array_view(scope.tokens, start_pos, scope.pos - start_pos - 1), 0, ""};
+            return true, Scope.{scope.source, array_view(scope.tokens, start_pos, scope.pos - start_pos - 1), 0, ""};
         }
     }
-    exit_with_error_line(scope.source, scope.tokens[start_pos].loc, "Unexpected end of scope. Expected %", scope_end);
-    return scope;
+    return_with_error_line(scope.source, scope.tokens[start_pos].loc, "Unexpected end of scope. Expected %", scope_end);
 }
 
 // .   -> `.`  ``   //     -> ``   ``    // a.b -> `a`  `.b`
