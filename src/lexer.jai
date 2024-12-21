@@ -155,8 +155,6 @@ tokenize :: (data: string) -> ok:=false, tokens:[]Token=.[] { // TODO change tok
     return true, lexer.tokens;
 }
 
-#scope_file
-
 Lexer :: struct {
     data: string;            // The original TOML input string
     tokens: [..]Token;       // The lexed tokens to be returned
@@ -184,8 +182,6 @@ get_line :: (data: string, line_number: s32) -> line: string, found:bool {
     for 1..line_number { line, found = consume_next_line(*data); }
     return line, found;
 }
-
-#scope_module
 
 return_with_error :: (format: string, arguments: .. Any) #expand {
     log_error(format, ..arguments);

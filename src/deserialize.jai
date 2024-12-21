@@ -11,7 +11,7 @@ deserialize :: (value: Value, $Target: Type) -> ok:=false, value:Target=.{} {
     return ok, target;
 }
 
-#scope_file
+#scope_module
 
 // slot is already initialized memory
 // Currently all fields are optional. TODO check TomlOptional Note and require_all true/false
@@ -230,8 +230,6 @@ initialize_memory :: (memory: *void, info: *Type_Info, count:s64=1) {
     }
     memset(memory, 0, total_size);
 }
-
-#scope_module
 
 scoped_pool :: () -> Allocator #expand {
     pool: Flat_Pool; // TBD does this needs to be backticked?

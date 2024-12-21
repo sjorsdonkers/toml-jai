@@ -1,8 +1,7 @@
 // Does not support:
 // - Rejecting all control characters
-// - Rejecting values that overwrite / append to previous ones
+// - Rejecting values that overwrite / append to previous ones!
 // - Full toml validation like newlines in an inline table or numbers with leading zeros or _s
-// - Error propagation
 
 #scope_module
 
@@ -25,8 +24,6 @@ parse :: (contents: string) -> ok:=false, root_table:Value=.{} {
     }
     return true, root_table;
 }
-
-#scope_file
 
 parse_header :: (root_table: *Value, scope: Scope) -> ok:=false, value:*Value=null {
     if !has_next(scope) || peek_token(scope).type != Token.Type.SCOPE_BRACKET{
@@ -363,7 +360,6 @@ string_to_int_checked :: (s: string, base := 10, $T := int) -> result: T, succes
     return sum, success, s;
 }
 
-#scope_module
 is_bare_key :: (str: string) -> bool {
     for str  if !is_alnum(it) && it != #char "-" return false;
     return str.count > 0;

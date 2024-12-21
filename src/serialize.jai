@@ -12,9 +12,9 @@ serialize :: (value: Value) -> ok:=false, toml:string="" {
     return true, builder_to_string(*builder);
 }
 
-#scope_file
+#scope_module
 
-// In file_scope as it does not deep copy strings
+// Note: Does not deep copy strings
 parse :: (slot: *void, info: *Type_Info) -> ok:=false, toml:Value=.{} {
     if #complete info.type == {
     case .INTEGER;
@@ -309,5 +309,6 @@ get_integer_value :: (data: *void, info: *Type_Info_Integer) -> ok:=false, value
     }
 }
 
+#scope_file
 #import "Basic";
 #import "Math";
