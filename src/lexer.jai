@@ -1,6 +1,8 @@
 // This lexer does not parse keys or literals, it just determines scopes of chars or tokens.
 // NOTE: The keys and literals point into the input data string.
 
+#scope_module
+
 Token :: struct {
     Type :: enum u8 {
         RAW           :: 0;         // str
@@ -26,9 +28,8 @@ Location :: struct {
     line, char: s32; // Line and column number, not index
 }
 
-tokenize :: (data: string) -> ok:=false, tokens:[]Token=.[] {
-    lexer := Lexer.{data=data};
-    defer array_free(lexer.scope_stack);
+tokenize :: (data: string) -> ok:=false, tokens:[]Token=.[] { // TODO change tokens to be [..]Token when the compile allows it to be defaulted
+    lexer := Lexer.{data=data}; // Not freeing scope_stack as it will be in a Pool
     array_reserve(*lexer.tokens, data.count / 2); // Rough estimate of token count
 
     while has_next(lexer) {
