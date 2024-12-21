@@ -2,12 +2,6 @@
 // https://datatracker.ietf.org/doc/html/rfc3339
 
 Chrono :: struct {
-    union {
-        time: Time;
-        date: Date;
-        datetime: DateTime;
-        datetime_offset: DateTimeOffset;
-    };
     Type :: enum u8 {
         LOCAL_TIME;
         LOCAL_DATE;
@@ -15,6 +9,12 @@ Chrono :: struct {
         OFFSET_DATETIME;
     }
     type: Type;
+    union {
+        time: Time;
+        date: Date;
+        datetime: DateTime;
+        datetime_offset: DateTimeOffset;
+    };
 }
 Time :: struct {
     hour       : u8;
