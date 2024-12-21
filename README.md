@@ -13,8 +13,7 @@ A module for `TOML v1.0.0` support. It provides functionality to read/write TOML
 - Read TOML directly into any (nested) struct.
 - Any field not in the TOML is default initialized. Any superfluous fields in the TOML are ignored.
 - Compile-time constants are ignored and not compared.
-- If the parser understands the input it will accept it even if it is officially invalid according to the standard.
-- WIP Failure to parse the input will currently result in a program `exit()`.
+- If the parser understands the input it will accept it even if it is officially invalid according to the standard. This may in the future change to be more strict.
 
 ## Serialize
 - Write any (nested) struct or Toml.Value to TOML string.
@@ -28,7 +27,7 @@ A module for `TOML v1.0.0` support. It provides functionality to read/write TOML
 
 ## Memory management
 - Returned data may have data allocated on the context allocator. Instead of free_x() procedures the user is expected to push an allocator such that all data can be dropped together.
-- Temporary storage is not used as some of the temporary data could be large.
+- Temporary storage is only used for serializing floats and errors.
 - All memory temporarily allocated in the module is freed together from a pool allocator.
 - In most cases this means that only the returned data will be left allocated on the context allocator.
 

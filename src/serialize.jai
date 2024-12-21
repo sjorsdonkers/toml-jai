@@ -41,7 +41,7 @@ parse :: (slot: *void, info: *Type_Info) -> ok:=false, toml:Value=.{} {
         case type_info(DateTimeOffset); return true, .{type=.DATETIME, datetime=.{type=.OFFSET_DATETIME, datetime_offset=(cast(*DateTimeOffset) slot).*}};
         }
         flattened := flat_nonnull_members(slot, xx info);
-        ok := replace_uniontag(slot, *flattened); if !ok return;
+        replace_uniontag(slot, *flattened);
 
         table: [..]KeyValue;
         array_reserve(*table, flattened.count);
@@ -123,10 +123,16 @@ serialize_inline :: (builder: *String_Builder, value: Value) {
     if #complete value.type == {
     case .BOOL;     print_item_to_builder(builder, value.bool_value);
     case .INT;      print_item_to_builder(builder, value.int_value);
-    case .FLOAT; // tmp := sprint("%", Any.{info, slot}); and also append(builder, tmp) give the wrong result for large values: 49999999999999995800000
-        tmp := sprint("%", value.float_value);
-        to_lower_in_place(tmp); // for Inf->inf / NaN->nan
-        print_item_to_builder(builder, tmp);
+    case .FLOAT;
+        if isnan(value.float_value) {
+            if ((cast(*u64)*value.float_value).* & 0x8000_0000_0000_0000) { append(builder, "-"); }
+            append(builder, "nan");
+        } else if isinf(value.float_value) {
+            if ((cast(*u64)*value.float_value).* & 0x8000_0000_0000_0000) { append(builder, "-"); }
+            append(builder, "inf");
+        } else {
+            print_item_to_builder(builder, value.float_value);
+        }
     case .STRING;   print_to_builder_escaped(builder, value.string_value, false);
     case .DATETIME; print_datetime_to_builder(builder, value.datetime);
     case .ARRAY;
@@ -187,7 +193,7 @@ flat_nonnull_members :: (slot: *void, info:*Type_Info_Struct) -> [..]Type_Info_S
     return flattened;
 }
 
-replace_uniontag :: (slot: *void, flattened:*[..]Type_Info_Struct_Member) -> ok:=false {
+replace_uniontag :: (slot: *void, flattened:*[..]Type_Info_Struct_Member) {
     index := flattened.count-1;
     while outer:= index >= 0 {
         defer index -= 1;
@@ -198,7 +204,7 @@ replace_uniontag :: (slot: *void, flattened:*[..]Type_Info_Struct_Member) -> ok:
         if !(member_info.textual_flags & .UNION) continue;
         tag_name: string;
         for note: member.notes if begins_with(note, "UnionTag:") { tag_name = slice(note, 9, note.count-9); break; }
-        if !tag_name return_with_error("Cannot serialize union without knowing which variant is active, @UnionTag:[member_name] is missing");
+        assert(tag_name!="", "Cannot serialize union without knowing which variant is active, @UnionTag:[member_name] is missing");
 
         // Remove it's tag member, replace union by its active variant
         for flattened.* if it.name == tag_name { // find instead of loop
@@ -212,9 +218,8 @@ replace_uniontag :: (slot: *void, flattened:*[..]Type_Info_Struct_Member) -> ok:
             if it_index < index { index -= 1; }
             continue outer;
         }
-        return_with_error("Union .%'s tag member `%` cannot be found", member.name, tag_name);
+        assert(false, "Union .%'s tag member `%` cannot be found", member.name, tag_name);
     }
-    return true;
 }
 
 is_null :: (slot: *void, info: *Type_Info) -> bool {
@@ -305,3 +310,4 @@ get_integer_value :: (data: *void, info: *Type_Info_Integer) -> ok:=false, value
 }
 
 #import "Basic";
+#import "Math";

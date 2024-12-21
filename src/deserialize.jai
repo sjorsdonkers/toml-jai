@@ -1,33 +1,33 @@
-deserialize :: (contents: string, $Target: Type) -> Target {
-    #if Target == Value return parse(contents); // Prevents unnecessarily copying
-    value := parse(contents,, scoped_pool());   // Using scoped_pool since Value can be a bit big for temp
-    return deserialize(value, Target);
+deserialize :: (contents: string, $Target: Type) -> ok:=false, value:Target=.{} {
+    ok, value := parse(contents,, scoped_pool()); if !ok return;   // Using scoped_pool since Value can be a bit big for temp
+    ok=, target := deserialize(value, Target);
+    return ok, target;
 }
 
-deserialize :: (value: Value, $Target: Type) -> Target {
+deserialize :: (value: Value, $Target: Type) -> ok:=false, value:Target=.{} {
     info :: type_info(Target);
     target :Target;
-    deserialize(value, *target, info, info.name);
-    return target;
+    ok := deserialize(value, *target, info, info.name);
+    return ok, target;
 }
 
 #scope_file
 
 // slot is already initialized memory
 // Currently all fields are optional. TODO check TomlOptional Note and require_all true/false
-deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="", name:string="") {
-    if info == type_info(Value) { (cast(*Value) slot).* = copy(toml); return; } // If we encounter a Toml.Value at any point just copy it
+deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="", name:string="") -> ok:=false {
+    if info == type_info(Value) { (cast(*Value) slot).* = copy(toml); return true; } // If we encounter a Toml.Value at any point just copy it
 
     if #complete info.type == {
     case .INTEGER;
         expect(toml.type, .INT, parent_name, name);
         valid, low, high := range_check_and_store(toml.int_value, cast(*Type_Info_Integer)info, slot);
-        if !valid { exit_with_error("Value for %.% is out of range. Given % expected min % max %", parent_name, name, toml.int_value, low, high); }
+        if !valid { return_with_error("Value for %.% is out of range. Given % expected min % max %", parent_name, name, toml.int_value, low, high); }
     case .FLOAT;
         expect(toml.type, .FLOAT, parent_name, name);
         if      info.runtime_size == 4 { (cast(*float)   slot).* = cast(float) toml.float_value; }
         else if info.runtime_size == 8 { (cast(*float64) slot).* = toml.float_value; }
-        else { exit_with_error("Unsupported float size %", info.runtime_size); }
+        else { return_with_error("Unsupported float size %", info.runtime_size); }
     case .BOOL;
         expect(toml.type, .BOOL, parent_name, name);
         (cast(*bool) slot).* = toml.bool_value;
@@ -39,22 +39,22 @@ deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="
         memory := alloc(pointer_info.pointer_to.runtime_size);
         initialize_memory(memory, pointer_info.pointer_to);
         (cast(**void) slot).* = memory;
-        deserialize(toml, memory, pointer_info.pointer_to, parent_name, name);
+        return deserialize(toml, memory, pointer_info.pointer_to, parent_name, name);
     case .VOID;
         expect(toml.type, .TABLE, parent_name, name);
-        if toml.table.count != 0 { exit_with_error("Expected empty table for %.%, got %", parent_name, name, toml.table.count);  }
+        if toml.table.count != 0 { return_with_error("Expected empty table for %.%, got %", parent_name, name, toml.table.count);  }
     case .STRUCT;
-        if deserialize_chrono(toml, slot, info) return;
+        if deserialize_chrono(toml, slot, info) return true;
         expect(toml.type, .TABLE, parent_name, name);
 
         members := flat_members(xx info); defer array_free(members);
         for member: members if !(member.flags & .USING && member.type.type == .STRUCT) {
             for toml.table if it.key == member.name {
-                deserialize(it.value, slot + member.offset_in_bytes, member.type, parent_name, member.name);
+                ok := deserialize(it.value, slot + member.offset_in_bytes, member.type, parent_name, member.name); if !ok return;
                 break; // TODO catch multiple members from the same union, works but leaky, will also needed to determine required members are set
             }
         }
-        enforce_uniontag_note(toml.table, slot, members, parent_name);
+        ok := enforce_uniontag_note(toml.table, slot, members, parent_name); if !ok return;
     case .ARRAY;
         expect(toml.type, .ARRAY, parent_name, name);
         array_info := cast(*Type_Info_Array) info;
@@ -63,12 +63,12 @@ deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="
         fill_array :: (toml_array: []Value, slot: *void, item_info: *Type_Info, parent_name:string) {
             for idx: 0..toml_array.count-1 {
                 item_slot := slot + item_info.runtime_size * idx;
-                deserialize(toml_array[idx], item_slot, item_info, parent_name, "[item]");
+                ok := deserialize(toml_array[idx], item_slot, item_info, parent_name, "[item]"); if !ok return;
             }
         }
         if #complete array_info.array_type == {
         case .FIXED;
-            if toml.array.count != array_info.array_count { exit_with_error("Fixed array %.% expected % items, got %", parent_name, name, array_info.array_count, toml.array.count); }
+            if toml.array.count != array_info.array_count { return_with_error("Fixed array %.% expected % items, got %", parent_name, name, array_info.array_count, toml.array.count); }
             fill_array(toml.array, slot, element_type, name); // NOTE .FIXED is inside the struct so already initialized
         case .VIEW;
             array := cast(*[] u8) slot;
@@ -114,29 +114,30 @@ deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="
         }
         any_value.value_pointer = alloc(any_value.type.runtime_size);
         initialize_memory(any_value.value_pointer, any_value.type);
-        deserialize(toml, any_value.value_pointer, any_value.type, parent_name, name);
+        return deserialize(toml, any_value.value_pointer, any_value.type, parent_name, name);
     case .ENUM;
         enum_info := cast(*Type_Info_Enum) info;
         if toml.type == {
         case .STRING;
             found, index := array_find(enum_info.names, toml.string_value);
-            if !found { exit_with_error("String % is not a variant of enum %", toml.string_value, enum_info.name); }
+            if !found { return_with_error("String % is not a variant of enum %", toml.string_value, enum_info.name); }
             set_enum_value(slot, enum_info, enum_info.values[index]);
         case .INT;
             found := array_find(enum_info.values, toml.int_value);
-            if !found { exit_with_error("Value % is not a variant of enum %", toml.int_value, enum_info.name); }
+            if !found { return_with_error("Value % is not a variant of enum %", toml.int_value, enum_info.name); }
             set_enum_value(slot, enum_info, toml.int_value);
-        case; exit_with_error("Wrong type for %.%, expected STRING or INT, got % ", parent_name, name, toml.type);
+        case; return_with_error("Wrong type for %.%, expected STRING or INT, got % ", parent_name, name, toml.type);
         }
     case .VARIANT;
         variant_info := cast(*Type_Info_Variant) info;
-        deserialize(toml, slot, variant_info.variant_of, parent_name, name);
+        return deserialize(toml, slot, variant_info.variant_of, parent_name, name);
     case .PROCEDURE;            #through;
     case .OVERLOAD_SET;         #through;
     case .POLYMORPHIC_VARIABLE; #through;
     case .TYPE;                 #through;
-    case .CODE;  exit_with_error("Deserialization to type % is not supported", info.type);
+    case .CODE;  return_with_error("Deserialization to type % is not supported", info.type);
     }
+    return true;
 }
 
 deserialize_chrono ::  (toml: Value, slot: *void, info: *Type_Info) -> is_chrono:bool {
@@ -169,7 +170,7 @@ flat_members :: (info:*Type_Info_Struct) -> [..]Type_Info_Struct_Member { // TOD
     return flattened;
 }
 
-enforce_uniontag_note :: (toml_table: []KeyValue, slot: *void, flat_members: []Type_Info_Struct_Member, parent_name: string) {
+enforce_uniontag_note :: (toml_table: []KeyValue, slot: *void, flat_members: []Type_Info_Struct_Member, parent_name: string) -> ok:=false {
     for member: flat_members {
         // Find union member with @UnionTag note
         if member.type.type != .STRUCT continue;
@@ -182,18 +183,19 @@ enforce_uniontag_note :: (toml_table: []KeyValue, slot: *void, flat_members: []T
         // Find it's tag member
         tag : *Type_Info_Struct_Member;
         for * flat_members if it.name == tag_name { tag = it; break; }
-        if !tag { exit_with_error("Union %.%'s tag member `%` cannot be found", parent_name, member.name, tag_name); }
+        assert(tag!=null, "Union %.%'s tag member `%` cannot be found", parent_name, member.name, tag_name);
 
         // Determine which union member is was set (if any) and set the tag to its index
         for #v2 < union_member, union_idx: member_info.members for toml_table if it.key == union_member.name { // Reverse in case of multiple
-            deserialize(.{type=.INT, int_value=union_idx}, slot + tag.offset_in_bytes, tag.type, parent_name, union_member.name);
+            ok := deserialize(.{type=.INT, int_value=union_idx}, slot + tag.offset_in_bytes, tag.type, parent_name, union_member.name); if !ok return;
             break union_member;
         }
     }
+    return true;
 }
 
-expect :: inline (given: Value.Type, expected: Value.Type, struct_name: string, member_name: string) {
-    if given != expected { exit_with_error("Wrong type for %.%, expected %, got % ", struct_name, member_name, expected, given); }
+expect :: inline (given: Value.Type, expected: Value.Type, struct_name: string, member_name: string) #expand {
+    if given != expected { `return_with_error("Wrong type for %.%, expected %, got % ", struct_name, member_name, expected, given); }
 }
 
 //

@@ -15,17 +15,17 @@ main :: () {
 
 read_parse_print :: (filepath: string) {
     contents := read_entire_file(filepath);
-    toml := Toml.deserialize(contents, Toml.Value);
+    ok, toml := Toml.deserialize(contents, Toml.Value); assert(ok);
     print("File: %\n", filepath);
-    ok, ser := Toml.serialize(toml); assert(ok);
-    print("Toml: %\n", ser);
-    toml2 := Toml.deserialize(ser, Toml.Value);
-    ok=,ser2  := Toml.serialize(toml2); assert(ok);
-    // print("Toml2: %\n", ser2);
+    ok=, ser := Toml.serialize(toml); assert(ok);
+    print("Toml:\n%", ser);
+    ok=, toml2 := Toml.deserialize(ser, Toml.Value); assert(ok);
+    ok=, ser2  := Toml.serialize(toml2); assert(ok);
+    // print("Toml2:\n%", ser2);
 
     assert(ser == ser2);
 }
 
-Toml :: #import, file "../module.jai";
+using Toml :: #import, file "../module.jai";
 #import "Basic";
 #import "File";
