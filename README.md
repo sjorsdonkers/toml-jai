@@ -27,10 +27,9 @@ A module for `TOML v1.0.0` support. It provides functionality to read/write TOML
 
 ## Memory management
 - Returned data may have data allocated on the context allocator. Instead of free_x() procedures the user is expected to push an allocator such that all data can be dropped together.
-- Temporary storage is only used for serializing floats and errors.
+- Temporary storage is only used for error messages as some of the intermediate data may be large.
 - All memory temporarily allocated in the module is freed together from a pool allocator.
 - In most cases this means that only the returned data will be left allocated on the context allocator.
-
 
 ## Testing
 The module is tested by compiling and running the examples. All examples can be compiled and run by `jai ./tests.jai`
