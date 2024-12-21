@@ -17,8 +17,8 @@ main :: () {
         .{"Fruit", #run MyFruit},
     );
     ok=, food     := Toml.deserialize("bread = {baguette = 3}", MyFood); print("food: %\n", food); assert(ok);
-    bread    := unwrap(food, MyFood.Bread);                         print("bread: %\n", bread);
-    baguette := unwrap(bread, MyBread.Baguette);                    print("baguette: %\n", baguette);
+    bread    := unwrap(food, MyFood.Bread);                              print("bread: %\n", bread);
+    baguette := unwrap(bread, MyBread.Baguette);                         print("baguette: %\n", baguette);
     assert(3 == baguette);
     ok=, other_food  := Toml.deserialize("[fruit.mango]", MyFood); assert(ok);
     other_fruit := unwrap(other_food, MyFood.Fruit);   print("other_fruit: %\n", other_fruit);

@@ -123,10 +123,16 @@ serialize_inline :: (builder: *String_Builder, value: Value) {
     if #complete value.type == {
     case .BOOL;     print_item_to_builder(builder, value.bool_value);
     case .INT;      print_item_to_builder(builder, value.int_value);
-    case .FLOAT; // tmp := sprint("%", Any.{info, slot}); and also append(builder, tmp) give the wrong result for large values: 49999999999999995800000
-        tmp := sprint("%", value.float_value);
-        to_lower_in_place(tmp); // for Inf->inf / NaN->nan
-        print_item_to_builder(builder, tmp);
+    case .FLOAT;
+        if isnan(value.float_value) {
+            if ((cast(*u64)*value.float_value).* & 0x8000_0000_0000_0000) { append(builder, "-"); }
+            append(builder, "nan");
+        } else if isinf(value.float_value) {
+            if ((cast(*u64)*value.float_value).* & 0x8000_0000_0000_0000) { append(builder, "-"); }
+            append(builder, "inf");
+        } else {
+            print_item_to_builder(builder, value.float_value);
+        }
     case .STRING;   print_to_builder_escaped(builder, value.string_value, false);
     case .DATETIME; print_datetime_to_builder(builder, value.datetime);
     case .ARRAY;
@@ -304,3 +310,4 @@ get_integer_value :: (data: *void, info: *Type_Info_Integer) -> ok:=false, value
 }
 
 #import "Basic";
+#import "Math";

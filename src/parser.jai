@@ -98,8 +98,8 @@ parse_inline_table :: (current_table: *Value, scope: Scope) -> ok:=false, table:
     if current_table == null { current_table = *table_root; }
     while has_next(scope) {
         ok, key_scope := eat_scope_until(*scope, Token.Type.ASSIGN); if !ok return;
-        ok=, leaf_value := parse_key(current_table, key_scope);     if !ok return;
-        ok=, leaf_value.* = parse_value(leaf_value, *scope);        if !ok return;
+        ok=, leaf_value := parse_key(current_table, key_scope);      if !ok return;
+        ok=, leaf_value.* = parse_value(leaf_value, *scope);         if !ok return;
         if has_next(scope, 2) { eat_expected(*scope, Token.Type.COMMA); } // Inline tables are not allowed to have trailing commas
     }
     return true, current_table.*;
@@ -133,18 +133,18 @@ parse_literal :: (scope: *Scope) -> ok:=false, literal:Value=.{} {
         clean_str := replace(token.str, "_", ""); // TODO make number specific to check before and after _ is digit / hex etc
         if begins_with(token.str, "0x") {
             advance(*clean_str, 2);
-            hex_value, success, remainder := string_to_int(clean_str, 16, s64);
+            hex_value, success, remainder := string_to_int_checked(clean_str, 16, s64);
             if success && remainder.count == 0 { return true, .{type=.INT, int_value=hex_value}; }
         } else if begins_with(token.str, "0b") {
             advance(*clean_str, 2);
-            bin_value, success, remainder := string_to_int(clean_str, 2, s64);
+            bin_value, success, remainder := string_to_int_checked(clean_str, 2, s64);
             if success && remainder.count == 0 { return true, .{type=.INT, int_value=bin_value}; }
         } else if begins_with(token.str, "0o") {
             advance(*clean_str, 2);
-            oct_value, success, remainder := string_to_int(clean_str, 8, s64);
+            oct_value, success, remainder := string_to_int_checked(clean_str, 8, s64);
             if success && remainder.count == 0 { return true, .{type=.INT, int_value=oct_value}; }
         } else {
-            int_value, success, remainder := string_to_int(clean_str, 10, s64);
+            int_value, success, remainder := string_to_int_checked(clean_str, 10, s64);
             // TODO detect leading zeros error, note 00 can be the start of a time
             if success && remainder.count == 0 { return true, .{type=.INT, int_value=int_value}; }
         }
@@ -211,7 +211,7 @@ unescape :: (basic_token: Token, source: string) -> ok:=false, escaped:string=""
 
             if pos + num_digits > basic.count {return_with_error_line(source, basic_token.loc, "Expected % characters in the unicode escape sequence", num_digits); }
             unicode_hex_str := slice(basic, pos, num_digits);
-            hex_value, success, remainder := string_to_int(unicode_hex_str, 16, u32);
+            hex_value, success, remainder := string_to_int_checked(unicode_hex_str, 16, u32);
             if !success || remainder.count != 0 { return_with_error_line(source, basic_token.loc, "not valid unicode"); } // TODO improve loc, including \n
 
             buf: [4]u8;
@@ -304,6 +304,63 @@ split_from_left_incl :: (s: string, separator: u8) -> (left: string, right: stri
     if index == -1  return s, "";
     if index == 0  index = 1; // Starts with separator
     return slice(s, 0, index), slice(s, index, s.count - index);
+}
+
+// Taken from Basic, modified to check overflow
+string_to_int_checked :: (s: string, base := 10, $T := int) -> result: T, success: bool, remainder: string {
+    assert(base == 16 || base <= 10);
+    if !s return 0, false, "";
+
+    sign : T = 1;
+    #if #run type_info(T).signed {
+        if s[0] == #char "-" {
+            sign = -1;
+            advance(*s, 1);
+        } else if s[0] == #char "+" {
+            advance(*s, 1);
+        }
+    }
+
+    sum: T = 0;
+    cursor := 0;
+
+    if base == 16 {
+        while cursor < s.count {
+            c := s[cursor];
+
+            value: u8 = ---;
+            if is_digit(c)                               { value = c - #char "0"; }
+            else if (c >= #char "a") && (c <= #char "f") { value = c - #char "a" + 10; }
+            else if (c >= #char "A") && (c <= #char "F") { value = c - #char "A" + 10; }
+            else { break; }
+
+            sum *= cast(T) base;
+            sum += sign * cast(T)value;
+            log("sum: %, sign: %, value: %, c: %", sum, sign, value, c);
+            if (sum < 0) ^ (sign < 0) { return 0, false, s; }
+
+            cursor += 1;
+        }
+    } else {
+        while cursor < s.count {
+            c := s[cursor];
+            if !is_digit(c) break;
+
+            digit := c - #char "0";
+            if digit >= base break;
+
+            sum *= cast(T) base;
+            sum += sign*cast(T)digit;
+            if (sum < 0) ^ (sign < 0) { return 0, false, s; }
+
+            cursor += 1;
+        }
+    }
+
+    success := (cursor != 0);
+    advance(*s, cursor);
+
+    return sum, success, s;
 }
 
 #scope_module

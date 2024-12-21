@@ -197,7 +197,7 @@ return_with_error_line :: (source: string, loc: Location, format: string, argume
         log_error("Failed to read line % from file", loc.line);
         `return;
     }
-    message := sprint(format, ..arguments);
+    message := tprint(format, ..arguments);
     log_error("Line % Char %: %", loc.line, loc.char, message);
     log_error(line);
 

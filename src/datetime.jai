@@ -19,7 +19,7 @@ Chrono :: struct {
 Time :: struct {
     hour       : u8;
     minute     : u8;
-    second     : u8; // Can be 60, leap second
+    second     : u8;
     millisecond: u16;
 }
 Date :: struct {
