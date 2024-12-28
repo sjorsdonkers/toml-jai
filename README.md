@@ -33,3 +33,17 @@ A module for `TOML v1.0.0` support. It provides functionality to read/write TOML
 
 ## Testing
 The module is tested by compiling and running the examples. All examples can be compiled and run by `jai ./tests.jai`
+
+## Implementation
+
+### Two-step (de)serialization
+The module supports both Typed as well as Generic data using Toml.Value. To avoid having to maintain 2 implementations the Typed version is implemented by going through the Generic version. As a result there are some extra data copies/allocations as well as limitations like no support for integers > S64_MAX and slightly reduced accuracy for float due to intermediate conversion through float64.
+
+### Type reflection
+We only have a run-time reflection based implementation, e.g. pointer and Type_Info based like: `parse :: (slot: *void, info: Type_Info)`. A compile-time reflection based implementation that has the types determined at compile-time like `parse :: (data: *$T)` would have slightly cleaner code and better run-time performance, but it does not support dynamic types like Any. Having multiple implementations, or alternative solutions like requiring the user to poke_name a custom serializer for every possible type contained in the Any are considered undesirable.
+
+### [planned] Customization points
+A user may want to modify how a struct is serialized for example: omit members, rename members or create a specific toml structure. For various use cases we may implement specific solutions like notes on members that are required/optional, or their serialization name. For more complex cases we may allow the user to provide a procedure that converts A->B such that whenever an A occurs it is serialized as a B (note that B could be Toml.Value), Likely such a conversion procedures would come in pairs for serialization A->B and deserialization B->A.
+
+### Lexer
+The tokenization/lexer phase completes before the parser starts. As a result memory needs to be allocated to store the tokens. There is no particular reason for this implementation other than that I wanted to experiment with this type of lexer. Unlike traditional lexers the one implemented here does not parse the tokens into literals like int/float/etc it just determines a token starts and ends. It is the responsibility of the parser to interpret the string when it has more context.

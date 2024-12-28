@@ -14,7 +14,7 @@ serialize :: (value: Value) -> ok:=false, toml:string="" {
 
 #scope_module
 
-// Note: Does not deep copy strings
+// Note: Does not deep copy
 parse :: (slot: *void, info: *Type_Info) -> ok:=false, toml:Value=.{} {
     if #complete info.type == {
     case .INTEGER;
