@@ -5,6 +5,8 @@
 
 #scope_module
 
+// Note this parser is zero-copy except for basic strings as they need to be unescaped
+// As such the keys and strings in the returned Value may point into the source string
 parse :: (contents: string) -> ok:=false, root_table:Value=.{} {
     ok, tokens := tokenize(contents);  if !ok return; // Not freeing tokens as it will be in a Pool
     scope  := Scope.{contents, tokens, 0, ""};
@@ -59,7 +61,7 @@ parse_key :: (parent: *Value, scope: Scope) -> ok:=false, leaf:*Value=null, leaf
     // Get or insert key
     find_or_insert_new :: (array: *[..]KeyValue, key: string) -> is_new:bool, *Value {
         for array.* if it.key == key { return false, *it.value; }
-        array_add(array, KeyValue.{key=copy_string(key), value=.{type=.TABLE, table=resizable(KeyValue.[])}});
+        array_add(array, KeyValue.{key=key, value=.{type=.TABLE, table=resizable(KeyValue.[])}});
         return true, *peek_pointer(array.*).value;
     }
     ok, token := eat_expected_key(*scope, .LITERAL); if !ok return;
@@ -116,7 +118,7 @@ parse_literal :: (scope: *Scope) -> ok:=false, literal:Value=.{} {
     token := eat_token(scope);
     if token.type == {
     case .LITERAL;       #through;
-    case .LITERAL_MULTI; return true, .{type=.STRING, string_value=copy_string(token.str)};
+    case .LITERAL_MULTI; return true, .{type=.STRING, string_value=token.str};
     case .BASIC;         #through;
     case .BASIC_MULTI;
         ok, unescaped := unescape(token, scope.source); if !ok return;
@@ -251,7 +253,7 @@ eat_key :: (scope: *Scope) -> ok:=false, key:Token=.{} {
     if scope.remaining_key.count == 0 {
         if original.type == {
         case .RAW;    scope.remaining_key = original.str; // A raw token may contain several dot separated keys
-        case .LITERAL; return true, eat_token(scope);           // A quoted token cannot have sub-keys
+        case .LITERAL; return true, eat_token(scope);     // A quoted token cannot have sub-keys
         case .BASIC;                                      // Normalize to LITERAL as the unescaped needs to be compared
             toki := eat_token(scope);
             ok:, toki.str = unescape(toki, scope.source); if !ok return;
