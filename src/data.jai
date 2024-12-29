@@ -11,12 +11,12 @@ Value :: struct {
     type: Type;
     union {
         bool_value     : bool;
-        int_value      : s64;
-        float_value    : float64;
-        string_value   : string;
-        datetime       : Chrono;
-        array          : [..]Value;
-        table          : [..]KeyValue;
+        int_value      : s64 = ---;
+        float_value    : float64 = ---;
+        string_value   : string = ---;
+        datetime       : Chrono = ---;
+        array          : [..]Value = ---;
+        table          : [..]KeyValue = ---;
     };
 }
 KeyValue :: struct {

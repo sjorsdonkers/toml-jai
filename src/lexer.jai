@@ -18,8 +18,8 @@ Token :: struct {
     }
     type: Type;
     union {
-        str  : string;  // View into `data`
-        scope: []Token; // View into `tokens` starting at the next token
+        str  : string;        // View into `data`
+        scope: []Token = ---; // View into `tokens` starting at the next token
     };
     loc: Location;
 }

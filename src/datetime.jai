@@ -12,9 +12,9 @@ Chrono :: struct {
     type: Type;
     union {
         time: Time;
-        date: Date;
-        datetime: DateTime;
-        datetime_offset: DateTimeOffset;
+        date: Date = ---;
+        datetime: DateTime = ---;
+        datetime_offset: DateTimeOffset = ---;
     };
 }
 Time :: struct {
