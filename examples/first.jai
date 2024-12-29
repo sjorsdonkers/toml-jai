@@ -92,13 +92,18 @@ DONE
     using mychrono.t;
     print("chrono: %1-%2-%3 %4:%5:%6%7%8:%9\n", year, month, day, hour, minute, second, ifx offset_is_negative "-" else "+", offset_hour, offset_minute);
 
-    // Due to differences in formatting dotted keys may become tables headers and vise versa.
+    // Due to differences in formatting dotted keys may become tables headers and vice versa.
     // Dotted key-values are always printed before table headers for correctness
     // This may reorder the keys in the serialized TOML data.
     ok=, header_order := Toml.deserialize("a.b = [1,2,3]\nc.d = 4", Toml.Value); assert(ok);
     ok_header, header := Toml.serialize(header_order); assert(ok_header);
     print("header_order:\n%", header);
     assert(header == "c.d=4\n[a]\nb=[1, 2, 3]\n");
+
+    // Floats may be serialized from integer values in the TOML data.
+    MyFloat :: struct { f: float; }
+    ok=, myfloat := Toml.deserialize("f = 3", MyFloat); assert(ok);
+    assert (myfloat.f == 3.0);
 
     // Pointers, ANY, VIEW and RESIZABLE arrays are supported at any depth in the struct definition.
     // These types that are referencing memory elsewhere will have new memory allocated for them with the context allocator.

@@ -24,9 +24,9 @@ deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="
         valid, low, high := range_check_and_store(toml.int_value, cast(*Type_Info_Integer)info, slot);
         if !valid { return_with_error("Value for %.% is out of range. Given % expected min % max %", parent_name, name, toml.int_value, low, high); }
     case .FLOAT;
-        expect(toml.type, .FLOAT, parent_name, name);
-        if      info.runtime_size == 4 { (cast(*float)   slot).* = cast(float) toml.float_value; }
-        else if info.runtime_size == 8 { (cast(*float64) slot).* = toml.float_value; }
+        if toml.type != .INT expect(toml.type, .FLOAT, parent_name, name); // Allow int to float conversion
+        if      info.runtime_size == 4 { (cast(*float)   slot).* = ifx toml.type == .INT then cast(float)   toml.int_value else cast(float) toml.float_value; }
+        else if info.runtime_size == 8 { (cast(*float64) slot).* = ifx toml.type == .INT then cast(float64) toml.int_value else             toml.float_value; }
         else { return_with_error("Unsupported float size %", info.runtime_size); }
     case .BOOL;
         expect(toml.type, .BOOL, parent_name, name);
