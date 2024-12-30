@@ -231,6 +231,7 @@ reference_types :: () {
         andy: Any;
     }
     ok=, toml4 := Toml.deserialize("andy = 3", Amy); assert(ok);
+    print("toml4: %\n", toml4);
     assert("{3}" == tprint("%", toml4));
     ok=, toml4 = Toml.deserialize("andy = 'hello'", Amy); assert(ok);
     assert("{\"hello\"}" == tprint("%", toml4));
