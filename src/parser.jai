@@ -20,7 +20,8 @@ parse :: (contents: string) -> ok:=false, root_table:Value=.{} {
             ok=, current_table = parse_header(*root_table, eat_scope(*scope, token)); if !ok return;
         } else {
             ok=, key_scope := eat_scope_until(*scope, Token.Type.ASSIGN);             if !ok return;
-            ok=, leaf_value := parse_key(current_table, key_scope);                   if !ok return;
+            ok=, leaf_value, is_new := parse_key(current_table, key_scope);           if !ok return;
+            if !is_new { return_with_error_line(scope.source, peek(key_scope.tokens).loc, "Key already has a value of type %", leaf_value.type); }
             ok=, leaf_value.* = parse_value(leaf_value, *scope);                      if !ok return;
         }
     }
@@ -32,7 +33,7 @@ parse_header :: (root_table: *Value, scope: Scope) -> ok:=false, value:*Value=nu
         // Parse [table] header
         ok, current_table, is_new := parse_key(root_table, scope); if !ok return;
         if !is_new && current_table.type != Value.Type.TABLE {
-            return_with_error_line(scope.source, peek(scope.tokens).loc, "Cannot use key as Tables as it already has a value: %", current_table.type);
+            return_with_error_line(scope.source, peek(scope.tokens).loc, "Cannot use key as Table header as it already has a value: %", current_table.type);
         }
         return true, current_table;
     } else {
@@ -64,16 +65,16 @@ parse_key :: (parent: *Value, scope: Scope) -> ok:=false, leaf:*Value=null, leaf
         return true, *peek_pointer(array.*).value;
     }
     ok, token := eat_expected_key(*scope, .LITERAL); if !ok return;
-    current_is_new, current_table := find_or_insert_new(*parent.table, token.str);
+    current_is_new, current_value := find_or_insert_new(*parent.table, token.str);
 
     // Check for dotted keys
     if has_next(scope) {
         ok = eat_expected_key(*scope, .DOT); if !ok return;
         // If this is an Array of Tables header then we are going to add into its last table
-        if current_table.type == Value.Type.ARRAY then { current_table = peek_pointer(current_table.array); }
-        ok=, current_table, current_is_new = parse_key(current_table, scope); if !ok return;
+        if current_value.type == Value.Type.ARRAY then { current_value = peek_pointer(current_value.array); }
+        ok=, current_value, current_is_new = parse_key(current_value, scope); if !ok return;
     }
-    return true, current_table, current_is_new;
+    return true, current_value, current_is_new;
 }
 
 // * current_table is null for values in arrays
@@ -95,9 +96,10 @@ parse_inline_table :: (current_table: *Value, scope: Scope) -> ok:=false, table:
     table_root: Value; // Needed for tables in arrays that have no parent
     if current_table == null { current_table = *table_root; }
     while has_next(scope) {
-        ok, key_scope := eat_scope_until(*scope, Token.Type.ASSIGN); if !ok return;
-        ok=, leaf_value := parse_key(current_table, key_scope);      if !ok return;
-        ok=, leaf_value.* = parse_value(leaf_value, *scope);         if !ok return;
+        ok, key_scope := eat_scope_until(*scope, Token.Type.ASSIGN);    if !ok return;
+        ok=, leaf_value, is_new := parse_key(current_table, key_scope); if !ok return;
+        if !is_new { return_with_error_line(scope.source, peek(key_scope.tokens).loc, "Key already has a value of type %", leaf_value.type); }
+        ok=, leaf_value.* = parse_value(leaf_value, *scope);            if !ok return;
         if has_next(scope, 2) { eat_expected(*scope, Token.Type.COMMA); } // Inline tables are not allowed to have trailing commas
     }
     return true, current_table.*;
@@ -287,7 +289,7 @@ eat_scope :: (scope: *Scope, edible: Token) -> Scope {
 // * sub_scope does not contain the scope_end token
 eat_scope_until :: (scope: *Scope, scope_end: Token.Type) -> ok:=false, sub_scope:Scope=.{} {
     start_pos := scope.pos;
-    while has_next(scope) { // TODO impl for for Scope
+    while has_next(scope) {
         if eat_token(scope).type == scope_end {
             return true, Scope.{scope.source, array_view(scope.tokens, start_pos, scope.pos - start_pos - 1), 0, ""};
         }

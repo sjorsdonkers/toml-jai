@@ -4,6 +4,7 @@
 #run {
     test("./examples", "first");
     test("./examples", "file_examples");
+    test("./examples", "validation");
 
     set_build_options_dc(.{do_output=false});
 }
