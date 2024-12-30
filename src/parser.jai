@@ -12,7 +12,7 @@ parse :: (contents: string) -> ok:=false, root_table:Value=.{} {
     scope  := Scope.{contents, tokens, 0, ""};
 
     // At top level we can expect ([[keys]], [keys], keys = value)
-    root_table := Value.{type=.TABLE, table=resizable(KeyValue.[])};
+    root_table: Value;
     current_table := *root_table;
     while has_next(scope) {
         token := peek_token(scope);
@@ -48,8 +48,7 @@ parse_header :: (root_table: *Value, scope: Scope) -> ok:=false, value:*Value=nu
             if !is_new { return_with_error_line(aot_scope.source, peek(aot_scope.tokens).loc, "Cannot use key as Array of Tables as it already has a value: %", current_table.type); }
             current_table.* = .{type=.ARRAY, array=resizable(Value.[])};
         }
-        array_add(*current_table.array, Value.{type=.TABLE, table=resizable(KeyValue.[])});
-        return true, peek_pointer(current_table.array);
+        return true, array_add(*current_table.array);
     }
 }
 
@@ -61,7 +60,7 @@ parse_key :: (parent: *Value, scope: Scope) -> ok:=false, leaf:*Value=null, leaf
     // Get or insert key
     find_or_insert_new :: (array: *[..]KeyValue, key: string) -> is_new:bool, *Value {
         for array.* if it.key == key { return false, *it.value; }
-        array_add(array, KeyValue.{key=key, value=.{type=.TABLE, table=resizable(KeyValue.[])}});
+        array_add(array, KeyValue.{key=key, value=.{}});
         return true, *peek_pointer(array.*).value;
     }
     ok, token := eat_expected_key(*scope, .LITERAL); if !ok return;
@@ -93,7 +92,7 @@ parse_inline_table :: (current_table: *Value, scope: Scope) -> ok:=false, table:
     // An inline table is either the right-hand side of an assignment to a key
     // or a value in an array. In case of the former it is important that we continue building
     // on the current key as a.b = {c.d = 1} is the same as in a.b.c.d = 1
-    table_root := Value.{type=.TABLE, table=resizable(KeyValue.[])}; // Needed for tables in arrays that have no parent
+    table_root: Value; // Needed for tables in arrays that have no parent
     if current_table == null { current_table = *table_root; }
     while has_next(scope) {
         ok, key_scope := eat_scope_until(*scope, Token.Type.ASSIGN); if !ok return;
