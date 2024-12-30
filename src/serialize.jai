@@ -27,7 +27,7 @@ parse :: (slot: *void, info: *Type_Info) -> ok:=false, toml:Value=.{} {
     case .BOOL;   return true, .{type=.BOOL, bool_value=cast(*bool, slot).*};
     case .STRING; return true, .{type=.STRING, string_value=cast(*string, slot).*}; // No copy!
     case .POINTER;
-        assert(cast(**void) slot != null, "Implementation error: null pointers should be filtered out");
+        assert(cast(**void, slot) != null, "Implementation error: null pointers should be filtered out");
         ok, value := parse(cast(**void, slot).*, cast(*Type_Info_Pointer, info).pointer_to);
         return ok, value;
     case .VOID;  return true, .{type=.TABLE, table=resizable(KeyValue.[])};
