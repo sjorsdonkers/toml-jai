@@ -8,15 +8,15 @@ Value :: struct {
         ARRAY;
         TABLE;
     }
-    type: Type;
+    type :Type= .TABLE;
     union {
-        bool_value     : bool;
+        bool_value     : bool = ---;
         int_value      : s64 = ---;
         float_value    : float64 = ---;
         string_value   : string = ---;
         datetime       : Chrono = ---;
         array          : [..]Value = ---;
-        table          : [..]KeyValue = ---;
+        table          : [..]KeyValue;
     };
 }
 KeyValue :: struct {
@@ -38,7 +38,7 @@ copy :: (value: Value) -> Value {
         for 0..value.array.count-1 { output.array[it] = copy(value.array[it]); }
         return output;
     case .TABLE;
-        output:= Value.{type=.TABLE, table=resizable(KeyValue.[])};
+        output: Value;
         array_reserve(*output.table, value.table.count);
         output.table.count = value.table.count;
         for 0..value.table.count-1 { output.table[it] = copy(value.table[it]); }
