@@ -135,7 +135,9 @@ deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="
     case .OVERLOAD_SET;         #through;
     case .POLYMORPHIC_VARIABLE; #through;
     case .TYPE;                 #through;
-    case .CODE;  return_with_error("Deserialization to type % is not supported", info.type);
+    case .CODE;                 #through;
+    case .UNTYPED_LITERAL;      #through;
+    case .UNTYPED_ENUM; return_with_error("Deserialization to type % is not supported", info.type);
     }
     return true;
 }

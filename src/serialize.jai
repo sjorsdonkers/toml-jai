@@ -83,7 +83,9 @@ parse :: (slot: *void, info: *Type_Info) -> ok:=false, toml:Value=.{} {
     case .OVERLOAD_SET;         #through;
     case .POLYMORPHIC_VARIABLE; #through;
     case .TYPE;                 #through;
-    case .CODE;
+    case .CODE;                 #through;
+    case .UNTYPED_LITERAL;      #through;
+    case .UNTYPED_ENUM;
     }
     return_with_error("Parsing of type % is not supported", info.type);
 }
