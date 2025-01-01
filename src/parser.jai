@@ -336,7 +336,6 @@ string_to_int_checked :: (s: string, base := 10, $T := int) -> result: T, succes
 
             sum *= cast(T) base;
             sum += sign * cast(T)value;
-            log("sum: %, sign: %, value: %, c: %", sum, sign, value, c);
             if (sum < 0) ^ (sign < 0) { return 0, false, s; }
 
             cursor += 1;
