@@ -123,7 +123,7 @@ error_handling :: () {
     }
     capture_log :: (message: string, data: *void, info: Log_Info) {
         // Log to the original logger
-        wrap := cast(*Log_Wrap) data;
+        wrap := cast(*Log_Wrap, data);
         wrap.logger(message, wrap.logger_data, info);
 
         // Log only error messages to the capture
@@ -231,6 +231,7 @@ reference_types :: () {
         andy: Any;
     }
     ok=, toml4 := Toml.deserialize("andy = 3", Amy); assert(ok);
+    print("toml4: %\n", toml4);
     assert("{3}" == tprint("%", toml4));
     ok=, toml4 = Toml.deserialize("andy = 'hello'", Amy); assert(ok);
     assert("{\"hello\"}" == tprint("%", toml4));
@@ -252,7 +253,7 @@ reference_types :: () {
         other_amy: string;
     }
     ok=, toml5 := Toml.deserialize("[[andy]]\nany_andy = 9\nany_amy = 8\n[[andy]]\nother_andy = 'Peter'\nother_amy = 'Derick'", Amy); assert(ok);
-    andies := cast(*[]Toml.Value) toml5.andy.value_pointer;
+    andies := cast(*[]Toml.Value, toml5.andy.value_pointer);
     ok=, any_andy := Toml.deserialize(andies.*[0], AnyAndy); assert(ok);
     assert("{9, 8}" == tprint("%", any_andy));
     ok=, other_andy := Toml.deserialize(andies.*[1], OtherAndy); assert(ok);

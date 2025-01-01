@@ -16,29 +16,29 @@ deserialize :: (value: Value, $Target: Type) -> ok:=false, value:Target=.{} {
 // slot is already initialized memory
 // Currently all fields are optional. TODO check TomlOptional Note and require_all true/false
 deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="", name:string="") -> ok:=false {
-    if info == type_info(Value) { (cast(*Value) slot).* = copy(toml); return true; } // If we encounter a Toml.Value at any point just copy it
+    if info == type_info(Value) { cast(*Value, slot).* = copy(toml); return true; } // If we encounter a Toml.Value at any point just copy it
 
     if #complete info.type == {
     case .INTEGER;
         expect(toml.type, .INT, parent_name, name);
-        valid, low, high := range_check_and_store(toml.int_value, cast(*Type_Info_Integer)info, slot);
+        valid, low, high := range_check_and_store(toml.int_value, cast(*Type_Info_Integer, info), slot);
         if !valid { return_with_error("Value for %.% is out of range. Given % expected min % max %", parent_name, name, toml.int_value, low, high); }
     case .FLOAT;
         if toml.type != .INT expect(toml.type, .FLOAT, parent_name, name); // Allow int to float conversion
-        if      info.runtime_size == 4 { (cast(*float)   slot).* = ifx toml.type == .INT then cast(float)   toml.int_value else cast(float) toml.float_value; }
-        else if info.runtime_size == 8 { (cast(*float64) slot).* = ifx toml.type == .INT then cast(float64) toml.int_value else             toml.float_value; }
+        if      info.runtime_size == 4 { cast(*float32, slot).* = ifx toml.type == .INT then cast(float32, toml.int_value) else cast(float32, toml.float_value); }
+        else if info.runtime_size == 8 { cast(*float64, slot).* = ifx toml.type == .INT then cast(float64, toml.int_value) else               toml.float_value;  }
         else { return_with_error("Unsupported float size %", info.runtime_size); }
     case .BOOL;
         expect(toml.type, .BOOL, parent_name, name);
-        (cast(*bool) slot).* = toml.bool_value;
+        cast(*bool, slot).* = toml.bool_value;
     case .STRING;
         expect(toml.type, .STRING, parent_name, name);
-        (cast(*string) slot).* = copy_string(toml.string_value);
+        cast(*string, slot).* = copy_string(toml.string_value);
     case .POINTER;
-        pointer_info := cast(*Type_Info_Pointer) info;
+        pointer_info :*Type_Info_Pointer= xx info;
         memory := alloc(pointer_info.pointer_to.runtime_size);
         initialize_memory(memory, pointer_info.pointer_to);
-        (cast(**void) slot).* = memory;
+        cast(**void, slot).* = memory;
         return deserialize(toml, memory, pointer_info.pointer_to, parent_name, name);
     case .VOID;
         expect(toml.type, .TABLE, parent_name, name);
@@ -57,7 +57,7 @@ deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="
         ok := enforce_uniontag_note(toml.table, slot, members, parent_name); if !ok return;
     case .ARRAY;
         expect(toml.type, .ARRAY, parent_name, name);
-        array_info := cast(*Type_Info_Array) info;
+        array_info :*Type_Info_Array= xx info;
         element_type := array_info.element_type;
 
         fill_array :: (toml_array: []Value, slot: *void, item_info: *Type_Info, parent_name:string) {
@@ -71,20 +71,20 @@ deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="
             if toml.array.count != array_info.array_count { return_with_error("Fixed array %.% expected % items, got %", parent_name, name, array_info.array_count, toml.array.count); }
             fill_array(toml.array, slot, element_type, name); // NOTE .FIXED is inside the struct so already initialized
         case .VIEW;
-            array := cast(*[] u8) slot;
+            array := cast(*[] u8, slot);
             array.data = alloc(toml.array.count * element_type.runtime_size);
             array.count = toml.array.count;
             initialize_memory(array.data, element_type, array.count);
             fill_array(toml.array, array.data, element_type, name);
         case .RESIZABLE;
-            array := cast(*[..] u8) slot;
+            array := cast(*[..] u8, slot);
             array_reserve(array, toml.array.count * element_type.runtime_size);
             array.count = toml.array.count;
             initialize_memory(array.data, element_type, array.count);
             fill_array(toml.array, array.data, element_type, name);
         }
     case .ANY;
-        any_value := cast(*Any_Struct) slot;
+        any_value :*Any_Struct= xx slot;
 
         homogeneous_array_info :: (array: []Value) -> is_same_type:bool, *Type_Info {
             if array.count == 0 { return false, null; }
@@ -116,7 +116,7 @@ deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="
         initialize_memory(any_value.value_pointer, any_value.type);
         return deserialize(toml, any_value.value_pointer, any_value.type, parent_name, name);
     case .ENUM;
-        enum_info := cast(*Type_Info_Enum) info;
+        enum_info :*Type_Info_Enum= xx info;
         if toml.type == {
         case .STRING;
             found, index := array_find(enum_info.names, toml.string_value);
@@ -129,7 +129,7 @@ deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="
         case; return_with_error("Wrong type for %.%, expected STRING or INT, got % ", parent_name, name, toml.type);
         }
     case .VARIANT;
-        variant_info := cast(*Type_Info_Variant) info;
+        variant_info :*Type_Info_Variant= xx info;
         return deserialize(toml, slot, variant_info.variant_of, parent_name, name);
     case .PROCEDURE;            #through;
     case .OVERLOAD_SET;         #through;
@@ -145,12 +145,12 @@ deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="
 deserialize_chrono ::  (toml: Value, slot: *void, info: *Type_Info) -> is_chrono:bool {
     if toml.type != .DATETIME return false;
 
-    if info == type_info(Chrono) { (cast(*Chrono) slot).* = toml.datetime; return true;}
+    if info == type_info(Chrono) { cast(*Chrono, slot).* = toml.datetime; return true;}
     if #complete toml.datetime.type == {
-    case .LOCAL_TIME;       if info == type_info(Time)           { (cast(*Time) slot).*           = toml.datetime.time;            return true; }
-    case .LOCAL_DATE;       if info == type_info(Date)           { (cast(*Date) slot).*           = toml.datetime.date;            return true; }
-    case .LOCAL_DATETIME;   if info == type_info(DateTime)       { (cast(*DateTime) slot).*       = toml.datetime.datetime;        return true; }
-    case .OFFSET_DATETIME;  if info == type_info(DateTimeOffset) { (cast(*DateTimeOffset) slot).* = toml.datetime.datetime_offset; return true; }
+    case .LOCAL_TIME;       if info == type_info(Time)           { cast(*Time, slot).*           = toml.datetime.time;            return true; }
+    case .LOCAL_DATE;       if info == type_info(Date)           { cast(*Date, slot).*           = toml.datetime.date;            return true; }
+    case .LOCAL_DATETIME;   if info == type_info(DateTime)       { cast(*DateTime, slot).*       = toml.datetime.datetime;        return true; }
+    case .OFFSET_DATETIME;  if info == type_info(DateTimeOffset) { cast(*DateTimeOffset, slot).* = toml.datetime.datetime_offset; return true; }
     }
     return false;
 }
@@ -176,7 +176,7 @@ enforce_uniontag_note :: (toml_table: []KeyValue, slot: *void, flat_members: []T
     for member: flat_members {
         // Find union member with @UnionTag note
         if member.type.type != .STRUCT continue;
-        member_info := cast(*Type_Info_Struct) member.type;
+        member_info :*Type_Info_Struct= xx member.type;
         if !(member_info.textual_flags & .UNION) continue;
         tag_name: string;
         for note: member.notes if begins_with(note, "UnionTag:") { tag_name = slice(note, 9, note.count-9); break; }
@@ -210,7 +210,7 @@ initialize_memory :: (memory: *void, info: *Type_Info, count:s64=1) {
 
     if info.type == {
     case .STRUCT;
-        struct_info := cast(*Type_Info_Struct) info;
+        struct_info :*Type_Info_Struct= xx info;
         if struct_info.initializer {
             current := memory;
             for 0..count-1 {
@@ -220,13 +220,13 @@ initialize_memory :: (memory: *void, info: *Type_Info, count:s64=1) {
             return;
         }
     case .ARRAY;
-        array_info := cast(*Type_Info_Array) info;
+        array_info :*Type_Info_Array= xx info;
         if array_info.array_type == .FIXED {
             initialize_memory(memory, array_info.element_type, array_info.array_count);
             return;
         }
     case .VARIANT;
-        variant_info := cast(*Type_Info_Variant) info;
+        variant_info :*Type_Info_Variant= xx info;
         initialize_memory(memory, variant_info.variant_of);
         return;
     }
