@@ -43,13 +43,71 @@ keys :: () {
     ok = deserialize("a = 5   \n \"a\" = 6", Value);            assert(!ok);
     ok = deserialize("'a' = 5 \n \"a\" = 6", Value);            assert(!ok);
     ok = deserialize("'🔥' = 5 \n \"\\U0001F525\" = 6", Value); assert(!ok);
+    // Explicit \r is not removed from keys. \r\n is different from \n
+    ok = deserialize("\"a \\n b\" = 5 \n \"a \\r\\n b\" = 6", Value); assert(ok);
+
 }
 
 strings :: () {
-    // Literal string key part must be on a single line
+    // Literal string must be on a single line
     ok:= deserialize("'a\nb' = 5", Value); assert(!ok);
-    // Literal key cannot contain single quotes itself
+    // Literal string cannot contain single quotes
     ok = deserialize("'a'b' = 5", Value);  assert(!ok);
+
+    // Basic string must be on a single line
+    ok = deserialize("\"a\nb\" = 5", Value);  assert(!ok);
+    // Basic string cannot contain unescaped double quotes or backslashes
+    ok = deserialize("\"a\"b\" = 5", Value);  assert(!ok);
+    ok = deserialize("\"a\\ .b\" = 5", Value);  assert(!ok);
+
+    // Multi-line basic strings may not contain unescaped backslashes except at the end of the line
+    ok = deserialize("5 = \"\"\"a\\ b\"\"\"", Value);  assert(!ok);
+
+    // Currently \r\n control characters are not normalized to \n TODO
+    ok=, rn:= deserialize("a = '''a\r\nb'''", Value); assert(ok);
+    ok=,  n:= deserialize("a = '''a\nb'''  ", Value); assert(ok);
+    print("%\n%\n",rn.table[0].string_value, n.table[0].string_value);
+    assert(rn != n);
+
+    //
+    // INVALID TOML, but not checked (atm), but we should especially \u0000
+    //
+
+    // We do not check for invalid UTF-8 characters
+
+    // Basic strings may not contain unescaped control characters: U+0000 to U+0008, U+000A to U+001F, U+007F
+    for char: cast(u8, #char "\u0000")..cast(u8, #char "\u001F") {
+        control:= string.{1, *char};
+        if control == "\n" continue; // We do check this
+        if control == "\t" continue;
+        ok = deserialize(tprint("\"a%b\" = 5", control), Value);          assert(ok);
+    }
+    ok = deserialize("\"a\u007F.b\" = 5", Value);                         assert(ok);
+
+    // Multi-line basic strings may not contain control characters: U+0000 to U+0008, U+000B, U+000C, U+000E to U+001F, U+007F
+    for char: cast(u8, #char "\u0000")..cast(u8, #char "\u001F") {
+        control:= string.{1, *char};
+        if control == "\n" || control == "\r" || control == "\t" continue;
+        ok = deserialize(tprint("5 = \"\"\"a%b\"\"\"", control), Value);  assert(ok);
+    }
+    ok = deserialize("5 = \"\"\"a\u007Fb\"\"\"", Value);                  assert(ok);
+
+    // Literal strings may not contain unescaped control characters: U+0000 to U+0008, U+000A to U+001F, U+007F
+    for char: cast(u8, #char "\u0000")..cast(u8, #char "\u001F") {
+        control:= string.{1, *char};
+        if control == "\n" continue; // We do check this
+        if control == "\t" continue;
+        ok = deserialize(tprint("'a%b' = 5", control), Value);          assert(ok);
+    }
+    ok = deserialize("5 = 'a\u007Fb'", Value);                  assert(ok);
+
+    // Multi-line literal strings may not contain control characters: U+0000 to U+0008, U+000B, U+000C, U+000E to U+001F, U+007F
+    for char: cast(u8, #char "\u0000")..cast(u8, #char "\u001F") {
+        control:= string.{1, *char};
+        if control == "\n" || control == "\r" || control == "\t" continue;
+        ok = deserialize(tprint("5 = '''a%b'''", control), Value);  assert(ok);
+    }
+    ok = deserialize("5 = '''a\u007Fb'''", Value);                  assert(ok);
 }
 
 end_lines :: () {
