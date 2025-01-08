@@ -20,7 +20,8 @@ A module for `TOML v1.0.0` support. It provides functionality to read/write TOML
 `ok, toml_string := Toml.serialize(my_struct);`
 - Write any (nested) struct or `Toml.Value` to TOML string.
 - Null pointers/null Anys are skipped, null pointers/null Anys in arrays will error.
-- Compile-time constants are skipped.
+- Compile-time `constants` & `imports` are skipped.
+- `#place` members (containing pointers) may not be safe! Overlapping members are all serialized.
 
 ## Error handling
 Success -> bool  
@@ -29,9 +30,11 @@ Error message -> interceptable logger
 - Input data errors are flagged by the return boolean indicating the success of the operation. If a procedure indicates failure the reason will be found in the error log.
 - To prevent or redirect the TOML module from writing to the error log the user can set a catching or wrapping logger in the context, see examples.
 
-## Memory management
-Set a context.allocator: `Toml.serialize(my_struct,, scoped_pool());`
-- Returned data may have data allocated on the context allocator. Instead of free_x() or deinit_x() procedures the user is expected to push an allocator such that all data can be dropped together.
+## Memory management & lifetime
+Set a context.allocator: `Toml.deserialize(toml_string, My_Struct,, scoped_pool());`  
+The lifetime of all returned objects ends when the memory of the allocator is released. In the example case the `scoped_pool` procedure creates a pool allocator that is dropped at the end of the current scope. As such, any allocated objects like strings/arrays/anys/pointers in the returned data may not be used after the scope exit.
+- Allocation for returned data are in the context allocator. Instead of free_x() or deinit_x() procedures the user is expected to push an allocator such that all data can be dropped together.
+- None of the returned data references allocated data of the input arguments.
 - Temporary storage is only used for error messages as some of the intermediate data may be large. If there is a user-friendly way for the caller to replace the temporary allocator let me know, in which case we can just use temp.
 - Most temporarily allocated memory in the module is freed in one go by releasing a pool allocator.
 - In most cases this means that only the returned data will be left allocated on the context allocator.

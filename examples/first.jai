@@ -105,6 +105,21 @@ DONE
     ok=, myfloat := Toml.deserialize("f = 3", MyFloat); assert(ok);
     assert (myfloat.f == 3.0);
 
+    {
+        // If a structure has overlapping members / members with different names through the #place directive
+        // they are all serialized. This is inconsistent with Basic.print which skips members that overlap previous members.
+        // Note that this may be unsafe if #place is used for a union use-case like a string overlapping some floats. In this case,
+        // if the floats are "active" the string is still serialized assuming the data pointer is valid. -- Perhaps we should simply not allow #place.
+        // When deserializing the last overlapping member in the struct definition that is also in the toml wins.
+        #import "Math";
+        has_hash_place:= Plane3.{3., 81., .18, .65};
+        print("has_hash_place: %\n", has_hash_place);
+        ok=, hash_toml:= Toml.serialize(has_hash_place); assert(ok);
+        print("hash_toml: %\n", hash_toml);
+        ok=, new_plane:= Toml.deserialize("[vector4] \n xy = {x=2., y=21.6} \n zw = {x=.12, y=.25}", Plane3); assert(ok);
+        assert("{2, 21.6, 0.12, 0.25}" == tprint("%", new_plane));
+    }
+
     // Pointers, ANY, VIEW and RESIZABLE arrays are supported at any depth in the struct definition.
     // These types that are referencing memory elsewhere will have new memory allocated for them with the context allocator.
     reference_types();

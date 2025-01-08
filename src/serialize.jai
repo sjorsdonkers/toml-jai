@@ -177,7 +177,11 @@ print_to_builder_escaped :: (builder: *String_Builder, str: string, $is_key: boo
 flat_nonnull_members :: (slot: *void, info:*Type_Info_Struct) -> [..]Type_Info_Struct_Member {
     flat_nonnull_members :: (slot: *void, flattened:*[..]Type_Info_Struct_Member, info:*Type_Info_Struct, offset_in_bytes: s64) {
         for member: info.members {
-            if member.flags & .CONSTANT { continue; }
+            if member.flags & .CONSTANT continue;
+            if member.flags & .IMPORTED continue;
+            // VOID members are written as empty tables, may be needed for unions
+            // Unlike Basic.print we do re-print all overlapping #place members. This will output the same data multiple times, but is likely more predictable.
+            // Otherwise we would need to keep track of the offset is always increase compared to the highest offset.
             if member.flags & .USING && member.type.type == .STRUCT { // NOTE: Enums can be using too
                 member_info: *Type_Info_Struct = xx member.type;
                 if !(member_info.textual_flags & .UNION) {
