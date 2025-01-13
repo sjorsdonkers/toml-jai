@@ -160,7 +160,7 @@ flat_members :: (info:*Type_Info_Struct) -> [..]Type_Info_Struct_Member { // TOD
     flat_members :: (flattened:*[..]Type_Info_Struct_Member, info:*Type_Info_Struct, offset_in_bytes: s64) {
         for member: info.members {
             if member.flags & .CONSTANT { continue; }
-            if member.flags & .USING && member.type.type == .STRUCT { // NOTE: Enums can be using too
+            if member.flags & .USING && member.type.type == .STRUCT { // NOTE: Enums and pointers can be using too
                 flat_members(flattened, xx member.type, offset_in_bytes + member.offset_in_bytes);
             }
             array_add(flattened, member);

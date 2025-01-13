@@ -48,6 +48,10 @@ DONE
     ok=, as_value := Toml.serialize(my_struct); assert(ok);
     log("serialize:\n%", as_value);
 
+    // When struct members of a struct are declared with `using` the member name is omitted in the TOML data.
+    // When pointer members of a struct are declared with `using` the member name is NOT omitted in the TOML data.
+    using_members();
+
     // All run-time types are supported.
     // A tagged union / sum-type requires the tag in the toml to be correctly matching the set union
     // To make the TAG optional and prevent incorrect tags you can declare the union's tag member with a note like @UnionTag:mytag
@@ -127,6 +131,36 @@ DONE
     // Success is returned as a boolean as the first return value. At this time there is no clear need to return an enum.
     // When an operation failed the error message can be found in the error log. If needed the error log can be captured as shown in this procedure.
     error_handling();
+}
+
+using_members :: () {
+    // When a member is declared `using` the member name is omitted and the members are set directly as if part of the struct.
+    Named_Using :: struct {
+        using hi: struct { q: u8; };
+    }
+    ok, named_using1 := Toml.deserialize("q = 99", Named_Using); assert(ok);
+    assert(named_using1.q == 99, "%", named_using1.q);
+    // When a struct members is declared with `using` the member name cannot be used in the TOML to set the data
+    // This is to prevent having multiple ways to define the same data. It also reduced the amount of recursion we have to do when deserializing.
+    ok=, named_using2 := Toml.deserialize("hi = { q=98 }", Named_Using); assert(ok);
+    assert(named_using2.hi.q == 0, "%", named_using2.hi.q);
+    // When serializing a pointer member it will also omit the member name.
+    ok=, named_using_str := Toml.serialize(named_using1); assert(ok);
+    assert(named_using_str == "q=99\n");
+
+    // A pointer member that is declared `using` is different.
+    // In this case it is ONLY possible to set by explicitly naming the using member.
+    Q :: struct {
+        q: s16;
+    }
+    Pointer_Using :: struct {
+        using hi: *Q;
+    }
+    ok=, pointer_using := Toml.deserialize("hi = { q=97 }", Pointer_Using); assert(ok);
+    assert(pointer_using.hi.q == 97, "%", pointer_using.hi.q);
+    // When serializing a pointer member it will not omit the member name, consistent with deserialization.
+    ok=, pointer_using_str := Toml.serialize(pointer_using); assert(ok);
+    assert(pointer_using_str == "hi.q=97\n");
 }
 
 error_handling :: () {
