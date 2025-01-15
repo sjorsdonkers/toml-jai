@@ -9,7 +9,7 @@ A module for `TOML v1.0.0` support. It provides functionality to read/write TOML
 - Safe sum-types with `@UnionTag` notes to indicate the tag member corresponding to a union.
 - There is currently no way to provide an alternative (de)serialization procedures for a user-defined type (e.g. Jai's Tagged_Union would serialize as an array of u8 numbers and the contents of the Type_Info)
 
-Latest confirmed compatible Jai Version: beta 0.2.007, built on 9 January 2025.
+Latest confirmed compatible Jai Version: beta 0.2.008, built on 14 January 2025.
 
 ## Deserialize
 `ok, my_struct := Toml.deserialize(toml_string, My_Struct);`
