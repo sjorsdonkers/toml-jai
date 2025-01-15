@@ -6,7 +6,7 @@ serialize :: (input: $T) -> ok:=false, toml:string="" {
     return true, builder_to_string(*builder);
 }
 
-struct_to_value :: (input: $T) -> ok:=false, value:Value=.{} {
+type_to_value :: (input: $T) -> ok:=false, value:Value=.{} {
     ok, value := type_to_value(*input, type_info(T),, scoped_pool()); if !ok return;
     return ok, copy(value);
 }

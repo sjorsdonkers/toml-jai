@@ -1,10 +1,10 @@
 deserialize :: (contents: string, $Target: Type) -> ok:=false, value:Target=.{} {
     ok, value := parse(contents,, scoped_pool()); if !ok return;   // Using scoped_pool since Value can be a bit big for temp
-    ok=, target := value_to_struct(value, Target);
+    ok=, target := value_to_type(value, Target);
     return ok, target;
 }
 
-value_to_struct :: (value: Value, $Target: Type) -> ok:=false, value:Target=.{} {
+value_to_type :: (value: Value, $Target: Type) -> ok:=false, value:Target=.{} {
     info :: type_info(Target);
     target :Target;
     ok := value_to_type(value, *target, info, info.name);
