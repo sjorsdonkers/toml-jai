@@ -1,21 +1,20 @@
 serialize :: (input: $T) -> ok:=false, toml:string="" {
     a := scoped_pool();
-    ok, value := parse(*input, type_info(T),, a); if !ok return;
+    ok, value := type_to_value(*input, type_info(T),, a); if !ok return;
     builder: String_Builder;
     serialize(*builder, value,, a);
     return true, builder_to_string(*builder);
 }
 
-serialize :: (value: Value) -> ok:=false, toml:string="" {
-    builder: String_Builder;
-    serialize(*builder, value,, scoped_pool());
-    return true, builder_to_string(*builder);
+struct_to_value :: (input: $T) -> ok:=false, value:Value=.{} {
+    ok, value := type_to_value(*input, type_info(T),, scoped_pool()); if !ok return;
+    return ok, copy(value);
 }
 
 #scope_module
 
 // Note: Does not deep copy
-parse :: (slot: *void, info: *Type_Info) -> ok:=false, toml:Value=.{} {
+type_to_value :: (slot: *void, info: *Type_Info) -> ok:=false, toml:Value=.{} {
     if #complete info.type == {
     case .INTEGER;
         ok, value := get_integer_value(slot, xx info); if !ok return;
@@ -25,15 +24,15 @@ parse :: (slot: *void, info: *Type_Info) -> ok:=false, toml:Value=.{} {
         else if info.runtime_size == 8 { return true, .{type=.FLOAT, float_value=cast(*float64, slot).*}; }
         else { assert(false, "Unsupported float size %", info.runtime_size); }
     case .BOOL;   return true, .{type=.BOOL, bool_value=cast(*bool, slot).*};
-    case .STRING; return true, .{type=.STRING, string_value=cast(*string, slot).*}; // No copy!
+    case .STRING; return true, .{type=.STRING, string_value=cast(*string, slot).*}; // No deep copy!
     case .POINTER;
         assert(cast(**void, slot) != null, "Implementation error: null pointers should be filtered out");
-        ok, value := parse(cast(**void, slot).*, cast(*Type_Info_Pointer, info).pointer_to);
+        ok, value := type_to_value(cast(**void, slot).*, cast(*Type_Info_Pointer, info).pointer_to);
         return ok, value;
     case .VOID;  return true, .{};
     case .STRUCT;
         if info == {
-        case type_info(Value);          return true, cast(*Value, slot).*; // No copy!
+        case type_info(Value);          return true, cast(*Value, slot).*; // No deep copy!
         case type_info(Chrono);         return true, .{type=.DATETIME, datetime=cast(*Chrono, slot).*};
         case type_info(Time);           return true, .{type=.DATETIME, datetime=.{type=.LOCAL_TIME,      time=           cast(*Time, slot).*}};
         case type_info(Date);           return true, .{type=.DATETIME, datetime=.{type=.LOCAL_DATE,      date=           cast(*Date, slot).*}};
@@ -46,7 +45,7 @@ parse :: (slot: *void, info: *Type_Info) -> ok:=false, toml:Value=.{} {
         table: [..]KeyValue;
         array_reserve(*table, flattened.count);
         for member: flattened {
-            ok, value := parse(slot + member.offset_in_bytes, member.type); if !ok return;
+            ok, value := type_to_value(slot + member.offset_in_bytes, member.type); if !ok return;
             kv := KeyValue.{key=member.name, value=value};
             array_add(*table, kv);
         }
@@ -61,14 +60,14 @@ parse :: (slot: *void, info: *Type_Info) -> ok:=false, toml:Value=.{} {
         for idx: 0..array_count-1 {
             element_slot := array_slot + array_info.element_type.runtime_size * idx;
             if is_null(element_slot, array_info.element_type) return_with_error("Null pointer in array detected which is not supported");
-            ok, v := parse(element_slot, array_info.element_type); if !ok return;
+            ok, v := type_to_value(element_slot, array_info.element_type); if !ok return;
             array_add(*array, v);
         }
         return true, .{type=.ARRAY, array=array};
     case .ANY;
         any_value :*Any_Struct= xx slot;
         assert(any_value.value_pointer != null, "Implementation error: null pointers should be filtered out");
-        ok, value := parse(any_value.value_pointer, any_value.type);
+        ok, value := type_to_value(any_value.value_pointer, any_value.type);
         return ok, value;
     case .ENUM;
         enum_info :*Type_Info_Enum= xx info;
@@ -77,7 +76,7 @@ parse :: (slot: *void, info: *Type_Info) -> ok:=false, toml:Value=.{} {
         }
         assert(false, "Enum value % not found in enum %", get_enum_value(slot, enum_info), enum_info.name);
     case .VARIANT;
-        ok, value := parse(slot, cast(*Type_Info_Variant, info).variant_of);
+        ok, value := type_to_value(slot, cast(*Type_Info_Variant, info).variant_of);
         return ok, value;
     case .PROCEDURE;            #through;
     case .OVERLOAD_SET;         #through;

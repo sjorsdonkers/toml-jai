@@ -1,13 +1,13 @@
 deserialize :: (contents: string, $Target: Type) -> ok:=false, value:Target=.{} {
     ok, value := parse(contents,, scoped_pool()); if !ok return;   // Using scoped_pool since Value can be a bit big for temp
-    ok=, target := deserialize(value, Target);
+    ok=, target := value_to_struct(value, Target);
     return ok, target;
 }
 
-deserialize :: (value: Value, $Target: Type) -> ok:=false, value:Target=.{} {
+value_to_struct :: (value: Value, $Target: Type) -> ok:=false, value:Target=.{} {
     info :: type_info(Target);
     target :Target;
-    ok := deserialize(value, *target, info, info.name);
+    ok := value_to_type(value, *target, info, info.name);
     return ok, target;
 }
 
@@ -15,7 +15,7 @@ deserialize :: (value: Value, $Target: Type) -> ok:=false, value:Target=.{} {
 
 // slot is already initialized memory
 // Currently all fields are optional. TODO check TomlOptional Note and require_all true/false
-deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="", name:string="") -> ok:=false {
+value_to_type :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="", name:string="") -> ok:=false {
     if info == type_info(Value) { cast(*Value, slot).* = copy(toml); return true; } // If we encounter a Toml.Value at any point just copy it
 
     if #complete info.type == {
@@ -39,18 +39,18 @@ deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="
         memory := alloc(pointer_info.pointer_to.runtime_size);
         initialize_memory(memory, pointer_info.pointer_to);
         cast(**void, slot).* = memory;
-        return deserialize(toml, memory, pointer_info.pointer_to, parent_name, name);
+        return value_to_type(toml, memory, pointer_info.pointer_to, parent_name, name);
     case .VOID;
         expect(toml.type, .TABLE, parent_name, name);
         if toml.table.count != 0 { return_with_error("Expected empty table for %.%, got %", parent_name, name, toml.table.count);  }
     case .STRUCT;
-        if deserialize_chrono(toml, slot, info) return true;
+        if value_to_chrono(toml, slot, info) return true;
         expect(toml.type, .TABLE, parent_name, name);
 
         members := flat_members(xx info); defer array_free(members);
         for member: members if !(member.flags & .USING && member.type.type == .STRUCT) {
             for toml.table if it.key == member.name {
-                ok := deserialize(it.value, slot + member.offset_in_bytes, member.type, parent_name, member.name); if !ok return;
+                ok := value_to_type(it.value, slot + member.offset_in_bytes, member.type, parent_name, member.name); if !ok return;
                 break; // TODO catch multiple members from the same union, works but leaky, will also needed to determine required members are set
             }
         }
@@ -63,7 +63,7 @@ deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="
         fill_array :: (toml_array: []Value, slot: *void, item_info: *Type_Info, parent_name:string) {
             for idx: 0..toml_array.count-1 {
                 item_slot := slot + item_info.runtime_size * idx;
-                ok := deserialize(toml_array[idx], item_slot, item_info, parent_name, "[item]"); if !ok return;
+                ok := value_to_type(toml_array[idx], item_slot, item_info, parent_name, "[item]"); if !ok return;
             }
         }
         if #complete array_info.array_type == {
@@ -114,7 +114,7 @@ deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="
         }
         any_value.value_pointer = alloc(any_value.type.runtime_size);
         initialize_memory(any_value.value_pointer, any_value.type);
-        return deserialize(toml, any_value.value_pointer, any_value.type, parent_name, name);
+        return value_to_type(toml, any_value.value_pointer, any_value.type, parent_name, name);
     case .ENUM;
         enum_info :*Type_Info_Enum= xx info;
         if toml.type == {
@@ -130,7 +130,7 @@ deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="
         }
     case .VARIANT;
         variant_info :*Type_Info_Variant= xx info;
-        return deserialize(toml, slot, variant_info.variant_of, parent_name, name);
+        return value_to_type(toml, slot, variant_info.variant_of, parent_name, name);
     case .PROCEDURE;            #through;
     case .OVERLOAD_SET;         #through;
     case .POLYMORPHIC_VARIABLE; #through;
@@ -142,7 +142,7 @@ deserialize :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="
     return true;
 }
 
-deserialize_chrono ::  (toml: Value, slot: *void, info: *Type_Info) -> is_chrono:bool {
+value_to_chrono ::  (toml: Value, slot: *void, info: *Type_Info) -> is_chrono:bool {
     if toml.type != .DATETIME return false;
 
     if info == type_info(Chrono) { cast(*Chrono, slot).* = toml.datetime; return true;}
@@ -189,7 +189,7 @@ enforce_uniontag_note :: (toml_table: []KeyValue, slot: *void, flat_members: []T
 
         // Determine which union member is was set (if any) and set the tag to its index
         for #v2 < union_member, union_idx: member_info.members for toml_table if it.key == union_member.name { // Reverse in case of multiple
-            ok := deserialize(.{type=.INT, int_value=union_idx}, slot + tag.offset_in_bytes, tag.type, parent_name, union_member.name); if !ok return;
+            ok := value_to_type(.{type=.INT, int_value=union_idx}, slot + tag.offset_in_bytes, tag.type, parent_name, union_member.name); if !ok return;
             break union_member;
         }
     }

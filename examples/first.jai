@@ -303,9 +303,9 @@ reference_types :: () {
     }
     ok=, toml5 := Toml.deserialize("[[andy]]\nany_andy = 9\nany_amy = 8\n[[andy]]\nother_andy = 'Peter'\nother_amy = 'Derick'", Amy); assert(ok);
     andies := cast(*[]Toml.Value, toml5.andy.value_pointer);
-    ok=, any_andy := Toml.deserialize(andies.*[0], AnyAndy); assert(ok);
+    ok=, any_andy := Toml.value_to_struct(andies.*[0], AnyAndy); assert(ok);
     assert("{9, 8}" == tprint("%", any_andy));
-    ok=, other_andy := Toml.deserialize(andies.*[1], OtherAndy); assert(ok);
+    ok=, other_andy := Toml.value_to_struct(andies.*[1], OtherAndy); assert(ok);
     assert("{\"Peter\", \"Derick\"}" == tprint("%", other_andy));
 }
 
