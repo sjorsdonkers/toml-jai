@@ -20,24 +20,24 @@ type_to_value :: (slot: *void, info: *Type_Info) -> ok:=false, toml:Value=.{} {
         ok, value := get_integer_value(slot, xx info); if !ok return;
         return true, .{type=.INT, int_value=value};
     case .FLOAT;
-        if      info.runtime_size == 4 { return true, .{type=.FLOAT, float_value=cast(*float32, slot).*}; }
-        else if info.runtime_size == 8 { return true, .{type=.FLOAT, float_value=cast(*float64, slot).*}; }
+        if      info.runtime_size == 4 { return true, .{type=.FLOAT, float_value=slot.(*float32).*}; }
+        else if info.runtime_size == 8 { return true, .{type=.FLOAT, float_value=slot.(*float64).*}; }
         else { assert(false, "Unsupported float size %", info.runtime_size); }
-    case .BOOL;   return true, .{type=.BOOL, bool_value=cast(*bool, slot).*};
-    case .STRING; return true, .{type=.STRING, string_value=cast(*string, slot).*}; // No deep copy!
+    case .BOOL;   return true, .{type=.BOOL, bool_value=slot.(*bool).*};
+    case .STRING; return true, .{type=.STRING, string_value=slot.(*string).*}; // No deep copy!
     case .POINTER;
-        assert(cast(**void, slot) != null, "Implementation error: null pointers should be filtered out");
-        ok, value := type_to_value(cast(**void, slot).*, cast(*Type_Info_Pointer, info).pointer_to);
+        assert(slot.(**void) != null, "Implementation error: null pointers should be filtered out");
+        ok, value := type_to_value(slot.(**void).*, info.(*Type_Info_Pointer).pointer_to);
         return ok, value;
     case .VOID;  return true, .{};
     case .STRUCT;
         if info == {
-        case type_info(Value);          return true, cast(*Value, slot).*; // No deep copy!
-        case type_info(Chrono);         return true, .{type=.DATETIME, datetime=cast(*Chrono, slot).*};
-        case type_info(Time);           return true, .{type=.DATETIME, datetime=.{type=.LOCAL_TIME,      time=           cast(*Time, slot).*}};
-        case type_info(Date);           return true, .{type=.DATETIME, datetime=.{type=.LOCAL_DATE,      date=           cast(*Date, slot).*}};
-        case type_info(DateTime);       return true, .{type=.DATETIME, datetime=.{type=.LOCAL_DATETIME,  datetime=       cast(*DateTime, slot).*}};
-        case type_info(DateTimeOffset); return true, .{type=.DATETIME, datetime=.{type=.OFFSET_DATETIME, datetime_offset=cast(*DateTimeOffset, slot).*}};
+        case type_info(Value);          return true, slot.(*Value).*; // No deep copy!
+        case type_info(Chrono);         return true, .{type=.DATETIME, datetime=slot.(*Chrono).*};
+        case type_info(Time);           return true, .{type=.DATETIME, datetime=.{type=.LOCAL_TIME,      time=           slot.(*Time).*}};
+        case type_info(Date);           return true, .{type=.DATETIME, datetime=.{type=.LOCAL_DATE,      date=           slot.(*Date).*}};
+        case type_info(DateTime);       return true, .{type=.DATETIME, datetime=.{type=.LOCAL_DATETIME,  datetime=       slot.(*DateTime).*}};
+        case type_info(DateTimeOffset); return true, .{type=.DATETIME, datetime=.{type=.OFFSET_DATETIME, datetime_offset=slot.(*DateTimeOffset).*}};
         }
         flattened := flat_nonnull_members(slot, xx info);
         replace_uniontag(slot, *flattened);
@@ -52,8 +52,8 @@ type_to_value :: (slot: *void, info: *Type_Info) -> ok:=false, toml:Value=.{} {
         return true, .{type=.TABLE, table=table};
     case .ARRAY;
         array_info :*Type_Info_Array= xx info;
-        array_count  := ifx array_info.array_type == .FIXED then array_info.array_count else cast(*s64,   slot).*;
-        array_slot   := ifx array_info.array_type == .FIXED then slot                   else cast(**void, slot+8).*;
+        array_count  := ifx array_info.array_type == .FIXED then array_info.array_count else slot.(*s64).*;
+        array_slot   := ifx array_info.array_type == .FIXED then slot                   else (slot+8).(**void).*;
 
         array: [..]Value;
         array_reserve(*array, array_count);
@@ -76,7 +76,7 @@ type_to_value :: (slot: *void, info: *Type_Info) -> ok:=false, toml:Value=.{} {
         }
         assert(false, "Enum value % not found in enum %", get_enum_value(slot, enum_info), enum_info.name);
     case .VARIANT;
-        ok, value := type_to_value(slot, cast(*Type_Info_Variant, info).variant_of);
+        ok, value := type_to_value(slot, info.(*Type_Info_Variant).variant_of);
         return ok, value;
     case .PROCEDURE;            #through;
     case .OVERLOAD_SET;         #through;
@@ -126,10 +126,10 @@ serialize_inline :: (builder: *String_Builder, value: Value) {
     case .INT;      print_item_to_builder(builder, value.int_value);
     case .FLOAT;
         if isnan(value.float_value) {
-            if (cast(*u64, *value.float_value).* & 0x8000_0000_0000_0000) { append(builder, "-"); }
+            if ((*value.float_value).(*u64).* & 0x8000_0000_0000_0000) { append(builder, "-"); }
             append(builder, "nan");
         } else if isinf(value.float_value) {
-            if (cast(*u64, *value.float_value).* & 0x8000_0000_0000_0000) { append(builder, "-"); }
+            if ((*value.float_value).(*u64).* & 0x8000_0000_0000_0000) { append(builder, "-"); }
             append(builder, "inf");
         } else {
             print_item_to_builder(builder, value.float_value);
@@ -205,7 +205,7 @@ replace_uniontag :: (slot: *void, flattened:*[..]Type_Info_Struct_Member) {
         member := flattened.*[index];
         // Find union member with @UnionTag note
         if member.type.type != .STRUCT continue;
-        member_info := cast(*Type_Info_Struct, member.type);
+        member_info := member.type.(*Type_Info_Struct);
         if !(member_info.textual_flags & .UNION) continue;
         tag_name: string;
         for note: member.notes if begins_with(note, "UnionTag:") { tag_name = slice(note, 9, note.count-9); break; }
@@ -228,8 +228,8 @@ replace_uniontag :: (slot: *void, flattened:*[..]Type_Info_Struct_Member) {
 }
 
 is_null :: (slot: *void, info: *Type_Info) -> bool {
-    if info.type == .POINTER return cast(**void, slot).* == null;
-    if info.type == .ANY     return cast(*Any_Struct, slot).value_pointer == null;
+    if info.type == .POINTER return slot.(**void).* == null;
+    if info.type == .ANY     return slot.(*Any_Struct).value_pointer == null;
     return false;
 }
 
@@ -293,19 +293,19 @@ print_single_keyvalue :: (builder: *String_Builder, key_value: KeyValue) {
 get_integer_value :: (data: *void, info: *Type_Info_Integer) -> ok:=false, value:s64=0 {
     if info.signed {
         if info.runtime_size == {
-            case 1; return true, cast(*s8,  data).*;
-            case 2; return true, cast(*s16, data).*;
-            case 4; return true, cast(*s32, data).*;
-            case 8; return true, cast(*s64, data).*;
+            case 1; return true, data.(*s8).*;
+            case 2; return true, data.(*s16).*;
+            case 4; return true, data.(*s32).*;
+            case 8; return true, data.(*s64).*;
             case; assert(false); return;
         }
     } else {
         if info.runtime_size == {
-            case 1; return true, cast(*u8,  data).*;
-            case 2; return true, cast(*u16, data).*;
-            case 4; return true, cast(*u32, data).*;
+            case 1; return true, data.(*u8).*;
+            case 2; return true, data.(*u16).*;
+            case 4; return true, data.(*u32).*;
             case 8;
-                output := cast(*u64, data).*;
+                output := data.(*u64).*;
                 S64_MAX :u64:   0x7fff_ffff_ffff_ffff;
                 if output > S64_MAX { return_with_error("Value % is out of s64 range", output); }
                 return true, xx,no_check output;

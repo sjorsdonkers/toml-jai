@@ -16,29 +16,29 @@ value_to_type :: (value: Value, $Target: Type) -> ok:=false, value:Target=.{} {
 // slot is already initialized memory
 // Currently all fields are optional. TODO check TomlOptional Note and require_all true/false
 value_to_type :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="", name:string="") -> ok:=false {
-    if info == type_info(Value) { cast(*Value, slot).* = copy(toml); return true; } // If we encounter a Toml.Value at any point just copy it
+    if info == type_info(Value) { slot.(*Value).* = copy(toml); return true; } // If we encounter a Toml.Value at any point just copy it
 
     if #complete info.type == {
     case .INTEGER;
         expect(toml.type, .INT, parent_name, name);
-        valid, low, high := range_check_and_store(toml.int_value, cast(*Type_Info_Integer, info), slot);
+        valid, low, high := range_check_and_store(toml.int_value, info.(*Type_Info_Integer), slot);
         if !valid { return_with_error("Value for %.% is out of range. Given % expected min % max %", parent_name, name, toml.int_value, low, high); }
     case .FLOAT;
         if toml.type != .INT expect(toml.type, .FLOAT, parent_name, name); // Allow int to float conversion
-        if      info.runtime_size == 4 { cast(*float32, slot).* = ifx toml.type == .INT then cast(float32, toml.int_value) else cast(float32, toml.float_value); }
-        else if info.runtime_size == 8 { cast(*float64, slot).* = ifx toml.type == .INT then cast(float64, toml.int_value) else               toml.float_value;  }
+        if      info.runtime_size == 4 { slot.(*float32).* = ifx toml.type == .INT then toml.int_value.(float32) else toml.float_value.(float32); }
+        else if info.runtime_size == 8 { slot.(*float64).* = ifx toml.type == .INT then toml.int_value.(float64) else          toml.float_value;  }
         else { return_with_error("Unsupported float size %", info.runtime_size); }
     case .BOOL;
         expect(toml.type, .BOOL, parent_name, name);
-        cast(*bool, slot).* = toml.bool_value;
+        slot.(*bool).* = toml.bool_value;
     case .STRING;
         expect(toml.type, .STRING, parent_name, name);
-        cast(*string, slot).* = copy_string(toml.string_value);
+        slot.(*string).* = copy_string(toml.string_value);
     case .POINTER;
         pointer_info :*Type_Info_Pointer= xx info;
         memory := alloc(pointer_info.pointer_to.runtime_size);
         initialize_memory(memory, pointer_info.pointer_to);
-        cast(**void, slot).* = memory;
+        slot.(**void).* = memory;
         return value_to_type(toml, memory, pointer_info.pointer_to, parent_name, name);
     case .VOID;
         expect(toml.type, .TABLE, parent_name, name);
@@ -71,13 +71,13 @@ value_to_type :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string
             if toml.array.count != array_info.array_count { return_with_error("Fixed array %.% expected % items, got %", parent_name, name, array_info.array_count, toml.array.count); }
             fill_array(toml.array, slot, element_type, name); // NOTE .FIXED is inside the struct so already initialized
         case .VIEW;
-            array := cast(*[] u8, slot);
+            array := slot.(*[] u8);
             array.data = alloc(toml.array.count * element_type.runtime_size);
             array.count = toml.array.count;
             initialize_memory(array.data, element_type, array.count);
             fill_array(toml.array, array.data, element_type, name);
         case .RESIZABLE;
-            array := cast(*[..] u8, slot);
+            array := slot.(*[..] u8);
             array_reserve(array, toml.array.count * element_type.runtime_size);
             array.count = toml.array.count;
             initialize_memory(array.data, element_type, array.count);
@@ -145,12 +145,12 @@ value_to_type :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string
 value_to_chrono ::  (toml: Value, slot: *void, info: *Type_Info) -> is_chrono:bool {
     if toml.type != .DATETIME return false;
 
-    if info == type_info(Chrono) { cast(*Chrono, slot).* = toml.datetime; return true;}
+    if info == type_info(Chrono) { slot.(*Chrono).* = toml.datetime; return true;}
     if #complete toml.datetime.type == {
-    case .LOCAL_TIME;       if info == type_info(Time)           { cast(*Time, slot).*           = toml.datetime.time;            return true; }
-    case .LOCAL_DATE;       if info == type_info(Date)           { cast(*Date, slot).*           = toml.datetime.date;            return true; }
-    case .LOCAL_DATETIME;   if info == type_info(DateTime)       { cast(*DateTime, slot).*       = toml.datetime.datetime;        return true; }
-    case .OFFSET_DATETIME;  if info == type_info(DateTimeOffset) { cast(*DateTimeOffset, slot).* = toml.datetime.datetime_offset; return true; }
+    case .LOCAL_TIME;       if info == type_info(Time)           { slot.(*Time).*           = toml.datetime.time;            return true; }
+    case .LOCAL_DATE;       if info == type_info(Date)           { slot.(*Date).*           = toml.datetime.date;            return true; }
+    case .LOCAL_DATETIME;   if info == type_info(DateTime)       { slot.(*DateTime).*       = toml.datetime.datetime;        return true; }
+    case .OFFSET_DATETIME;  if info == type_info(DateTimeOffset) { slot.(*DateTimeOffset).* = toml.datetime.datetime_offset; return true; }
     }
     return false;
 }

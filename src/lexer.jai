@@ -133,7 +133,7 @@ tokenize :: (data: string) -> ok:=false, tokens:[]Token=.[] { // TODO change tok
 
             scope_token := *lexer.tokens[pop(*lexer.scope_stack)];
             if !(scope_token.type == #char "{" && c == #char "}") && !(scope_token.type == #char "[" && c == #char "]") {
-                return_with_error_line(lexer.data, lexer.loc, "Mismatched scope closure. Scope Opened with: % Attempt to close with: %", to_string(*cast(u8, scope_token.type), 1), to_string(*c,1));
+                return_with_error_line(lexer.data, lexer.loc, "Mismatched scope closure. Scope Opened with: % Attempt to close with: %", to_string(*(scope_token.type).(u8), 1), to_string(*c,1));
             }
 
             tokens_in_scope := lexer.tokens.count - scope_token.scope.count - 1;

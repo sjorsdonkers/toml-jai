@@ -267,7 +267,7 @@ eat_key :: (scope: *Scope) -> ok:=false, key:Token=.{} {
         }
     }
     // Handling potentially dot separated RAW key
-    char_num := cast(s32, inline find_index_from_right(original.str, scope.remaining_key));
+    char_num := (inline find_index_from_right(original.str, scope.remaining_key)).(s32);
     next:, scope.remaining_key = split_from_left_incl(scope.remaining_key, #char ".");
     if scope.remaining_key.count == 0 { eat_token(scope); }
     if next == "." { return true, Token.{type=Token.Type.DOT, loc=Location.{original.loc.line, char_num}}; }
@@ -334,8 +334,8 @@ string_to_int_checked :: (s: string, base := 10, $T := int) -> result: T, succes
             else if (c >= #char "A") && (c <= #char "F") { value = c - #char "A" + 10; }
             else { break; }
 
-            sum *= cast(T, base);
-            sum += sign * cast(T, value);
+            sum *= base.(T);
+            sum += sign * value.(T);
             if (sum < 0) ^ (sign < 0) { return 0, false, s; }
 
             cursor += 1;
@@ -348,8 +348,8 @@ string_to_int_checked :: (s: string, base := 10, $T := int) -> result: T, succes
             digit := c - #char "0";
             if digit >= base break;
 
-            sum *= cast(T,  base);
-            sum += sign*cast(T, digit);
+            sum *= base.(T);
+            sum += sign*digit.(T);
             if (sum < 0) ^ (sign < 0) { return 0, false, s; }
 
             cursor += 1;
