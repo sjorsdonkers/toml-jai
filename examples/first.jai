@@ -5,7 +5,7 @@ main :: () {
     heap := create_heap(context.allocator);
     defer destroy_heap(heap);
     ok, toml_value := Toml.deserialize(contents, Toml.Value,, allocator=heap); assert(ok);
-    ok_toml, toml := Toml.serialize(toml_value); assert(ok_toml);
+    ok_toml, toml := Toml.serialize(toml_value,, allocator=heap); assert(ok_toml);
     print("%\n", toml);
 
     // We can also deserialize the TOML data into a struct. The struct must have the same fields as the TOML data.
@@ -48,44 +48,23 @@ DONE
     ok=, as_value := Toml.serialize(my_struct); assert(ok);
     print("%\n", as_value);
 
+    // If the TOML data does not contain a field that is present in the struct, the field will be initialized to its default value.
+    ok=, default_struct := Toml.deserialize("", Q); assert(ok);
+    assert(default_struct.q == 0, "%", default_struct.q);
+
     // When struct or pointer members of a struct are declared with `using` the member name are required in the TOML data.
-    // If the member is anonymous the member name IS omitted.
+    // If the member is anonymous the member name is an empty string "".
     using_members();
 
-    // All run-time types are supported.
-    // A tagged union / sum-type requires the tag in the toml to be correctly matching the set union
-    // To make the TAG optional and prevent incorrect tags you can declare the union's tag member with a note like @UnionTag:mytag
-    // NOTE: Make sure the union initializes to the first variant by disabling initialization of the other variants with ---.
-    Guy :: struct @TaggedUnion {
-        mytag: enum {
-            BANANA;
-            APPLE;
-            ORANGE;
-        };
-        using joost: union { // @compiler It would be nice if we could add a tag to anonymous using unions
-            banana: void;
-            apple: struct { a: u8; b: string;} = ---;
-            orange: string = ---;
-        }; @UnionTag:mytag // TODO remove
-    }
-    ok=, apple := Toml.deserialize("APPLE = {a = 32, b = 'Y'}", Guy); assert(ok);
-    print("struct_apple: %\n", apple);
-    print("struct_apple: %: %\n", apple.mytag, apple.apple);
-    ok_apple, toml_apple := Toml.serialize(apple); assert(ok_apple);
-    assert("APPLE={a=32, b=\"Y\"}\n" == toml_apple, "%", toml_apple);
-
-    // If the TOML data does not contain a field that is present in the struct, the field will be initialized to its default value.
-    // Jai's initialization of unions is wack. So it is highly recommended to use --- to disable initialization of all variants that do not correspond to the default tag.
-    ok=, void_banana := Toml.deserialize("", Guy); assert(ok);
-    print("void_banana: %\n", void_banana);
-    print("void_banana: %: %\n", void_banana.mytag, void_banana.banana);
+    // All run-time types are supported, excepts for serializing untagged unions. Unions are supported by tagging them tagging.
+    unions_and_place();
 
     // For convenience Toml.Value comes with an equality operator and copy procedure.
     ok=, left := Toml.deserialize("a.b = {c.d = 1}", Toml.Value); assert(ok);
     ok=, right := Toml.deserialize("a.b.c.d = 1", Toml.Value); assert(ok);
-    assert(left == right);
+    assert(left == copy(right));
 
-    // Jai does not have commonly used types for dates and times. This module provides date/time types until the languages does.
+    // Jai Apollo_time.Calendar_Time is not usable for TOML dates/times. This module provides date/time types until the languages does.
     MyTime :: struct   { t: DateTimeOffset; }
     ok=, mytime := Toml.deserialize("t = 1979-05-27 07:32:00Z", MyTime); assert(ok);
     print("time: %\n", mytime);
@@ -108,21 +87,6 @@ DONE
     MyFloat :: struct { f: float; }
     ok=, myfloat := Toml.deserialize("f = 3", MyFloat); assert(ok);
     assert (myfloat.f == 3.0);
-
-    {
-        // If a structure has overlapping members / members with different names through the #place directive
-        // they are all serialized. This is inconsistent with Basic.print which skips members that overlap previous members.
-        // Note that this may be unsafe if #place is used for a union use-case like a string overlapping some floats. In this case,
-        // if the floats are "active" the string is still serialized assuming the data pointer is valid. -- Perhaps we should simply not allow #place.
-        // When deserializing the last overlapping member in the struct definition that is also in the toml wins.
-        #import "Math";
-        has_hash_place:= Plane3.{3., 81., .18, .65};
-        print("has_hash_place: %\n", has_hash_place);
-        ok=, hash_toml:= Toml.serialize(has_hash_place); assert(ok);
-        print("hash_toml: %\n", hash_toml);
-        ok=, new_plane:= Toml.deserialize("[vector4] \n xy = {x=2., y=21.6} \n zw = {x=.12, y=.25}", Plane3); assert(ok);
-        assert("{2, 21.6, 0.12, 0.25}" == tprint("%", new_plane));
-    }
 
     // Pointers, ANY, VIEW and RESIZABLE arrays are supported at any depth in the struct definition.
     // These types that are referencing memory elsewhere will have new memory allocated for them with the context allocator.
@@ -176,6 +140,46 @@ using_members :: () {
 "".q=96
 "".t="hello"
 DONE, "%", anonymous_using_str);
+}
+
+unions_and_place :: () {
+    // A struct with a @SumType is required to have the first member be the tag and the second be the union with the same number of members as the tag.
+    // Jai's initialization of unions is wack. So it is highly recommended to use --- to disable initialization of all variants that do not correspond to the default tag.
+    Guy :: struct @SumType {
+        mytag: enum {
+            BANANA;
+            APPLE;
+            ORANGE;
+        }= .ORANGE;
+        union {
+            banana: void = ---;
+            apple: struct { a: u8; b: string;} = ---;
+            orange: string="default";
+        };
+    }
+    ok, apple := Toml.deserialize("APPLE = {a = 32, b = 'Y'}", Guy); assert(ok);
+    print("struct_apple: %\n", apple);
+    print("struct_apple: %: %\n", apple.mytag, apple.apple);
+    ok_apple, toml_apple := Toml.serialize(apple); assert(ok_apple);
+    assert("APPLE={a=32, b=\"Y\"}\n" == toml_apple, "%", toml_apple);
+
+    // If the TOML data does not contain a field that is present in the struct, the field will be initialized to its default value.
+    ok=, void_orange := Toml.deserialize("", Guy); assert(ok);
+    assert(void_orange.mytag == .ORANGE, "%", void_orange.mytag);
+    assert(void_orange.orange == "default", "%", void_orange.orange);
+
+    // If a structure has overlapping members / members with different names through the #place directive
+    // they are all serialized. This is inconsistent with Basic.print which skips members that overlap previous members.
+    // Note that this may be unsafe if #place is used for a union use-case like a string overlapping some floats. In this case,
+    // if the floats are "active" the string is still serialized assuming the data pointer is valid. -- Perhaps we should simply not allow #place.
+    // When deserializing the last overlapping member in the struct definition that is also in the toml wins.
+    #import "Math";
+    has_hash_place:= Plane3.{3., 81., .18, .65};
+    print("has_hash_place: %\n", has_hash_place);
+    ok=, hash_toml:= Toml.serialize(has_hash_place); assert(ok);
+    print("hash_toml: %\n", hash_toml);
+    ok=, new_plane:= Toml.deserialize("[vector4] \n xy = {x=2., y=21.6} \n zw = {x=.12, y=.25}", Plane3); assert(ok);
+    assert("{2, 21.6, 0.12, 0.25}" == tprint("%", new_plane));
 }
 
 error_handling :: () {

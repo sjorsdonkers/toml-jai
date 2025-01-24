@@ -6,7 +6,7 @@ A module for `TOML v1.0.0` support. It provides functionality to read/write TOML
 - All run-time data types are supported as their native type including reference types (`pointer`, `array`, `any`), with the exception of untagged `unions`.
 - Generic data is supported through the [Toml.Value](src/data.jai) struct.
 - Dates/times are supported types provided in [src/datetime.jai](src/datetime.jai) (until Jai has native types).
-- Safe sum-types with `@UnionTag` notes to indicate the tag member corresponding to a union.
+- Safe sum-types with `@SumType` notes to indicate the tag member corresponding to a union.
 - There is currently no way to provide an alternative (de)serialization procedures for a user-defined type (e.g. Jai's Tagged_Union would serialize as an array of u8 numbers and the contents of the Type_Info)
 
 Latest confirmed compatible Jai Version: beta 0.2.008, built on 14 January 2025.

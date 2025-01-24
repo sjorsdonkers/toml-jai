@@ -49,8 +49,8 @@ value_to_type :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string
         expect(toml.type, .TABLE, parent_name, name);
         struct_info :*Type_Info_Struct= xx info;
 
-        if array_find(struct_info.notes, "TaggedUnion") {
-            return value_to_tagged_union(toml.table, slot, struct_info, parent_name);
+        if array_find(struct_info.notes, "SumType") {
+            return value_to_sumtype(toml.table, slot, struct_info, parent_name);
         }
         for member: struct_info.members {
             if member.flags & (.CONSTANT |.IMPORTED) continue;
@@ -159,22 +159,22 @@ value_to_chrono ::  (toml: Value, slot: *void, info: *Type_Info) -> is_chrono:bo
     return false;
 }
 
-value_to_tagged_union :: (toml_table: []KeyValue, slot: *void, struct_info: *Type_Info_Struct, parent_name: string) -> ok:=false {
-    valid, tag_member, union_member, tag_info, union_info:= is_valid_tagged_union(struct_info);
-    if !valid { return_with_error("Tagged Union % is not valid", struct_info.name); }
+value_to_sumtype :: (toml_table: []KeyValue, slot: *void, struct_info: *Type_Info_Struct, parent_name: string) -> ok:=false {
+    valid, tag_member, union_member, tag_info, union_info:= is_valid_sumtype(struct_info);
+    if !valid { return_with_error("SumType % is not valid", struct_info.name); }
 
     if toml_table.count == 0  return true; // Empty table, nothing to do
-    if toml_table.count != 1  return_with_error("Tagged Union % should have exactly one key-value pair", struct_info.name);
+    if toml_table.count != 1  return_with_error("SumType % should have exactly one key-value pair", struct_info.name);
 
     for tag_info.names if it == toml_table[0].key {
         set_enum_value(slot + tag_member.offset_in_bytes, tag_info, tag_info.values[it_index]);
         active_variant:= union_info.members[it_index];
         return value_to_type(toml_table[0].value, slot + union_member.offset_in_bytes + active_variant.offset_in_bytes, active_variant.type, parent_name, toml_table[0].key);
     }
-    return_with_error("Key % is not an enum variant of Tagged Union %", toml_table[0].key, struct_info.name);
+    return_with_error("Key % is not an enum variant of SumType %", toml_table[0].key, struct_info.name);
 }
 
-is_valid_tagged_union :: (struct_info: *Type_Info_Struct) -> bool, tag_member:*Type_Info_Struct_Member=null, union_member:*Type_Info_Struct_Member=null, tag_info:*Type_Info_Enum=null, union_info:*Type_Info_Struct=null {
+is_valid_sumtype :: (struct_info: *Type_Info_Struct) -> bool, tag_member:*Type_Info_Struct_Member=null, union_member:*Type_Info_Struct_Member=null, tag_info:*Type_Info_Enum=null, union_info:*Type_Info_Struct=null {
     if struct_info.members.count != 2                                      return false;
     tag_member, union_member:= *struct_info.members[0], *struct_info.members[1];
     if tag_member.type.type != .ENUM || union_member.type.type != .STRUCT  return false;

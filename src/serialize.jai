@@ -41,11 +41,11 @@ type_to_value :: (slot: *void, info: *Type_Info) -> ok:=false, toml:Value=.{} {
         case type_info(DateTimeOffset); return true, .{type=.DATETIME, datetime=.{type=.OFFSET_DATETIME, datetime_offset=cast(*DateTimeOffset, slot).*}};
         }
 
-        if array_find(struct_info.notes, "TaggedUnion") {
-            ok, union_keyvalue:= tagged_union_to_keyvalue(slot, struct_info);  if !ok return;
+        if array_find(struct_info.notes, "SumType") {
+            ok, union_keyvalue:= sumtype_to_keyvalue(slot, struct_info);  if !ok return;
             return true, .{type=.TABLE, table=resizable(KeyValue.[union_keyvalue])};
         }
-        if struct_info.textual_flags & .UNION return_with_error("Untagged unions (%) are not supported, as we cannot determine the active member, use @TaggedUnion", ifx struct_info.name then struct_info.name else "anonymous");
+        if struct_info.textual_flags & .UNION return_with_error("Untagged unions (%) are not supported, as we cannot determine the active member, use @SumType", ifx struct_info.name then struct_info.name else "anonymous");
 
         // Unlike Basic.print we do re-print all overlapping #place members. This will output the same data multiple times, but is likely more predictable.
         // Otherwise we would need to recursively track the offset is always increase compared to the highest offset.
@@ -96,9 +96,9 @@ type_to_value :: (slot: *void, info: *Type_Info) -> ok:=false, toml:Value=.{} {
     return_with_error("Parsing of type % is not supported", info.type);
 }
 
-tagged_union_to_keyvalue :: (slot: *void, struct_info: *Type_Info_Struct) -> ok:=false, keyvalue:KeyValue=.{} {
-    valid, tag_member, union_member, tag_info, union_info:= is_valid_tagged_union(struct_info);
-    if !valid { return_with_error("Tagged Union % is not valid", struct_info.name); }
+sumtype_to_keyvalue :: (slot: *void, struct_info: *Type_Info_Struct) -> ok:=false, keyvalue:KeyValue=.{} {
+    valid, tag_member, union_member, tag_info, union_info:= is_valid_sumtype(struct_info);
+    if !valid { return_with_error("SumType % is not valid", struct_info.name); }
 
     active_tag_idx := get_enum_value(slot + tag_member.offset_in_bytes, xx tag_member.type);
     active_variant := union_info.members[active_tag_idx];
