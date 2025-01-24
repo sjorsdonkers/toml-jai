@@ -31,7 +31,8 @@ type_to_value :: (slot: *void, info: *Type_Info) -> ok:=false, toml:Value=.{} {
         return ok, value;
     case .VOID;  return true, .{};
     case .STRUCT;
-        if info == {
+        struct_info :*Type_Info_Struct= xx info;
+        if struct_info == {
         case type_info(Value);          return true, cast(*Value, slot).*; // No deep copy!
         case type_info(Chrono);         return true, .{type=.DATETIME, datetime=cast(*Chrono, slot).*};
         case type_info(Time);           return true, .{type=.DATETIME, datetime=.{type=.LOCAL_TIME,      time=           cast(*Time, slot).*}};
@@ -39,35 +40,49 @@ type_to_value :: (slot: *void, info: *Type_Info) -> ok:=false, toml:Value=.{} {
         case type_info(DateTime);       return true, .{type=.DATETIME, datetime=.{type=.LOCAL_DATETIME,  datetime=       cast(*DateTime, slot).*}};
         case type_info(DateTimeOffset); return true, .{type=.DATETIME, datetime=.{type=.OFFSET_DATETIME, datetime_offset=cast(*DateTimeOffset, slot).*}};
         }
-        flattened := flat_nonnull_members(slot, xx info);
-        replace_uniontag(slot, *flattened);
 
-        table: [..]KeyValue;
-        array_reserve(*table, flattened.count);
-        for member: flattened {
-            ok, value := type_to_value(slot + member.offset_in_bytes, member.type); if !ok return;
-            kv := KeyValue.{key=member.name, value=value};
-            array_add(*table, kv);
+        // Unlike Basic.print we do re-print all overlapping #place members. This will output the same data multiple times, but is likely more predictable.
+        // Otherwise we would need to keep track of the offset is always increase compared to the highest offset.
+        add_members :: (table: *[..]KeyValue, struct_info: *Type_Info_Struct, slot: *void) -> ok:=false { // swap slot and info
+            if array_find(struct_info.notes, "TaggedUnion") {
+                ok, union_keyvalue:= tagged_union_to_keyvalue(slot, struct_info);  if !ok return;
+                array_add(table, union_keyvalue);
+                return true;
+            }
+            for member: struct_info.members {
+                if member.flags & (.CONSTANT | .IMPORTED)              continue;
+                if is_null(slot + member.offset_in_bytes, member.type) continue;
+                if member.name == "" { // Anonymous using
+                    if member.type.type != .STRUCT then return_with_error("Type with anonymous using of non-structs is not supported"); // Anonymous pointers / enums
+                    add_members(table, cast(*Type_Info_Struct, member.type), slot + member.offset_in_bytes);
+                    continue;
+                }
+                ok, member_value:= type_to_value(slot + member.offset_in_bytes, member.type);  if !ok return;
+                array_add(table, KeyValue.{key=member.name, value=member_value});
+            }
+            return true;
         }
+        table: [..]KeyValue;
+        add_members(*table, struct_info, slot);
         return true, .{type=.TABLE, table=table};
     case .ARRAY;
         array_info :*Type_Info_Array= xx info;
-        array_count  := ifx array_info.array_type == .FIXED then array_info.array_count else cast(*s64,   slot).*;
-        array_slot   := ifx array_info.array_type == .FIXED then slot                   else cast(**void, slot+8).*;
+        array_count:= ifx array_info.array_type == .FIXED then array_info.array_count else cast(*s64,   slot).*;
+        array_slot := ifx array_info.array_type == .FIXED then slot                   else cast(**void, slot+8).*;
 
         array: [..]Value;
         array_reserve(*array, array_count);
         for idx: 0..array_count-1 {
-            element_slot := array_slot + array_info.element_type.runtime_size * idx;
+            element_slot:= array_slot + array_info.element_type.runtime_size * idx;
             if is_null(element_slot, array_info.element_type) return_with_error("Null pointer in array detected which is not supported");
-            ok, v := type_to_value(element_slot, array_info.element_type); if !ok return;
-            array_add(*array, v);
+            ok, record_value:= type_to_value(element_slot, array_info.element_type); if !ok return;
+            array_add(*array, record_value);
         }
         return true, .{type=.ARRAY, array=array};
     case .ANY;
         any_value :*Any_Struct= xx slot;
         assert(any_value.value_pointer != null, "Implementation error: null pointers should be filtered out");
-        ok, value := type_to_value(any_value.value_pointer, any_value.type);
+        ok, value:= type_to_value(any_value.value_pointer, any_value.type);
         return ok, value;
     case .ENUM;
         enum_info :*Type_Info_Enum= xx info;
@@ -76,7 +91,7 @@ type_to_value :: (slot: *void, info: *Type_Info) -> ok:=false, toml:Value=.{} {
         }
         assert(false, "Enum value % not found in enum %", get_enum_value(slot, enum_info), enum_info.name);
     case .VARIANT;
-        ok, value := type_to_value(slot, cast(*Type_Info_Variant, info).variant_of);
+        ok, value:= type_to_value(slot, cast(*Type_Info_Variant, info).variant_of);
         return ok, value;
     case .PROCEDURE;            #through;
     case .OVERLOAD_SET;         #through;
@@ -87,6 +102,29 @@ type_to_value :: (slot: *void, info: *Type_Info) -> ok:=false, toml:Value=.{} {
     case .UNTYPED_ENUM;
     }
     return_with_error("Parsing of type % is not supported", info.type);
+}
+
+tagged_union_to_keyvalue :: (slot: *void, struct_info: *Type_Info_Struct) -> ok:=false, keyvalue:KeyValue=.{} {
+    // TODO asserts
+    tag_member:= struct_info.members[0];
+    union_member:= struct_info.members[1];
+    tag_info :*Type_Info_Enum= xx tag_member.type;
+    union_info :*Type_Info_Struct= xx union_member.type;
+    assert(tag_member.type.type == .ENUM);
+    active_tag_idx := get_enum_value(slot + tag_member.offset_in_bytes, xx tag_member.type);
+    active_variant := union_info.members[active_tag_idx];
+
+    // if is_null(slot + member.offset_in_bytes, member.type) continue; TODO
+    // can be custom sum-type null
+
+    ok, union_value:= type_to_value(slot + union_member.offset_in_bytes + active_variant.offset_in_bytes, active_variant.type); if !ok return;
+    return true, .{key=tag_info.names[active_tag_idx], value=union_value};
+}
+
+is_null :: (slot: *void, info: *Type_Info) -> bool {
+    if info.type == .POINTER return cast(**void, slot).* == null;
+    if info.type == .ANY     return cast(*Any_Struct, slot).value_pointer == null;
+    return false;
 }
 
 serialize :: (builder: *String_Builder, value: Value, parent_key: string = "") {
@@ -170,67 +208,6 @@ print_to_builder_escaped :: (builder: *String_Builder, str: string, $is_key: boo
         case;              append(builder, it);
     }
     append(builder, "\"");
-}
-
-// Collect all variables members and flattens using structs incl. unions, keeps original using members as well, needed for uniontag
-flat_nonnull_members :: (slot: *void, info:*Type_Info_Struct) -> [..]Type_Info_Struct_Member {
-    flat_nonnull_members :: (slot: *void, flattened:*[..]Type_Info_Struct_Member, info:*Type_Info_Struct, offset_in_bytes: s64) {
-        for member: info.members {
-            if member.flags & .CONSTANT continue;
-            if member.flags & .IMPORTED continue;
-            // VOID members are written as empty tables, may be needed for unions
-            // Unlike Basic.print we do re-print all overlapping #place members. This will output the same data multiple times, but is likely more predictable.
-            // Otherwise we would need to keep track of the offset is always increase compared to the highest offset.
-            if member.flags & .USING && member.type.type == .STRUCT { // NOTE: Enums can be using too
-                member_info: *Type_Info_Struct = xx member.type;
-                if !(member_info.textual_flags & .UNION) {
-                    flat_nonnull_members(slot, flattened, xx member.type, offset_in_bytes + member.offset_in_bytes);
-                    continue;
-                }
-            }
-            if is_null(slot + offset_in_bytes + member.offset_in_bytes, member.type) continue;
-            array_add(flattened, member);
-            peek_pointer(flattened.*).offset_in_bytes += offset_in_bytes;
-        }
-    }
-    flattened: [..]Type_Info_Struct_Member;
-    flat_nonnull_members(slot, *flattened, info, 0);
-    return flattened;
-}
-
-replace_uniontag :: (slot: *void, flattened:*[..]Type_Info_Struct_Member) {
-    index := flattened.count-1;
-    while outer:= index >= 0 {
-        defer index -= 1;
-        member := flattened.*[index];
-        // Find union member with @UnionTag note
-        if member.type.type != .STRUCT continue;
-        member_info := cast(*Type_Info_Struct, member.type);
-        if !(member_info.textual_flags & .UNION) continue;
-        tag_name: string;
-        for note: member.notes if begins_with(note, "UnionTag:") { tag_name = slice(note, 9, note.count-9); break; }
-        assert(tag_name!="", "Cannot serialize union without knowing which variant is active, @UnionTag:[member_name] is missing");
-
-        // Remove it's tag member, replace union by its active variant
-        for flattened.* if it.name == tag_name { // find instead of loop
-            assert(it.type.type == .ENUM);
-            tag_idx := get_enum_value(slot + it.offset_in_bytes, xx it.type);
-            current_variant := member_info.members[tag_idx];
-            current_variant.offset_in_bytes += member.offset_in_bytes;
-            flattened.*[index] = current_variant;
-
-            array_ordered_remove_by_index(flattened, it_index);
-            if it_index < index { index -= 1; }
-            continue outer;
-        }
-        assert(false, "Union .%'s tag member `%` cannot be found", member.name, tag_name);
-    }
-}
-
-is_null :: (slot: *void, info: *Type_Info) -> bool {
-    if info.type == .POINTER return cast(**void, slot).* == null;
-    if info.type == .ANY     return cast(*Any_Struct, slot).value_pointer == null;
-    return false;
 }
 
 // true if it would otherwise introduce additional braces or brackets, so no in-line tables or arrays in in-line tables,
