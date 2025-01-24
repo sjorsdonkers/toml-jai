@@ -308,7 +308,10 @@ reference_types :: () {
     ok=, toml4 = Toml.deserialize("andy = true", Amy); assert(ok);
     assert("{true}" == tprint("%", toml4));
     ok=, toml4 = Toml.deserialize("andy = [1, 7, 3]", Amy); assert(ok);
-    assert("{[1, 7, 3]}" == tprint("%", toml4));
+    assert(toml4.andy.type.type == .ARRAY);
+    array_info :*Type_Info_Array= xx toml4.andy.type;
+    assert(array_info.element_type == type_info(Toml.Value));
+    for cast(*[]Toml.Value, toml4.andy.value_pointer).* { assert(it.type == .INT); }
     ok=, toml4 = Toml.deserialize("andy = [1, 'd', 3]", Amy); assert(ok);
     print("%\n", toml4);
 

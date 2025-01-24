@@ -89,32 +89,14 @@ value_to_type :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string
         }
     case .ANY;
         any_value :*Any_Struct= xx slot;
-
-        homogeneous_array_info :: (array: []Value) -> is_same_type:bool, *Type_Info {
-            if array.count == 0 { return false, null; }
-            first_type := array[0].type;
-            if first_type == .ARRAY || first_type == .TABLE { return false, null; } // Not going down multiple levels
-            for array { if it.type != first_type { return false, null; }}
-            if first_type == {
-            case .BOOL;     return true, type_info([]type_of(Value.bool_value));
-            case .INT;      return true, type_info([]type_of(Value.int_value));
-            case .FLOAT;    return true, type_info([]type_of(Value.float_value));
-            case .STRING;   return true, type_info([]type_of(Value.string_value));
-            case .DATETIME; return true, type_info([]type_of(Value.datetime));
-            }
-            return false, null;
-        }
-
         if #complete toml.type == {
         case .BOOL;     any_value.type = type_info(type_of(Value.bool_value));
         case .INT;      any_value.type = type_info(type_of(Value.int_value));
         case .FLOAT;    any_value.type = type_info(type_of(Value.float_value));
         case .STRING;   any_value.type = type_info(type_of(Value.string_value));
         case .DATETIME; any_value.type = type_info(type_of(Value.datetime));
-        case .ARRAY;
-            is_same, array_type := homogeneous_array_info(toml.array);
-            any_value.type = ifx is_same then array_type else type_info(type_of(Value.array));
-        case .TABLE;  any_value.type = type_info(type_of(Value.table));
+        case .ARRAY;    any_value.type = type_info(type_of(Value.array));
+        case .TABLE;    any_value.type = type_info(type_of(Value.table));
         }
         any_value.value_pointer = alloc(any_value.type.runtime_size);
         initialize_memory(any_value.value_pointer, any_value.type);
