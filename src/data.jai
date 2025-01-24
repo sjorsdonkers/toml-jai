@@ -1,4 +1,4 @@
-Value :: struct {
+Value :: struct @SumType {
     Type :: enum u8 {
         BOOL;
         INT;
