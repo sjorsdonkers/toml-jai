@@ -6,7 +6,7 @@ A module for `TOML v1.0.0` support. It provides functionality to read/write TOML
 - All run-time data types are supported as their native type including reference types (`pointer`, `array`, `any`), with the exception of untagged `unions`.
 - Generic data is supported through the [Toml.Value](src/data.jai) struct.
 - Dates/times are supported types provided in [src/datetime.jai](src/datetime.jai) (until Jai has native types, Apollo_time.Calendar_Time is not usable here).
-- Safe sum-types with `@SumType` notes to indicate the tag member corresponding to a union.
+- Safe sum-types with `@SumType` notes to indicate the struct has a tag enum followed by a matching union.
 - There is currently no way to provide an alternative (de)serialization procedures for a user-defined type (e.g. Jai's Tagged_Union would serialize as an array of u8 numbers and the contents of the Type_Info)
 
 Latest confirmed compatible Jai Version: beta 0.2.008, built on 14 January 2025.
@@ -16,12 +16,12 @@ Latest confirmed compatible Jai Version: beta 0.2.008, built on 14 January 2025.
 - Read TOML directly into any (nested) struct or generic `Toml.Value`.
 - Any field not in the TOML is default initialized. Any superfluous fields in the TOML are ignored.
 - Compile-time constants are ignored and not compared.
-- If the parser understands the input it will accept it even if it is officially invalid according to the standard. This may in the future change to be more strict.
+- If the parser understands the input it will accept it even if it is officially invalid according to the standard. This may in the future change to be more strict. See the [validation example](examples/validation.jai) for more details.
 
 ## Serialize
 `ok, toml_string := Toml.serialize(my_struct);`
 - Write any (nested) struct or `Toml.Value` to TOML string.
-- Null pointers/null Anys are skipped, null pointers/null Anys in arrays will error.
+- Null pointers/null Anys are skipped, null pointers/null Anys in arrays or SumTypes will error.
 - Compile-time `constants` & `imports` are skipped.
 - `#place` members (containing pointers) may not be safe! Overlapping members are all serialized.
 
