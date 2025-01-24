@@ -44,10 +44,7 @@ type_to_value :: (slot: *void, info: *Type_Info) -> ok:=false, toml:Value=.{} {
         // Unlike Basic.print we do re-print all overlapping #place members. This will output the same data multiple times, but is likely more predictable.
         // Otherwise we would need to keep track of the offset is always increase compared to the highest offset.
         add_members :: (table: *[..]KeyValue, struct_info: *Type_Info_Struct, slot: *void) -> ok:=false { // swap slot and info
-            log("name %", struct_info.name);
-            for struct_info.notes  log("note %", it);
             if array_find(struct_info.notes, "TaggedUnion") {
-                log("asd2");
                 ok, union_keyvalue:= tagged_union_to_keyvalue(slot, struct_info);  if !ok return;
                 array_add(table, union_keyvalue);
                 return true;
@@ -59,7 +56,7 @@ type_to_value :: (slot: *void, info: *Type_Info) -> ok:=false, toml:Value=.{} {
                 if is_null(slot + member.offset_in_bytes, member.type) continue;
                 if member.name == "" { // Anonymous using
                     if member.type.type != .STRUCT then return_with_error("Type with anonymous using of non-structs is not supported"); // Anonymous pointers / enums
-                    ok:= add_members(table, cast(*Type_Info_Struct, member.type), slot + member.offset_in_bytes); if !ok return;
+                    ok:= add_members(table, xx member.type, slot + member.offset_in_bytes); if !ok return;
                     continue;
                 }
                 ok, member_value:= type_to_value(slot + member.offset_in_bytes, member.type);  if !ok return;
@@ -110,12 +107,9 @@ type_to_value :: (slot: *void, info: *Type_Info) -> ok:=false, toml:Value=.{} {
 }
 
 tagged_union_to_keyvalue :: (slot: *void, struct_info: *Type_Info_Struct) -> ok:=false, keyvalue:KeyValue=.{} {
-    // TODO asserts
-    tag_member:= struct_info.members[0];
-    union_member:= struct_info.members[1];
-    tag_info :*Type_Info_Enum= xx tag_member.type;
-    union_info :*Type_Info_Struct= xx union_member.type;
-    assert(tag_member.type.type == .ENUM);
+    valid, tag_member, union_member, tag_info, union_info:= is_valid_tagged_union(struct_info);
+    if !valid { return_with_error("Tagged Union % is not valid", struct_info.name); }
+
     active_tag_idx := get_enum_value(slot + tag_member.offset_in_bytes, xx tag_member.type);
     active_variant := union_info.members[active_tag_idx];
 

@@ -68,7 +68,7 @@ DONE
             orange: string = ---;
         }; @UnionTag:mytag // TODO remove
     }
-    ok=, apple := Toml.deserialize("apple = {a = 32, b = 'Y'}", Guy); assert(ok);
+    ok=, apple := Toml.deserialize("APPLE = {a = 32, b = 'Y'}", Guy); assert(ok);
     print("struct_apple: %\n", apple);
     print("struct_apple: %: %\n", apple.mytag, apple.apple);
     ok_apple, toml_apple := Toml.serialize(apple); assert(ok_apple);
@@ -138,15 +138,15 @@ using_members :: () {
     Named_Using :: struct {
         using hi: struct { q: u8; };
     }
-    ok, named_using1 := Toml.deserialize("q = 99", Named_Using); assert(ok);
-    assert(named_using1.q == 99, "%", named_using1.q);
+    ok, named_using1 := Toml.deserialize("q = 99", Named_Using); assert(ok); // TODO UPDATE EXAMPLES COMMENTS
+    assert(named_using1.q == 0, "%", named_using1.q);
     // When a struct members is declared with `using` the member name cannot be used in the TOML to set the data
     // This is to prevent having multiple ways to define the same data. It also reduced the amount of recursion we have to do when deserializing.
     ok=, named_using2 := Toml.deserialize("hi = { q=98 }", Named_Using); assert(ok);
-    assert(named_using2.hi.q == 0, "%", named_using2.hi.q);
+    assert(named_using2.hi.q == 98, "%", named_using2.hi.q);
     // When serializing a pointer member it will also omit the member name.
-    ok=, named_using_str := Toml.serialize(named_using1); assert(ok);
-    assert(named_using_str == "hi.q=99\n", "%", named_using_str);
+    ok=, named_using_str := Toml.serialize(named_using2); assert(ok);
+    assert(named_using_str == "hi.q=98\n", "%", named_using_str);
 
     // A pointer member that is declared `using` is different.
     // In this case it is ONLY possible to set by explicitly naming the using member.
