@@ -152,7 +152,7 @@ unions_and_place :: () {
             ORANGE;
         }= .ORANGE;
         union {
-            banana: void = ---;
+            banana: *s64 = ---;
             apple: struct { a: u8; b: string;} = ---;
             orange: string="default";
         };
@@ -167,6 +167,10 @@ unions_and_place :: () {
     ok=, void_orange := Toml.deserialize("", Guy); assert(ok);
     assert(void_orange.mytag == .ORANGE, "%", void_orange.mytag);
     assert(void_orange.orange == "default", "%", void_orange.orange);
+
+    // Serializing SumTypes to null pointers/anys is not supported.
+    null_banana := Guy.{mytag=.BANANA, banana=null};
+    ok = Toml.serialize(null_banana); assert(!ok);
 
     // If a structure has overlapping members / members with different names through the #place directive
     // they are all serialized. This is inconsistent with Basic.print which skips members that overlap previous members.

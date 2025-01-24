@@ -100,13 +100,12 @@ sumtype_to_keyvalue :: (slot: *void, struct_info: *Type_Info_Struct) -> ok:=fals
     valid, tag_member, union_member, tag_info, union_info:= is_valid_sumtype(struct_info);
     if !valid { return_with_error("SumType % is not valid", struct_info.name); }
 
-    active_tag_idx := get_enum_value(slot + tag_member.offset_in_bytes, xx tag_member.type);
-    active_variant := union_info.members[active_tag_idx];
+    active_tag_idx:= get_enum_value(slot + tag_member.offset_in_bytes, xx tag_member.type);
+    active_variant:= union_info.members[active_tag_idx];
+    variant_slot:= slot + union_member.offset_in_bytes + active_variant.offset_in_bytes;
+    if is_null(variant_slot, active_variant.type) return_with_error("Null pointer in SumType detected which is not supported");
 
-    // if is_null(slot + member.offset_in_bytes, member.type) continue; TODO
-    // can be custom sum-type null
-
-    ok, union_value:= type_to_value(slot + union_member.offset_in_bytes + active_variant.offset_in_bytes, active_variant.type); if !ok return;
+    ok, union_value:= type_to_value(variant_slot, active_variant.type); if !ok return;
     active_tag_name:= tag_info.names[active_tag_idx]; // We use the enums string name as the union member may be anonymous
     return true, .{key=active_tag_name, value=union_value};
 }
