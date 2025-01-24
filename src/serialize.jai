@@ -44,17 +44,22 @@ type_to_value :: (slot: *void, info: *Type_Info) -> ok:=false, toml:Value=.{} {
         // Unlike Basic.print we do re-print all overlapping #place members. This will output the same data multiple times, but is likely more predictable.
         // Otherwise we would need to keep track of the offset is always increase compared to the highest offset.
         add_members :: (table: *[..]KeyValue, struct_info: *Type_Info_Struct, slot: *void) -> ok:=false { // swap slot and info
+            log("name %", struct_info.name);
+            for struct_info.notes  log("note %", it);
             if array_find(struct_info.notes, "TaggedUnion") {
+                log("asd2");
                 ok, union_keyvalue:= tagged_union_to_keyvalue(slot, struct_info);  if !ok return;
                 array_add(table, union_keyvalue);
                 return true;
             }
+            if struct_info.textual_flags & .UNION return_with_error("Untagged unions (%) are not supported, as we cannot determine the active member, use @TaggedUnion", ifx struct_info.name then struct_info.name else "anonymous");
+
             for member: struct_info.members {
                 if member.flags & (.CONSTANT | .IMPORTED)              continue;
                 if is_null(slot + member.offset_in_bytes, member.type) continue;
                 if member.name == "" { // Anonymous using
                     if member.type.type != .STRUCT then return_with_error("Type with anonymous using of non-structs is not supported"); // Anonymous pointers / enums
-                    add_members(table, cast(*Type_Info_Struct, member.type), slot + member.offset_in_bytes);
+                    ok:= add_members(table, cast(*Type_Info_Struct, member.type), slot + member.offset_in_bytes); if !ok return;
                     continue;
                 }
                 ok, member_value:= type_to_value(slot + member.offset_in_bytes, member.type);  if !ok return;
@@ -118,7 +123,8 @@ tagged_union_to_keyvalue :: (slot: *void, struct_info: *Type_Info_Struct) -> ok:
     // can be custom sum-type null
 
     ok, union_value:= type_to_value(slot + union_member.offset_in_bytes + active_variant.offset_in_bytes, active_variant.type); if !ok return;
-    return true, .{key=tag_info.names[active_tag_idx], value=union_value};
+    active_tag_name:= tag_info.names[active_tag_idx]; // We use the enums string name as the union member may be anonymous
+    return true, .{key=active_tag_name, value=union_value};
 }
 
 is_null :: (slot: *void, info: *Type_Info) -> bool {

@@ -56,26 +56,26 @@ DONE
     // A tagged union / sum-type requires the tag in the toml to be correctly matching the set union
     // To make the TAG optional and prevent incorrect tags you can declare the union's tag member with a note like @UnionTag:mytag
     // NOTE: Make sure the union initializes to the first variant by disabling initialization of the other variants with ---.
-    Guy :: struct {
-        using joost: union { // @compiler It would be nice if we could add a tag to anonymous using unions
-            banana: void;
-            apple: struct { a: u8; b: string;} = ---;
-            orange: string = ---;
-        }; @UnionTag:mytag
+    Guy :: struct @TaggedUnion {
         mytag: enum {
             BANANA;
             APPLE;
             ORANGE;
         };
+        using joost: union { // @compiler It would be nice if we could add a tag to anonymous using unions
+            banana: void;
+            apple: struct { a: u8; b: string;} = ---;
+            orange: string = ---;
+        }; @UnionTag:mytag // TODO remove
     }
     ok=, apple := Toml.deserialize("apple = {a = 32, b = 'Y'}", Guy); assert(ok);
     print("struct_apple: %\n", apple);
     print("struct_apple: %: %\n", apple.mytag, apple.apple);
     ok_apple, toml_apple := Toml.serialize(apple); assert(ok_apple);
-    log("struct_apple serialized:\n%", toml_apple);
+    assert("APPLE={a=32, b=\"Y\"}\n" == toml_apple, "%", toml_apple);
 
     // If the TOML data does not contain a field that is present in the struct, the field will be initialized to its default value.
-    // Jai's initialization of unions is wack. So instead unions are initialized always initialized to the first variant.
+    // Jai's initialization of unions is wack. So it is highly recommended to use --- to disable initialization of all variants that do not correspond to the default tag.
     ok=, void_banana := Toml.deserialize("", Guy); assert(ok);
     print("void_banana: %\n", void_banana);
     print("void_banana: %: %\n", void_banana.mytag, void_banana.banana);
@@ -146,7 +146,7 @@ using_members :: () {
     assert(named_using2.hi.q == 0, "%", named_using2.hi.q);
     // When serializing a pointer member it will also omit the member name.
     ok=, named_using_str := Toml.serialize(named_using1); assert(ok);
-    assert(named_using_str == "q=99\n");
+    assert(named_using_str == "hi.q=99\n", "%", named_using_str);
 
     // A pointer member that is declared `using` is different.
     // In this case it is ONLY possible to set by explicitly naming the using member.
