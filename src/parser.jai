@@ -78,7 +78,7 @@ parse_key :: (parent: *Value, scope: Scope) -> ok:=false, leaf:*Value=null, leaf
 }
 
 // * current_table is null for values in arrays
-parse_value :: (current_table: *Value, scope: *Scope) -> ok:=false, value:Value=.{} { // TODO only assign value if key is empty table
+parse_value :: (current_table: *Value, scope: *Scope) -> ok:=false, value:Value=.{} {
     if !has_next(scope) { return_with_error("Unexpected end of file while parsing value"); }
 
     token := peek_token(scope);

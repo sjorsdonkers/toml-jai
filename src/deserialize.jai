@@ -45,16 +45,20 @@ value_to_type :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string
         if toml.table.count != 0 { return_with_error("Expected empty table for %.%, got %", parent_name, name, toml.table.count);  }
     case .STRUCT;
         if value_to_chrono(toml, slot, info) return true;
-        expect(toml.type, .TABLE, parent_name, name);
 
-        members := flat_members(xx info); defer array_free(members);
-        for member: members if !(member.flags & .USING && member.type.type == .STRUCT) {
+        expect(toml.type, .TABLE, parent_name, name);
+        struct_info :*Type_Info_Struct= xx info;
+
+        if array_find(struct_info.notes, "SumType") {
+            return value_to_sumtype(toml.table, slot, struct_info, parent_name);
+        }
+        for member: struct_info.members {
+            if member.flags & (.CONSTANT |.IMPORTED) continue;
             for toml.table if it.key == member.name {
-                ok := value_to_type(it.value, slot + member.offset_in_bytes, member.type, parent_name, member.name); if !ok return;
-                break; // TODO catch multiple members from the same union, works but leaky, will also needed to determine required members are set
+                ok:= value_to_type(it.value, slot + member.offset_in_bytes, member.type, parent_name, member.name);  if !ok return;
+                break;
             }
         }
-        ok := enforce_uniontag_note(toml.table, slot, members, parent_name); if !ok return;
     case .ARRAY;
         expect(toml.type, .ARRAY, parent_name, name);
         array_info :*Type_Info_Array= xx info;
@@ -85,32 +89,14 @@ value_to_type :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string
         }
     case .ANY;
         any_value :*Any_Struct= xx slot;
-
-        homogeneous_array_info :: (array: []Value) -> is_same_type:bool, *Type_Info {
-            if array.count == 0 { return false, null; }
-            first_type := array[0].type;
-            if first_type == .ARRAY || first_type == .TABLE { return false, null; } // Not going down multiple levels
-            for array { if it.type != first_type { return false, null; }}
-            if first_type == {
-            case .BOOL;     return true, type_info([]type_of(Value.bool_value));
-            case .INT;      return true, type_info([]type_of(Value.int_value));
-            case .FLOAT;    return true, type_info([]type_of(Value.float_value));
-            case .STRING;   return true, type_info([]type_of(Value.string_value));
-            case .DATETIME; return true, type_info([]type_of(Value.datetime));
-            }
-            return false, null;
-        }
-
         if #complete toml.type == {
         case .BOOL;     any_value.type = type_info(type_of(Value.bool_value));
         case .INT;      any_value.type = type_info(type_of(Value.int_value));
         case .FLOAT;    any_value.type = type_info(type_of(Value.float_value));
         case .STRING;   any_value.type = type_info(type_of(Value.string_value));
         case .DATETIME; any_value.type = type_info(type_of(Value.datetime));
-        case .ARRAY;
-            is_same, array_type := homogeneous_array_info(toml.array);
-            any_value.type = ifx is_same then array_type else type_info(type_of(Value.array));
-        case .TABLE;  any_value.type = type_info(type_of(Value.table));
+        case .ARRAY;    any_value.type = type_info(type_of(Value.array));
+        case .TABLE;    any_value.type = type_info(type_of(Value.table));
         }
         any_value.value_pointer = alloc(any_value.type.runtime_size);
         initialize_memory(any_value.value_pointer, any_value.type);
@@ -155,45 +141,30 @@ value_to_chrono ::  (toml: Value, slot: *void, info: *Type_Info) -> is_chrono:bo
     return false;
 }
 
-// Collect all variables members and flattens using structs incl. unions, keeps original using members as well, needed for uniontag
-flat_members :: (info:*Type_Info_Struct) -> [..]Type_Info_Struct_Member { // TODO change to for_expansion?
-    flat_members :: (flattened:*[..]Type_Info_Struct_Member, info:*Type_Info_Struct, offset_in_bytes: s64) {
-        for member: info.members {
-            if member.flags & .CONSTANT { continue; }
-            if member.flags & .USING && member.type.type == .STRUCT { // NOTE: Enums and pointers can be using too
-                flat_members(flattened, xx member.type, offset_in_bytes + member.offset_in_bytes);
-            }
-            array_add(flattened, member);
-            peek_pointer(flattened.*).offset_in_bytes += offset_in_bytes;
-        }
+value_to_sumtype :: (toml_table: []KeyValue, slot: *void, struct_info: *Type_Info_Struct, parent_name: string) -> ok:=false {
+    valid, tag_member, union_member, tag_info, union_info:= is_valid_sumtype(struct_info);
+    if !valid { return_with_error("SumType % is not valid", struct_info.name); }
+
+    if toml_table.count == 0  return true; // Empty table, nothing to do
+    if toml_table.count != 1  return_with_error("SumType % should have exactly one key-value pair", struct_info.name);
+
+    for tag_info.names if it == toml_table[0].key {
+        set_enum_value(slot + tag_member.offset_in_bytes, tag_info, tag_info.values[it_index]);
+        active_variant:= union_info.members[it_index];
+        return value_to_type(toml_table[0].value, slot + union_member.offset_in_bytes + active_variant.offset_in_bytes, active_variant.type, parent_name, toml_table[0].key);
     }
-    flattened: [..]Type_Info_Struct_Member;
-    flat_members(*flattened, info, 0);
-    return flattened;
+    return_with_error("Key % is not an enum variant of SumType %", toml_table[0].key, struct_info.name);
 }
 
-enforce_uniontag_note :: (toml_table: []KeyValue, slot: *void, flat_members: []Type_Info_Struct_Member, parent_name: string) -> ok:=false {
-    for member: flat_members {
-        // Find union member with @UnionTag note
-        if member.type.type != .STRUCT continue;
-        member_info :*Type_Info_Struct= xx member.type;
-        if !(member_info.textual_flags & .UNION) continue;
-        tag_name: string;
-        for note: member.notes if begins_with(note, "UnionTag:") { tag_name = slice(note, 9, note.count-9); break; }
-        if !tag_name continue;
-
-        // Find it's tag member
-        tag : *Type_Info_Struct_Member;
-        for * flat_members if it.name == tag_name { tag = it; break; }
-        assert(tag!=null, "Union %.%'s tag member `%` cannot be found", parent_name, member.name, tag_name);
-
-        // Determine which union member is was set (if any) and set the tag to its index
-        for #v2 < union_member, union_idx: member_info.members for toml_table if it.key == union_member.name { // Reverse in case of multiple
-            ok := value_to_type(.{type=.INT, int_value=union_idx}, slot + tag.offset_in_bytes, tag.type, parent_name, union_member.name); if !ok return;
-            break union_member;
-        }
-    }
-    return true;
+is_valid_sumtype :: (struct_info: *Type_Info_Struct) -> bool, tag_member:*Type_Info_Struct_Member=null, union_member:*Type_Info_Struct_Member=null, tag_info:*Type_Info_Enum=null, union_info:*Type_Info_Struct=null {
+    if struct_info.members.count != 2                                      return false;
+    tag_member, union_member:= *struct_info.members[0], *struct_info.members[1];
+    if tag_member.type.type != .ENUM || union_member.type.type != .STRUCT  return false;
+    tag_info :*Type_Info_Enum= xx tag_member.type;
+    union_info :*Type_Info_Struct= xx union_member.type;
+    if union_info.textual_flags & .UNION == 0                              return false;
+    if tag_info.values.count != union_info.members.count                   return false;
+    return true, tag_member, union_member, tag_info, union_info;
 }
 
 expect :: inline (given: Value.Type, expected: Value.Type, struct_name: string, member_name: string) #expand {

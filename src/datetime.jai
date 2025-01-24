@@ -2,7 +2,7 @@
 // https://datatracker.ietf.org/doc/html/rfc3339
 // These types are to be removed when there is a commonly used datetime module in Jai
 
-Chrono :: struct {
+Chrono :: struct @SumType {
     Type :: enum u8 {
         LOCAL_TIME;
         LOCAL_DATE;
