@@ -42,8 +42,8 @@ type_to_value :: (slot: *void, info: *Type_Info) -> ok:=false, toml:Value=.{} {
         }
 
         if array_find(struct_info.notes, "SumType") {
-            ok, union_keyvalue:= sumtype_to_keyvalue(slot, struct_info);  if !ok return;
-            return true, .{type=.TABLE, table=resizable(KeyValue.[union_keyvalue])};
+            ok, sumtype_value:= sumtype_to_value(slot, struct_info);  if !ok return;
+            return true, sumtype_value;
         }
         if struct_info.textual_flags & .UNION return_with_error("Untagged unions (%) are not supported, as we cannot determine the active member, use @SumType", ifx struct_info.name then struct_info.name else "anonymous");
 
@@ -96,7 +96,7 @@ type_to_value :: (slot: *void, info: *Type_Info) -> ok:=false, toml:Value=.{} {
     return_with_error("Parsing of type % is not supported", info.type);
 }
 
-sumtype_to_keyvalue :: (slot: *void, struct_info: *Type_Info_Struct) -> ok:=false, keyvalue:KeyValue=.{} {
+sumtype_to_value :: (slot: *void, struct_info: *Type_Info_Struct) -> ok:=false, value:Value=.{} {
     valid, tag_member, union_member, tag_info, union_info:= is_valid_sumtype(struct_info);
     if !valid { return_with_error("SumType % is not valid", struct_info.name); }
 
@@ -107,7 +107,7 @@ sumtype_to_keyvalue :: (slot: *void, struct_info: *Type_Info_Struct) -> ok:=fals
 
     ok, union_value:= type_to_value(variant_slot, active_variant.type); if !ok return;
     active_tag_name:= tag_info.names[active_tag_idx]; // We use the enums string name as the union member may be anonymous
-    return true, .{key=active_tag_name, value=union_value};
+    return true, .{type=.TABLE, table=resizable(KeyValue.[.{key=active_tag_name, value=union_value}])};
 }
 
 is_null :: (slot: *void, info: *Type_Info) -> bool {

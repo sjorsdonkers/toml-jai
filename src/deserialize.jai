@@ -16,8 +16,6 @@ value_to_type :: (value: Value, $Target: Type) -> ok:=false, value:Target=.{} {
 // slot is already initialized memory
 // Currently all fields are optional. TODO check TomlOptional Note and require_all true/false
 value_to_type :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="", name:string="") -> ok:=false {
-    if info == type_info(Value) { cast(*Value, slot).* = copy(toml); return true; } // If we encounter a Toml.Value at any point just copy it
-
     if #complete info.type == {
     case .INTEGER;
         expect(toml.type, .INT, parent_name, name);
@@ -44,6 +42,7 @@ value_to_type :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string
         expect(toml.type, .TABLE, parent_name, name);
         if toml.table.count != 0 { return_with_error("Expected empty table for %.%, got %", parent_name, name, toml.table.count);  }
     case .STRUCT;
+        if info == type_info(Value) { cast(*Value, slot).* = copy(toml); return true; } // If we encounter a Toml.Value at any point just copy it
         if value_to_chrono(toml, slot, info) return true;
 
         expect(toml.type, .TABLE, parent_name, name);
