@@ -63,7 +63,7 @@ type_to_value :: (slot: *void, info: *Type_Info) -> ok:=false, toml:Value=.{} {
             return true;
         }
         table: [..]KeyValue;
-        add_members(*table, struct_info, slot);
+        ok:= add_members(*table, struct_info, slot);  if !ok return;
         return true, .{type=.TABLE, table=table};
     case .ARRAY;
         array_info :*Type_Info_Array= xx info;
