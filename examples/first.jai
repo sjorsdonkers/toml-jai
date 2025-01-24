@@ -44,12 +44,12 @@ DONE
     }
 
     ok=, my_struct := Toml.deserialize(THE_STRING, MyStruct); assert(ok);
-    print("MyStruct: %\n", my_struct);
+    assert("{false, 23.299999, {32, \"Y\", Y}, [{2}, {-3}, {4}], \"Mai\"}" == tprint("%", my_struct), "%", my_struct);
     ok=, as_value := Toml.serialize(my_struct); assert(ok);
-    log("serialize:\n%", as_value);
+    print("%\n", as_value);
 
-    // When struct members of a struct are declared with `using` the member name is omitted in the TOML data.
-    // When pointer members of a struct are declared with `using` the member name is NOT omitted in the TOML data.
+    // When struct or pointer members of a struct are declared with `using` the member name are required in the TOML data.
+    // If the member is anonymous the member name IS omitted.
     using_members();
 
     // All run-time types are supported.
@@ -134,22 +134,21 @@ DONE
 }
 
 using_members :: () {
-    // When a member is declared `using` the member name is omitted and the members are set directly as if part of the struct.
+    // When a named member is declared `using` the member name is still required.
     Named_Using :: struct {
         using hi: struct { q: u8; };
     }
-    ok, named_using1 := Toml.deserialize("q = 99", Named_Using); assert(ok); // TODO UPDATE EXAMPLES COMMENTS
-    assert(named_using1.q == 0, "%", named_using1.q);
-    // When a struct members is declared with `using` the member name cannot be used in the TOML to set the data
+    ok, named_using1:= Toml.deserialize("hi = { q=98 }", Named_Using); assert(ok);
+    assert(named_using1.hi.q == 98, "%", named_using1.hi.q);
+    // When a struct members is declared with `using` the member name cannot be omitted in the TOML to set the data
     // This is to prevent having multiple ways to define the same data. It also reduced the amount of recursion we have to do when deserializing.
-    ok=, named_using2 := Toml.deserialize("hi = { q=98 }", Named_Using); assert(ok);
-    assert(named_using2.hi.q == 98, "%", named_using2.hi.q);
-    // When serializing a pointer member it will also omit the member name.
-    ok=, named_using_str := Toml.serialize(named_using2); assert(ok);
+    ok=, named_using2 := Toml.deserialize("q = 99", Named_Using); assert(ok);
+    assert(named_using2.q == 0, "%", named_using2.q); // 0 since is the default value when it is not set
+    // When serializing a using member it will also write the member name.
+    ok=, named_using_str := Toml.serialize(named_using1); assert(ok);
     assert(named_using_str == "hi.q=98\n", "%", named_using_str);
 
-    // A pointer member that is declared `using` is different.
-    // In this case it is ONLY possible to set by explicitly naming the using member.
+    // A pointer member that is declared `using` is the same.
     Q :: struct {
         q: s16;
     }
@@ -161,6 +160,22 @@ using_members :: () {
     // When serializing a pointer member it will not omit the member name, consistent with deserialization.
     ok=, pointer_using_str := Toml.serialize(pointer_using); assert(ok);
     assert(pointer_using_str == "hi.q=97\n");
+
+    // An anonymous member that is declared `using` still require the empty key "" in the TOML data.
+    // The members however are clustered together into a single table.
+    Anonymous_Using :: struct {
+        struct { q: u8; };
+        struct { t: string; };
+    }
+    ok=, anonymous_using:= Toml.deserialize("'' = { q = 96, t = 'hello' }", Anonymous_Using); assert(ok);
+    assert(anonymous_using.q == 96, "%", anonymous_using.q);
+    assert(anonymous_using.t == "hello", "%", anonymous_using.t);
+    // When serializing an anonymous using member it will not omit the member name, consistent with deserialization.
+    ok=, anonymous_using_str := Toml.serialize(anonymous_using); assert(ok);
+    assert(anonymous_using_str == #string DONE
+"".q=96
+"".t="hello"
+DONE, "%", anonymous_using_str);
 }
 
 error_handling :: () {
@@ -262,7 +277,7 @@ reference_types :: () {
     MyUnionPtr :: struct {
         p_union: *MyUnionStruct;
     }
-    ok=, un_ptr := Toml.deserialize("tag = 'FIRST' \n p_union.first.number = 3", MyUnionPtr); assert(ok);
+    ok=, un_ptr := Toml.deserialize("tag = 'FIRST' \n p_union.''.first.number = 3", MyUnionPtr); assert(ok);
     print("un_ptr: %: %\n", un_ptr.p_union.tag, un_ptr.p_union.first);
     assert(un_ptr.p_union.first.number == 3);
     assert(un_ptr.p_union.first.getal == 23);

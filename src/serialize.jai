@@ -41,31 +41,21 @@ type_to_value :: (slot: *void, info: *Type_Info) -> ok:=false, toml:Value=.{} {
         case type_info(DateTimeOffset); return true, .{type=.DATETIME, datetime=.{type=.OFFSET_DATETIME, datetime_offset=cast(*DateTimeOffset, slot).*}};
         }
 
-        // Unlike Basic.print we do re-print all overlapping #place members. This will output the same data multiple times, but is likely more predictable.
-        // Otherwise we would need to keep track of the offset is always increase compared to the highest offset.
-        add_members :: (table: *[..]KeyValue, struct_info: *Type_Info_Struct, slot: *void) -> ok:=false { // swap slot and info
-            if array_find(struct_info.notes, "TaggedUnion") {
-                ok, union_keyvalue:= tagged_union_to_keyvalue(slot, struct_info);  if !ok return;
-                array_add(table, union_keyvalue);
-                return true;
-            }
-            if struct_info.textual_flags & .UNION return_with_error("Untagged unions (%) are not supported, as we cannot determine the active member, use @TaggedUnion", ifx struct_info.name then struct_info.name else "anonymous");
-
-            for member: struct_info.members {
-                if member.flags & (.CONSTANT | .IMPORTED)              continue;
-                if is_null(slot + member.offset_in_bytes, member.type) continue;
-                if member.name == "" { // Anonymous using
-                    if member.type.type != .STRUCT then return_with_error("Type with anonymous using of non-structs is not supported"); // Anonymous pointers / enums
-                    ok:= add_members(table, xx member.type, slot + member.offset_in_bytes); if !ok return;
-                    continue;
-                }
-                ok, member_value:= type_to_value(slot + member.offset_in_bytes, member.type);  if !ok return;
-                array_add(table, KeyValue.{key=member.name, value=member_value});
-            }
-            return true;
+        if array_find(struct_info.notes, "TaggedUnion") {
+            ok, union_keyvalue:= tagged_union_to_keyvalue(slot, struct_info);  if !ok return;
+            return true, .{type=.TABLE, table=resizable(KeyValue.[union_keyvalue])};
         }
+        if struct_info.textual_flags & .UNION return_with_error("Untagged unions (%) are not supported, as we cannot determine the active member, use @TaggedUnion", ifx struct_info.name then struct_info.name else "anonymous");
+
+        // Unlike Basic.print we do re-print all overlapping #place members. This will output the same data multiple times, but is likely more predictable.
+        // Otherwise we would need to recursively track the offset is always increase compared to the highest offset.
         table: [..]KeyValue;
-        ok:= add_members(*table, struct_info, slot);  if !ok return;
+        for member: struct_info.members {
+            if member.flags & (.CONSTANT | .IMPORTED)              continue;
+            if is_null(slot + member.offset_in_bytes, member.type) continue;
+            ok, member_value:= type_to_value(slot + member.offset_in_bytes, member.type);  if !ok return;
+            array_add(*table, KeyValue.{key=member.name, value=member_value});
+        }
         return true, .{type=.TABLE, table=table};
     case .ARRAY;
         array_info :*Type_Info_Array= xx info;
