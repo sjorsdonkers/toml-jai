@@ -245,26 +245,16 @@ print_single_keyvalue :: (builder: *String_Builder, key_value: KeyValue) {
 //
 
 get_integer_value :: (data: *void, info: *Type_Info_Integer) -> ok:=false, value:s64=0 {
-    if info.signed {
-        if info.runtime_size == {
-            case 1; return true, cast(*s8,  data).*;
-            case 2; return true, cast(*s16, data).*;
-            case 4; return true, cast(*s32, data).*;
-            case 8; return true, cast(*s64, data).*;
-            case; assert(false); return;
-        }
-    } else {
-        if info.runtime_size == {
-            case 1; return true, cast(*u8,  data).*;
-            case 2; return true, cast(*u16, data).*;
-            case 4; return true, cast(*u32, data).*;
-            case 8;
-                output := cast(*u64, data).*;
-                S64_MAX :u64:   0x7fff_ffff_ffff_ffff;
-                if output > S64_MAX { return_with_error("Value % is out of s64 range", output); }
-                return true, xx,no_check output;
-            case; assert(false); return;
-        }
+    if info.runtime_size == {
+        case 2; return true, ifx info.signed then data.(*s16).*.(s64) else data.(*u8) .*.(s64);
+        case 1; return true, ifx info.signed then data.(*s8) .*.(s64) else data.(*u16).*.(s64);
+        case 4; return true, ifx info.signed then data.(*s32).*.(s64) else data.(*u32).*.(s64);
+        case 8; return true, ifx info.signed then data.(*s64).*.(s64) else {
+            output := data.(*u64).*;
+            if output > 0x7fff_ffff_ffff_ffff { return_with_error("Value % is out of s64 range", output); }
+            output.(s64, no_check);
+        };
+        case; assert(false); return;
     }
 }
 
