@@ -83,12 +83,8 @@ type_to_value :: (slot: *void, info: *Type_Info) -> ok:=false, toml:Value=.{} {
     case .VARIANT;
         ok, value:= type_to_value(slot, cast(*Type_Info_Variant, info).variant_of);
         return ok, value;
-    case .PROCEDURE;            #through;
-    case .OVERLOAD_SET;         #through;
-    case .POLYMORPHIC_VARIABLE; #through;
-    case .TYPE;                 #through;
-    case .CODE;                 #through;
-    case .UNTYPED_LITERAL;      #through;
+    case .PROCEDURE; #through;  case .OVERLOAD_SET; #through;  case .POLYMORPHIC_VARIABLE; #through;
+    case .TYPE;      #through;  case .CODE;         #through;  case .UNTYPED_LITERAL;      #through;
     case .UNTYPED_ENUM;
     }
     return_with_error("Parsing of type % is not supported", info.type);
@@ -178,9 +174,7 @@ serialize_inline :: (builder: *String_Builder, value: Value) {
 }
 
 print_to_builder_escaped :: (builder: *String_Builder, str: string, $is_key: bool) {
-    #if is_key {
-        if is_bare_key(str) { append(builder, str); return; }
-    }
+    #if is_key { if is_bare_key(str) { append(builder, str); return; } }
     // TODO consider single ' and multiline strings, Note multiline should impact is_inline_table
     append(builder, "\"");
 	for str if it == {
