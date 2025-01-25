@@ -152,18 +152,16 @@ serialize :: (builder: *String_Builder, value: Value, parent_key: string = "") {
 
 serialize_inline :: (builder: *String_Builder, value: Value) {
     if #complete value.type == {
-    case .BOOL;     print_item_to_builder(builder, value.bool_value);
-    case .INT;      print_item_to_builder(builder, value.int_value);
+    case .BOOL; print_item_to_builder(builder, value.bool_value);
+    case .INT;  print_item_to_builder(builder, value.int_value);
     case .FLOAT;
-        if isnan(value.float_value) {
+        is_nan, is_inf:= is_nan_is_inf(value.float_value);
+        if is_nan || is_inf {
             if (cast(*u64, *value.float_value).* & 0x8000_0000_0000_0000) { append(builder, "-"); }
-            append(builder, "nan");
-        } else if isinf(value.float_value) {
-            if (cast(*u64, *value.float_value).* & 0x8000_0000_0000_0000) { append(builder, "-"); }
-            append(builder, "inf");
-        } else {
-            print_item_to_builder(builder, value.float_value);
+            if is_nan { append(builder, "nan"); } else { append(builder, "inf"); }
+            return;
         }
+        print_item_to_builder(builder, value.float_value);
     case .STRING;   print_to_builder_escaped(builder, value.string_value, false);
     case .DATETIME; print_datetime_to_builder(builder, value.datetime);
     case .ARRAY;
