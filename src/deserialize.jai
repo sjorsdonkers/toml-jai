@@ -44,13 +44,10 @@ value_to_type :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string
     case .STRUCT;
         if info == type_info(Value) { cast(*Value, slot).* = copy(toml); return true; } // If we encounter a Toml.Value at any point just copy it
         if value_to_chrono(toml, slot, info) return true;
-
         expect(toml.type, .TABLE, parent_name, name);
         struct_info :*Type_Info_Struct= xx info;
 
-        if array_find(struct_info.notes, "SumType") {
-            return value_to_sumtype(toml.table, slot, struct_info, parent_name);
-        }
+        if array_find(struct_info.notes, "SumType") { return value_to_sumtype(toml.table, slot, struct_info, parent_name); }
         for member: struct_info.members {
             if member.flags & (.CONSTANT |.IMPORTED) continue;
             for toml.table if it.key == member.name {
@@ -101,18 +98,12 @@ value_to_type :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string
         initialize_memory(any_value.value_pointer, any_value.type);
         return value_to_type(toml, any_value.value_pointer, any_value.type, parent_name, name);
     case .ENUM;
+        expect(toml.type, .STRING, parent_name, name);
         enum_info :*Type_Info_Enum= xx info;
-        if toml.type == {
-        case .STRING;
-            found, index := array_find(enum_info.names, toml.string_value);
-            if !found { return_with_error("String % is not a variant of enum %", toml.string_value, enum_info.name); }
-            set_enum_value(slot, enum_info, enum_info.values[index]);
-        case .INT;
-            found := array_find(enum_info.values, toml.int_value);
-            if !found { return_with_error("Value % is not a variant of enum %", toml.int_value, enum_info.name); }
-            set_enum_value(slot, enum_info, toml.int_value);
-        case; return_with_error("Wrong type for %.%, expected STRING or INT, got % ", parent_name, name, toml.type);
-        }
+
+        found, index := array_find(enum_info.names, toml.string_value);
+        if !found { return_with_error("String % is not a variant of enum %", toml.string_value, enum_info.name); }
+        set_enum_value(slot, enum_info, enum_info.values[index]);
     case .VARIANT;
         variant_info :*Type_Info_Variant= xx info;
         return value_to_type(toml, slot, variant_info.variant_of, parent_name, name);

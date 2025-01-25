@@ -41,10 +41,7 @@ type_to_value :: (slot: *void, info: *Type_Info) -> ok:=false, toml:Value=.{} {
         case type_info(DateTimeOffset); return true, .{type=.DATETIME, datetime=.{type=.OFFSET_DATETIME, datetime_offset=cast(*DateTimeOffset, slot).*}};
         }
 
-        if array_find(struct_info.notes, "SumType") {
-            ok, sumtype_value:= sumtype_to_value(slot, struct_info);
-            return ok, sumtype_value;
-        }
+        if array_find(struct_info.notes, "SumType") { ok, sumtype_value:= sumtype_to_value(slot, struct_info); return ok, sumtype_value; }
         if struct_info.textual_flags & .UNION return_with_error("Untagged unions (%) are not supported, as we cannot determine the active member, use @SumType", ifx struct_info.name then struct_info.name else "anonymous");
 
         // Unlike Basic.print we do re-print all overlapping #place members. This will output the same data multiple times, but is likely more predictable.
@@ -78,10 +75,11 @@ type_to_value :: (slot: *void, info: *Type_Info) -> ok:=false, toml:Value=.{} {
         return ok, value;
     case .ENUM;
         enum_info :*Type_Info_Enum= xx info;
-        for enum_info.values  if it == get_enum_value(slot, enum_info) {
+        enum_value:= get_enum_value(slot, enum_info);
+        for enum_info.values  if it == enum_value {
             return true, .{type=.STRING, string_value=enum_info.names[it_index]};
         }
-        assert(false, "Enum value % not found in enum %", get_enum_value(slot, enum_info), enum_info.name);
+        assert(false, "Enum value % not found in enum %", enum_value, enum_info.name);
     case .VARIANT;
         ok, value:= type_to_value(slot, cast(*Type_Info_Variant, info).variant_of);
         return ok, value;
