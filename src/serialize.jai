@@ -106,10 +106,8 @@ sumtype_to_value :: (slot: *void, struct_info: *Type_Info_Struct) -> ok:=false, 
     if is_null(variant_slot, active_variant.type) return_with_error("Null pointer in SumType detected which is not supported");
 
     ok, union_value:= type_to_value(variant_slot, active_variant.type); if !ok return;
-    active_tag_name:= tag_info.names[active_tag_idx]; // We use the enums string name as the union member may be anonymous
-
     table: [..]KeyValue;
-    array_add(*table, KeyValue.{key=active_tag_name, value=union_value});
+    array_add(*table, .{key=tag_info.names[active_tag_idx], value=union_value}); // We use the enums string name as the union member may be anonymous
     return true, .{type=.TABLE, table=table};
 }
 
