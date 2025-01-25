@@ -42,8 +42,8 @@ type_to_value :: (slot: *void, info: *Type_Info) -> ok:=false, toml:Value=.{} {
         }
 
         if array_find(struct_info.notes, "SumType") {
-            ok, sumtype_value:= sumtype_to_value(slot, struct_info);  if !ok return;
-            return true, sumtype_value;
+            ok, sumtype_value:= sumtype_to_value(slot, struct_info);
+            return ok, sumtype_value;
         }
         if struct_info.textual_flags & .UNION return_with_error("Untagged unions (%) are not supported, as we cannot determine the active member, use @SumType", ifx struct_info.name then struct_info.name else "anonymous");
 
@@ -107,7 +107,10 @@ sumtype_to_value :: (slot: *void, struct_info: *Type_Info_Struct) -> ok:=false, 
 
     ok, union_value:= type_to_value(variant_slot, active_variant.type); if !ok return;
     active_tag_name:= tag_info.names[active_tag_idx]; // We use the enums string name as the union member may be anonymous
-    return true, .{type=.TABLE, table=resizable(KeyValue.[.{key=active_tag_name, value=union_value}])};
+
+    table: [..]KeyValue;
+    array_add(*table, KeyValue.{key=active_tag_name, value=union_value});
+    return true, .{type=.TABLE, table=table};
 }
 
 is_null :: (slot: *void, info: *Type_Info) -> bool {
@@ -126,9 +129,9 @@ serialize :: (builder: *String_Builder, value: Value, parent_key: string = "") {
     // [Table.Header]
     for value.table  if is_table_header(it.value) {
         dotted_key := build_dotted_key(parent_key, it.key);
-        has_inline := it.table.count == 0; // Do not start a [table.header] if there are no inline values
-        for it.table if it.type != .TABLE || !is_table_header(it.value) { has_inline = true; break; }
-        if has_inline {
+        next_is_header := true; // Do not start a [table.header] yet if the next table is also a table header
+        for it.table if !is_table_header(it.value) { next_is_header = false; break; }
+        if !next_is_header {
             append(builder, "[");
             append(builder, dotted_key);
             append(builder, "]\n");
@@ -202,22 +205,19 @@ print_to_builder_escaped :: (builder: *String_Builder, str: string, $is_key: boo
 // true if it would otherwise introduce additional braces or brackets, so no in-line tables or arrays in in-line tables,
 // additionally also not: a = {b.c = 1, b.d = 2, e = 3} as it is equivalent to: a = { b= {c = 1, d = 2}, e = 3}
 is_table_header :: (value: Value) -> bool {
+    is_inline_table :: (table: []KeyValue) -> bool {
+        for table if it.type == .TABLE || it.type == .ARRAY then return false;
+        return true;
+    }
     is_single_value :: (table: []KeyValue) -> bool {
-        if table.count != 1 return false;
-        if table[0].type == {
-        case .TABLE;
-            return is_single_value(table[0].table);
-        case .ARRAY; return false;
-        case; return true;
-        }
+        if is_inline_table(table)  return true;
+        if table.count != 1        return false;
+        if table[0].type == .TABLE return is_single_value(table[0].table);
+        if table[0].type == .ARRAY return false;
+        return true;
     }
     if value.type != .TABLE return false;
-    for value.table if it.type == {
-    case .TABLE;
-        if !is_single_value(it.table) return true;
-    case .ARRAY; return true;
-    }
-    return value.table.count == 0;
+    return !is_single_value(value.table);
 }
 
 // true if all elements are tables of any kind

@@ -56,7 +56,7 @@ DONE
     // If the member is anonymous the member name is an empty string "".
     using_members();
 
-    // All run-time types are supported, excepts for serializing untagged unions. Unions are supported by tagging them tagging.
+    // All run-time types are supported, excepts for serializing untagged unions. Unions are supported by tagging them.
     unions_and_place();
 
     // For convenience Toml.Value comes with an equality operator and copy procedure.
@@ -171,6 +171,50 @@ unions_and_place :: () {
     // Serializing SumTypes to null pointers/anys is not supported.
     null_banana := Guy.{mytag=.BANANA, banana=null};
     ok = Toml.serialize(null_banana); assert(!ok);
+
+    // Sum-type can be nested without issue.
+    Group :: struct @SumType {
+        tag: enum {
+            FIRST;
+            SECOND;
+            THIRD;
+        }
+        union {
+            first: string;
+            second: Guy;
+            third: Guy;
+        };
+    }
+    group:= Group.{tag=.SECOND, second=Guy.{mytag=.ORANGE, orange="color"}};
+    ok=, group_toml := Toml.serialize(group); assert(ok);
+    assert("SECOND.ORANGE=\"color\"\n" == tprint("%", group_toml));
+    ok, group = Toml.deserialize("THIRD.BANANA = -17", Group); assert(ok);
+    assert(group.tag == .THIRD && group.third.mytag == .BANANA && group.third.banana.* == -17);
+
+    // Note that just like normal structs if the member is anonymous it still requires the empty key "" in the TOML data.
+    StructMember :: struct  {
+        named: Guy;
+        struct @SumType {
+            tag: enum { A; B; }
+            union { a: string; b: Guy; };
+        }
+    }
+    smem:= StructMember.{
+        named=Guy.{mytag=.APPLE, apple=.{a=9, b="butter"}},
+        tag=.B, b=Guy.{mytag=.ORANGE, orange="kleur"}
+    };
+    ok=, smem_toml:= Toml.serialize(smem); assert(ok);
+    assert(#string DONE
+named.APPLE={a=9, b="butter"}
+"".B.ORANGE="kleur"
+DONE == tprint("%", smem_toml), "%", smem_toml);
+
+    ok, smem = Toml.deserialize(#string DONE
+named.BANANA = 987
+"".B.APPLE = {a = 3, b = 'peanut'}
+DONE, StructMember); assert(ok);
+    assert(smem.named.mytag == .BANANA && smem.named.banana.* == 987);
+    assert(smem.tag == .B && smem.b.mytag == .APPLE && smem.b.apple.a == 3 && smem.b.apple.b == "peanut");
 
     // If a structure has overlapping members / members with different names through the #place directive
     // they are all serialized. This is inconsistent with Basic.print which skips members that overlap previous members.
