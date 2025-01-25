@@ -246,8 +246,8 @@ print_single_keyvalue :: (builder: *String_Builder, key_value: KeyValue) {
 
 get_integer_value :: (data: *void, info: *Type_Info_Integer) -> ok:=false, value:s64=0 {
     if info.runtime_size == {
-        case 2; return true, ifx info.signed then data.(*s16).*.(s64) else data.(*u8) .*.(s64);
-        case 1; return true, ifx info.signed then data.(*s8) .*.(s64) else data.(*u16).*.(s64);
+        case 1; return true, ifx info.signed then data.(*s8) .*.(s64) else data.(*u8) .*.(s64);
+        case 2; return true, ifx info.signed then data.(*s16).*.(s64) else data.(*u16).*.(s64);
         case 4; return true, ifx info.signed then data.(*s32).*.(s64) else data.(*u32).*.(s64);
         case 8; return true, ifx info.signed then data.(*s64).*.(s64) else {
             output := data.(*u64).*;
