@@ -190,6 +190,20 @@ initialize_memory :: (memory: *void, info: *Type_Info, count:s64=1) {
     memset(memory, 0, total_size);
 }
 
+get_integer_value :: (data: *void, info: *Type_Info_Integer) -> ok:=false, value:s64=0 {
+    if info.runtime_size == {
+        case 1; return true, ifx info.signed then data.(*s8) .*.(s64) else data.(*u8) .*.(s64);
+        case 2; return true, ifx info.signed then data.(*s16).*.(s64) else data.(*u16).*.(s64);
+        case 4; return true, ifx info.signed then data.(*s32).*.(s64) else data.(*u32).*.(s64);
+        case 8; return true, ifx info.signed then data.(*s64).*.(s64) else {
+            output := data.(*u64).*;
+            if output > 0x7fff_ffff_ffff_ffff { return_with_error("Value % is out of s64 range", output); }
+            output.(s64, no_check);
+        };
+        case; assert(false); return;
+    }
+}
+
 scoped_pool :: () -> Allocator #expand {
     pool: Flat_Pool; // TBD does this needs to be backticked?
     a: Allocator;

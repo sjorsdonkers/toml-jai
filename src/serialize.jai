@@ -2,7 +2,7 @@ serialize :: (input: $T) -> ok:=false, toml:string="" {
     a := scoped_pool();
     ok, value := type_to_value(*input, type_info(T),, a); if !ok return;
     builder: String_Builder;
-    serialize(*builder, value,, a);
+    print_table_to_builder(*builder, value,, a);
     return true, builder_to_string(*builder);
 }
 
@@ -111,11 +111,11 @@ is_null :: (slot: *void, info: *Type_Info) -> bool {
     return false;
 }
 
-serialize :: (builder: *String_Builder, value: Value, parent_key: string = "") {
+print_table_to_builder :: (builder: *String_Builder, value: Value, parent_key: string = "") {
     assert(value.type == .TABLE, "Only tables can be serialized at the top level, got %", value.type);
     // Key=Value pairs
     for value.table  if !is_table_header(it.value) && !is_array_of_tables(it.value) {
-        print_single_keyvalue(builder, it);
+        print_keyvalue_to_builder(builder, it);
         append(builder, "\n");
     }
     // [Table.Header]
@@ -128,7 +128,7 @@ serialize :: (builder: *String_Builder, value: Value, parent_key: string = "") {
             append(builder, dotted_key);
             append(builder, "]\n");
         }
-        serialize(builder, it.value, dotted_key);
+        print_table_to_builder(builder, it.value, dotted_key);
     }
     // [[Array.Of.Tables.Header]]
     for value.table  if is_array_of_tables(it.value) {
@@ -137,12 +137,26 @@ serialize :: (builder: *String_Builder, value: Value, parent_key: string = "") {
             append(builder, "[[");
             append(builder, dotted_key);
             append(builder, "]]\n");
-            serialize(builder, it, dotted_key);
+            print_table_to_builder(builder, it, dotted_key);
         }
     }
 }
 
-serialize_inline :: (builder: *String_Builder, value: Value) {
+print_keyvalue_to_builder :: (builder: *String_Builder, key_value: KeyValue) {
+    // Recursively print a dotted key
+    print_to_builder_escaped(builder, key_value.key, true);
+    if key_value.type == .TABLE && key_value.table.count == 1 {
+        append(builder, ".");
+        print_keyvalue_to_builder(builder, key_value.table[0]);
+        return;
+    } // If this is a table with multiple values we print it as an inline table.
+
+    // We print the value inside this procedure as only the very last value needs to be printed
+    append(builder, "=");
+    print_inline_value_to_builder(builder, key_value.value);
+}
+
+print_inline_value_to_builder :: (builder: *String_Builder, value: Value) {
     if #complete value.type == {
     case .BOOL; print_item_to_builder(builder, value.bool_value);
     case .INT;  print_item_to_builder(builder, value.int_value);
@@ -159,14 +173,14 @@ serialize_inline :: (builder: *String_Builder, value: Value) {
     case .ARRAY;
         append(builder, "[");
         for value.array {
-            serialize_inline(builder, it);
+            print_inline_value_to_builder(builder, it);
             if it_index + 1 != value.array.count then append(builder, ", ");
         }
         append(builder, "]");
     case .TABLE;
         append(builder, "{");
         for value.table {
-            print_single_keyvalue(builder, it);
+            print_keyvalue_to_builder(builder, it);
             if it_index + 1 != value.table.count then append(builder, ", ");
         }
         append(builder, "}");
@@ -175,8 +189,8 @@ serialize_inline :: (builder: *String_Builder, value: Value) {
 
 print_to_builder_escaped :: (builder: *String_Builder, str: string, $is_key: bool) {
     #if is_key { if is_bare_key(str) { append(builder, str); return; } }
-    // TODO consider single ' and multiline strings, Note multiline should impact is_inline_table
-    append(builder, "\"");
+
+    append(builder, "\""); // TODO consider single ' and multiline strings, Note multiline should impact is_inline_table
 	for str if it == {
         case #char "\x08"; append(builder, "\\b");
         case #char "\t";   append(builder, "\\t");
@@ -224,38 +238,6 @@ build_dotted_key :: (parent_key: string, key: string) -> string {
     }
     print_to_builder_escaped(*key_builder, key, true);
     return builder_to_string(*key_builder);
-}
-
-print_single_keyvalue :: (builder: *String_Builder, key_value: KeyValue) {
-    // Recursively print a dotted key
-    print_to_builder_escaped(builder, key_value.key, true);
-    if key_value.type == .TABLE && key_value.table.count == 1 {
-        append(builder, ".");
-        print_single_keyvalue(builder, key_value.table[0]);
-        return;
-    } // If this is a table with multiple values we print it as an inline table.
-
-    // We print the value inside this procedure as only the very last value needs to be printed
-    append(builder, "=");
-    serialize_inline(builder, key_value.value);
-}
-
-//
-// Generic memory utilities
-//
-
-get_integer_value :: (data: *void, info: *Type_Info_Integer) -> ok:=false, value:s64=0 {
-    if info.runtime_size == {
-        case 1; return true, ifx info.signed then data.(*s8) .*.(s64) else data.(*u8) .*.(s64);
-        case 2; return true, ifx info.signed then data.(*s16).*.(s64) else data.(*u16).*.(s64);
-        case 4; return true, ifx info.signed then data.(*s32).*.(s64) else data.(*u32).*.(s64);
-        case 8; return true, ifx info.signed then data.(*s64).*.(s64) else {
-            output := data.(*u64).*;
-            if output > 0x7fff_ffff_ffff_ffff { return_with_error("Value % is out of s64 range", output); }
-            output.(s64, no_check);
-        };
-        case; assert(false); return;
-    }
 }
 
 #scope_file
