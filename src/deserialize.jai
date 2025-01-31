@@ -205,7 +205,7 @@ get_integer_value :: (data: *void, info: *Type_Info_Integer) -> ok:=false, value
 }
 
 scoped_pool :: () -> Allocator #expand {
-    pool: Flat_Pool; // TBD does this needs to be backticked?
+    pool: Flat_Pool;
     a: Allocator;
     a.proc = flat_pool_allocator_proc;
     a.data = *pool;

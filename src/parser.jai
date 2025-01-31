@@ -1,6 +1,6 @@
 // Does not support:
 // - Rejecting all control characters
-// - Rejecting values that overwrite / append to previous ones!
+// - Rejecting values that append to previous inline ones
 // - Full toml validation like newlines in an inline table or numbers with leading zeros or _s
 
 #scope_module
