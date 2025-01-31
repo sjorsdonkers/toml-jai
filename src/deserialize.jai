@@ -11,15 +11,23 @@ value_to_type :: (value: Value, $Target: Type) -> ok:=false, value:Target=.{} {
     return ok, target;
 }
 
-#scope_module
+#if CUSTOM_HANDLERS {
+    #add_context toml_custom_value_to_type: (toml: Value, slot: *void, info:*Type_Info, parent_name:string, name:string) -> done:bool, ok:bool;
+}
 
+// Note meant to be called by the user directly, but instead to be used inside custom deserializers
 // slot is already initialized memory
 // Currently all fields are optional. TODO check TomlOptional Note and require_all true/false
 value_to_type :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="", name:string="") -> ok:=false {
+    #if CUSTOM_HANDLERS {
+        done, ok := context.toml_custom_value_to_type(toml, slot, info, parent_name, name);
+        if done return ok;
+    }
+
     if #complete info.type == {
     case .INTEGER;
         expect(toml.type, .INT, parent_name, name);
-        valid, low, high := range_check_and_store(toml.int_value, cast(*Type_Info_Integer, info), slot);
+        valid, low, high := range_check_and_store(toml.int_value, xx info, slot);
         if !valid { return_with_error("Value for %.% is out of range. Given % expected min % max %", parent_name, name, toml.int_value, low, high); }
     case .FLOAT;
         if toml.type != .INT expect(toml.type, .FLOAT, parent_name, name); // Allow int to float conversion
@@ -60,28 +68,29 @@ value_to_type :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string
         array_info :*Type_Info_Array= xx info;
         element_type := array_info.element_type;
 
-        fill_array :: (toml_array: []Value, slot: *void, item_info: *Type_Info, parent_name:string) {
+        fill_array :: (toml_array: []Value, slot: *void, item_info: *Type_Info, parent_name:string) -> ok:=false {
             for idx: 0..toml_array.count-1 {
                 item_slot := slot + item_info.runtime_size * idx;
                 ok := value_to_type(toml_array[idx], item_slot, item_info, parent_name, "[item]"); if !ok return;
             }
+            return true;
         }
         if #complete array_info.array_type == {
         case .FIXED;
             if toml.array.count != array_info.array_count { return_with_error("Fixed array %.% expected % items, got %", parent_name, name, array_info.array_count, toml.array.count); }
-            fill_array(toml.array, slot, element_type, name); // NOTE .FIXED is inside the struct so already initialized
+            ok := fill_array(toml.array, slot, element_type, name); if !ok return; // NOTE .FIXED is inside the struct so already initialized
         case .VIEW;
             array := cast(*[] u8, slot);
             array.data = alloc(toml.array.count * element_type.runtime_size);
             array.count = toml.array.count;
             initialize_memory(array.data, element_type, array.count);
-            fill_array(toml.array, array.data, element_type, name);
+            ok := fill_array(toml.array, array.data, element_type, name); if !ok return;
         case .RESIZABLE;
             array := cast(*[..] u8, slot);
             array_reserve(array, toml.array.count * element_type.runtime_size);
             array.count = toml.array.count;
             initialize_memory(array.data, element_type, array.count);
-            fill_array(toml.array, array.data, element_type, name);
+            ok := fill_array(toml.array, array.data, element_type, name); if !ok return;
         }
     case .ANY;
         any_value :*Any_Struct= xx slot;
@@ -103,7 +112,7 @@ value_to_type :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string
 
         found, index := array_find(enum_info.names, toml.string_value);
         if !found { return_with_error("String % is not a variant of enum %", toml.string_value, enum_info.name); }
-        set_enum_value(slot, enum_info, enum_info.values[index]);
+        Reflection.set_enum_value(slot, enum_info, enum_info.values[index]);
     case .VARIANT;
         variant_info :*Type_Info_Variant= xx info;
         return value_to_type(toml, slot, variant_info.variant_of, parent_name, name);
@@ -135,7 +144,7 @@ value_to_sumtype :: (toml_table: []KeyValue, slot: *void, struct_info: *Type_Inf
     if toml_table.count != 1  return_with_error("SumType % should have exactly one key-value pair", struct_info.name);
 
     for tag_info.names if it == toml_table[0].key {
-        set_enum_value(slot + tag_member.offset_in_bytes, tag_info, tag_info.values[it_index]);
+        Reflection.set_enum_value(slot + tag_member.offset_in_bytes, tag_info, tag_info.values[it_index]);
         active_variant:= union_info.members[it_index];
         return value_to_type(toml_table[0].value, slot + union_member.offset_in_bytes + active_variant.offset_in_bytes, active_variant.type, parent_name, toml_table[0].key);
     }
@@ -156,6 +165,8 @@ is_valid_sumtype :: (struct_info: *Type_Info_Struct) -> bool, tag_member:*Type_I
 expect :: inline (given: Value.Type, expected: Value.Type, struct_name: string, member_name: string) #expand {
     if given != expected { `return_with_error("Wrong type for %.%, expected %, got % ", struct_name, member_name, expected, given); }
 }
+
+#scope_module
 
 //
 // Generic memory utilities
@@ -204,6 +215,31 @@ get_integer_value :: (data: *void, info: *Type_Info_Integer) -> ok:=false, value
     }
 }
 
+range_check_and_store :: (value: s64, info: *Type_Info_Integer, pointer: *void) -> ok:bool, low:s64, high:s64 {
+    low, high :s64= ---;
+    if info.signed || info.runtime_size == 8 {
+        low, high =    Reflection.signed_integer_range_from_size(info.runtime_size);
+    } else {
+        ulow, uhigh := Reflection.unsigned_integer_range_from_size(info.runtime_size);
+        low, high = ulow.(s64), uhigh.(s64);
+    }
+    if (value < low) || (value > high)  return false, low, high;
+
+    if info.signed if info.runtime_size == {
+        case 1; pointer.(*s8) .* = xx,no_check value;
+        case 2; pointer.(*s16).* = xx,no_check value;
+        case 4; pointer.(*s32).* = xx,no_check value;
+        case 8; pointer.(*s64).* = xx,no_check value;
+    }
+    else if info.runtime_size == {
+        case 1; pointer.(*u8) .* = xx,no_check value;
+        case 2; pointer.(*u16).* = xx,no_check value;
+        case 4; pointer.(*u32).* = xx,no_check value;
+        case 8; pointer.(*u64).* = xx,no_check value;
+    }
+    return true, low, high;
+}
+
 scoped_pool :: () -> Allocator #expand {
     pool: Flat_Pool;
     a: Allocator;
@@ -215,5 +251,5 @@ scoped_pool :: () -> Allocator #expand {
 
 #scope_file
 #load "parser.jai";
-#import "Reflection";
+Reflection :: #import "Reflection";
 #import "Flat_Pool";
