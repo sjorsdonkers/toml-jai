@@ -17,7 +17,6 @@ value_to_type :: (value: Value, $Target: Type) -> ok:=false, value:Target=.{} {
 
 // Note meant to be called by the user directly, but instead to be used inside custom deserializers
 // slot is already initialized memory
-// Currently all fields are optional. TODO check TomlOptional Note and require_all true/false
 value_to_type :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="", name:string="") -> ok:=false {
     #if CUSTOM_HANDLERS {
         done, ok := context.toml_custom_value_to_type(toml, slot, info, parent_name, name);
