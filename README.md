@@ -1,5 +1,7 @@
 # TOML-jai
 
+![](https://img.shields.io/badge/Jai-beta%200.2.008-blue.svg)
+
 A module for `TOML v1.0.0` support. It provides functionality to read/write TOML files and convert them directly to/from Jai data structures.
 
 - Full TOML v1.0.0 support.
@@ -8,8 +10,6 @@ A module for `TOML v1.0.0` support. It provides functionality to read/write TOML
 - Dates/times are supported types provided in [src/datetime.jai](src/datetime.jai) (until Jai has native types, Apollo_time.Calendar_Time is not usable here).
 - Safe sum-types with `@SumType` notes to indicate the struct has a tag enum followed by a matching union.
 - There is currently no way to provide an alternative (de)serialization procedures for a user-defined type (e.g. Jai's Tagged_Union would serialize as an array of u8 numbers and the contents of the Type_Info)
-
-Latest confirmed compatible Jai Version: beta 0.2.008, built on 14 January 2025.
 
 ## Deserialize
 `ok, my_struct := Toml.deserialize(toml_string, My_Struct);`
