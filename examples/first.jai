@@ -9,7 +9,6 @@ main :: () {
     print("%\n", toml);
 
     // We can also deserialize the TOML data into a struct. The struct must have the same fields as the TOML data.
-    // The struct can have additional fields that are not present in the TOML data, in this case the fields will be initialized to their default values.
     // The TOML can have additional fields that are not present in the struct, in this case the fields will be ignored.
 THE_STRING :: #string DONE
 orange = false
@@ -101,12 +100,13 @@ optionals :: () {
     Required :: struct { blob : u8; }
     ok := Toml.deserialize("", Required); assert(!ok);
 
-    // To always keep a member at the default value thus prevent attempting to read a field at all, even if it is present we can remove it from the Type_Info, see custom_handlers.jai,
+    // To always keep a member at the default value thus prevent attempting to read a field at all,
+    // even if it is present we can remove it from the Type_Info, see custom_handlers.jai,
 
     // If however we to allow a field to be missing, but read it if it is present the member can be annotated with @TomlOptional
     // The default value will be used if the field is missing.
     Optionals :: struct {
-        a: u8 = 17; @TomlOptional
+        a: u8 = 17; @TomlOptional // @TomlOptional may be removed in the future in favor of a convenience procedure to use in a custom handler.
         b: u8 = 18; @TomlOptional
     }
     ok=, optionals := Toml.deserialize("a=99", Optionals); assert(ok);
