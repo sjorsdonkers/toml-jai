@@ -1,5 +1,7 @@
 # TOML-jai
 
+![](https://img.shields.io/badge/Jai-beta%200.2.008-blue.svg)
+
 A module for `TOML v1.0.0` support. It provides functionality to read/write TOML files and convert them directly to/from Jai data structures.
 
 - Full TOML v1.0.0 support.
@@ -7,9 +9,7 @@ A module for `TOML v1.0.0` support. It provides functionality to read/write TOML
 - Generic data is supported through the [Toml.Value](src/data.jai) struct.
 - Dates/times are supported types provided in [src/datetime.jai](src/datetime.jai) (until Jai has native types, Apollo_time.Calendar_Time is not usable here).
 - Safe sum-types with `@SumType` notes to indicate the struct has a tag enum followed by a matching union.
-- There is currently no way to provide an alternative (de)serialization procedures for a user-defined type (e.g. Jai's Tagged_Union would serialize as an array of u8 numbers and the contents of the Type_Info)
-
-Latest confirmed compatible Jai Version: beta 0.2.008, built on 14 January 2025.
+- Modifying the default behavior, like renaming, omitting, changing Type representation like enum as int, extra validation, or handling complex data like binary encodings are supported through [custom handlers](examples/custom_handlers.jai). 
 
 ## Deserialize
 `ok, my_struct := Toml.deserialize(toml_string, My_Struct);`
@@ -41,6 +41,30 @@ The lifetime of all returned objects ends when the memory of the allocator is re
 - Most temporarily allocated memory in the module is freed in one go by releasing a pool allocator.
 - In most cases this means that only the returned data will be left allocated on the context allocator.
 
+## Custom handlers
+
+By default this Toml modules makes several choices like, enums as string, members serialized by their name, no members omitted, etc.
+These choices may be fine for the large majority of use-case but not all. Custom handlers enable the user to modify the serialization/deserialization of types.
+
+Note that these custom handler drive "what" is (de)serialized, they do not help with formatting of the toml.
+
+Serialization can be modified by enabling `CUSTOM_HANDLERS` on the module and setting a custom handler procedure in the context.
+```jai
+enum_to_value :: (slot: *void, info: *Type_Info) -> done:=true, ok:=false, toml:Value=.{} {
+    if info.type != .ENUM return false;
+    enum_value := Reflection.get_enum_value(slot, xx info);
+    ok, value  := Toml.type_to_value(*enum_value, type_info(s64));
+    return true, ok, value;
+}
+
+ok, toml := Toml.serialize(
+    my_struct
+    ,, toml_custom_type_to_value = enum_to_value
+);
+
+#import "Toml"(CUSTOM_HANDLERS=true);
+```
+
 ## Testing
 `jai ./tests.jai`  
 - The module is tested by compiling and running the examples. The command above does that for all examples.
@@ -53,8 +77,14 @@ The module supports both Typed as well as Generic data using Toml.Value. To avoi
 ### Type reflection
 We only have a run-time reflection based implementation, e.g. pointer and Type_Info based like: `parse :: (slot: *void, info: Type_Info)`. A compile-time reflection based implementation that has the types determined at compile-time like `parse :: (data: *$T)` would have slightly cleaner code and better run-time performance, but it does not support dynamic types like Any. Having multiple implementations, or alternative solutions like requiring the user to poke_name a custom serializer for every possible type contained in the Any are considered undesirable.
 
-### [planned] Customization points
-A user may want to modify how a struct is serialized for example: omit members, rename members or create a specific toml structure. For various use cases we may implement specific solutions like notes on members that are required/optional, or their serialization name. For more complex cases we may allow the user to provide a procedure that converts A->B such that whenever an A occurs it is serialized as a B (note that B could be Toml.Value). Likely such a conversion procedures would come in pairs for serialization A->B and deserialization B->A.
+### Customization points
+Custom handlers have several design goals:
+ - Keep the core Toml module implementation clean from complexity.
+ - Enable custom serialization of types we do not own (external Modules) as we may not be able to add notes or remove members.
+ - The same type should be serializable in different ways defined at the procedure call site, not struct definition.
+ - Enable data tweaks during serialization as opposed to full copies of nested structure trees (separate structs for serialization and use within the application).
+
+In addition to handlers we currently also support making struct members optional through a @TomlOptional note. This means there are 2 ways to do the same thing and it also requires the data structure to be modified. It is likely this note will be removed when these kinds of operations are better supported through custom handlers.
 
 ### Lexer
 The tokenization/lexer phase completes before the parser starts. As a result memory needs to be allocated to store the tokens. There is no particular reason for this implementation other than that I wanted to experiment with this type of lexer. Unlike traditional lexers the one implemented here does not parse the tokens into literals like int/float/etc it just determines a token starts and ends. It is the responsibility of the parser to interpret the string when it has more context.

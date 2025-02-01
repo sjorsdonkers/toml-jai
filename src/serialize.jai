@@ -11,10 +11,18 @@ type_to_value :: (input: $T) -> ok:=false, value:Value=.{} {
     return ok, copy(value);
 }
 
-#scope_module
+#if CUSTOM_HANDLERS {
+    #add_context toml_custom_type_to_value:= (slot: *void, info: *Type_Info) -> done:bool, ok:bool, toml:Value { return false, true, .{}; };
+}
 
-// Note: Does not deep copy
+// NOTE: Does not deep copy!
+// Not meant to be called directly by the user, but instead to be used inside custom serializers.
 type_to_value :: (slot: *void, info: *Type_Info) -> ok:=false, toml:Value=.{} {
+    #if CUSTOM_HANDLERS {
+        done, ok, value := context.toml_custom_type_to_value(slot, info);
+        if done return ok, value;
+    }
+
     if #complete info.type == {
     case .INTEGER;
         ok, value := get_integer_value(slot, xx info); if !ok return;
@@ -75,7 +83,7 @@ type_to_value :: (slot: *void, info: *Type_Info) -> ok:=false, toml:Value=.{} {
         return ok, value;
     case .ENUM;
         enum_info :*Type_Info_Enum= xx info;
-        enum_value:= get_enum_value(slot, enum_info);
+        enum_value:= Reflection.get_enum_value(slot, enum_info);
         for enum_info.values  if it == enum_value {
             return true, .{type=.STRING, string_value=enum_info.names[it_index]};
         }
@@ -94,7 +102,7 @@ sumtype_to_value :: (slot: *void, struct_info: *Type_Info_Struct) -> ok:=false, 
     valid, tag_member, union_member, tag_info, union_info:= is_valid_sumtype(struct_info);
     if !valid { return_with_error("SumType % is not valid", struct_info.name); }
 
-    active_tag_idx:= get_enum_value(slot + tag_member.offset_in_bytes, xx tag_member.type);
+    active_tag_idx:= Reflection.get_enum_value(slot + tag_member.offset_in_bytes, xx tag_member.type);
     active_variant:= union_info.members[active_tag_idx];
     variant_slot:= slot + union_member.offset_in_bytes + active_variant.offset_in_bytes;
     if is_null(variant_slot, active_variant.type) return_with_error("Null pointer in SumType detected which is not supported");
@@ -110,6 +118,8 @@ is_null :: (slot: *void, info: *Type_Info) -> bool {
     if info.type == .ANY     return cast(*Any_Struct, slot).value_pointer == null;
     return false;
 }
+
+#scope_module
 
 print_table_to_builder :: (builder: *String_Builder, value: Value, parent_key: string = "") {
     assert(value.type == .TABLE, "Only tables can be serialized at the top level, got %", value.type);
@@ -243,3 +253,4 @@ build_dotted_key :: (parent_key: string, key: string) -> string {
 #scope_file
 #import "Basic";
 #import "Math";
+Reflection :: #import "Reflection";

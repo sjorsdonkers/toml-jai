@@ -9,7 +9,6 @@ main :: () {
     print("%\n", toml);
 
     // We can also deserialize the TOML data into a struct. The struct must have the same fields as the TOML data.
-    // The struct can have additional fields that are not present in the TOML data, in this case the fields will be initialized to their default values.
     // The TOML can have additional fields that are not present in the struct, in this case the fields will be ignored.
 THE_STRING :: #string DONE
 orange = false
@@ -48,9 +47,8 @@ DONE
     ok=, as_value := Toml.serialize(my_struct); assert(ok);
     print("%\n", as_value);
 
-    // If the TOML data does not contain a field that is present in the struct, the field will be initialized to its default value.
-    ok=, default_struct := Toml.deserialize("", Q); assert(ok);
-    assert(default_struct.q == 0, "%", default_struct.q);
+    // By default all members are required to be present in the TOML. @TomlOptional or a custom handler can be used to make them optional or ignored.
+    optionals();
 
     // When struct or pointer members of a struct are declared with `using` the member name are required in the TOML data.
     // If the member is anonymous the member name is an empty string "".
@@ -97,6 +95,24 @@ DONE
     error_handling();
 }
 
+optionals :: () {
+    // If the TOML data does not contain a field that is present in the struct deserialize will fail.
+    Required :: struct { blob : u8; }
+    ok := Toml.deserialize("", Required); assert(!ok);
+
+    // To always keep a member at the default value thus prevent attempting to read a field at all,
+    // even if it is present we can remove it from the Type_Info, see custom_handlers.jai,
+
+    // If however we to allow a field to be missing, but read it if it is present the member can be annotated with @TomlOptional
+    // The default value will be used if the field is missing.
+    Optionals :: struct {
+        a: u8 = 17; @TomlOptional // @TomlOptional may be removed in the future in favor of a convenience procedure to use in a custom handler.
+        b: u8 = 18; @TomlOptional
+    }
+    ok=, optionals := Toml.deserialize("a=99", Optionals); assert(ok);
+    assert(optionals.a == 99 && optionals.b == 18, "%", optionals);
+}
+
 using_members :: () {
     // When a named member is declared `using` the member name is still required.
     Named_Using :: struct {
@@ -106,8 +122,7 @@ using_members :: () {
     assert(named_using1.hi.q == 98, "%", named_using1.hi.q);
     // When a struct members is declared with `using` the member name cannot be omitted in the TOML to set the data
     // This is to prevent having multiple ways to define the same data. It also reduced the amount of recursion we have to do when deserializing.
-    ok=, named_using2 := Toml.deserialize("q = 99", Named_Using); assert(ok);
-    assert(named_using2.q == 0, "%", named_using2.q); // 0 since is the default value when it is not set
+    ok = Toml.deserialize("q = 99", Named_Using); assert(!ok);
     // When serializing a using member it will also write the member name.
     ok=, named_using_str := Toml.serialize(named_using1); assert(ok);
     assert(named_using_str == "hi.q=98\n", "%", named_using_str);
@@ -221,13 +236,12 @@ DONE, StructMember); assert(ok);
     // Note that this may be unsafe if #place is used for a union use-case like a string overlapping some floats. In this case,
     // if the floats are "active" the string is still serialized assuming the data pointer is valid. -- Perhaps we should simply not allow #place.
     // When deserializing the last overlapping member in the struct definition that is also in the toml wins.
+    // It is recommended to make #place members @TomlOptional such that they are not all required.
     #import "Math";
     has_hash_place:= Plane3.{3., 81., .18, .65};
     print("has_hash_place: %\n", has_hash_place);
     ok=, hash_toml:= Toml.serialize(has_hash_place); assert(ok);
     print("hash_toml: %\n", hash_toml);
-    ok=, new_plane:= Toml.deserialize("[vector4] \n xy = {x=2., y=21.6} \n zw = {x=.12, y=.25}", Plane3); assert(ok);
-    assert("{2, 21.6, 0.12, 0.25}" == tprint("%", new_plane));
 }
 
 error_handling :: () {
@@ -274,8 +288,8 @@ reference_types :: () {
 
     // Pointer to fixed array with initializer
     Vingt :: struct       {
-        number : s8=20;
-        getal: Getal= 23;
+        number : s8=20; @TomlOptional
+        getal: Getal= 23; @TomlOptional
     }
     Fixed_Array :: struct {
         p_quatre: *[4]Vingt;
@@ -287,7 +301,7 @@ reference_types :: () {
 
     // Pointer to variant
     DefaultStruct :: struct {
-        a: string="Anton";
+        a: string="Anton"; @TomlOptional
         b: s8;
     }
     DefaultVariant :: #type,distinct DefaultStruct;
@@ -305,12 +319,12 @@ reference_types :: () {
     MyPtrUsing :: struct {
         p_using: *MyUsing;
     }
-    ok=, use20 := Toml.deserialize("[p_using]\nnumber = 6", MyPtrUsing); assert(ok);
+    ok=, use20 := Toml.deserialize("[p_using]\na.number = 6", MyPtrUsing); assert(ok);
     print("use20: %\n", use20.p_using.*);
     assert(use20.p_using.getal == 23);
 
     // Union with first having an initializer
-    MyUnionStruct :: struct {
+    MyUnionStruct :: struct @SumType {
         tag : enum {
             FIRST;
             SECOND;
@@ -329,7 +343,7 @@ reference_types :: () {
     MyUnionPtr :: struct {
         p_union: *MyUnionStruct;
     }
-    ok=, un_ptr := Toml.deserialize("tag = 'FIRST' \n p_union.''.first.number = 3", MyUnionPtr); assert(ok);
+    ok=, un_ptr := Toml.deserialize("p_union.FIRST.number = 3", MyUnionPtr); assert(ok);
     print("un_ptr: %: %\n", un_ptr.p_union.tag, un_ptr.p_union.first);
     assert(un_ptr.p_union.first.number == 3);
     assert(un_ptr.p_union.first.getal == 23);
