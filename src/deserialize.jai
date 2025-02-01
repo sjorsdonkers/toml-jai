@@ -58,10 +58,13 @@ value_to_type :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string
         if array_find(struct_info.notes, "SumType") { return value_to_sumtype(toml.table, slot, struct_info, parent_name); }
         for member: struct_info.members {
             if member.flags & (.CONSTANT |.IMPORTED) continue;
+            found := false;
             for toml.table if it.key == member.name {
+                found = true;
                 ok:= value_to_type(it.value, slot + member.offset_in_bytes, member.type, parent_name, member.name);  if !ok return;
                 break;
             }
+            if !found && !array_find(member.notes, "TomlOptional") return_with_error("Missing field %.%", struct_info.name, member.name);
         }
     case .ARRAY;
         expect(toml.type, .ARRAY, parent_name, name);
