@@ -12,7 +12,7 @@ value_to_type :: (value: Value, $Target: Type) -> ok:=false, value:Target=.{} {
 }
 
 #if CUSTOM_HANDLERS {
-    #add_context toml_custom_value_to_type: (toml: Value, slot: *void, info:*Type_Info, parent_name:string, name:string) -> done:bool, ok:bool;
+    #add_context toml_custom_value_to_type:= (toml: Value, slot: *void, info:*Type_Info, parent_name:string, name:string) -> done:bool, ok:bool { return false, true; };
 }
 
 // Note meant to be called by the user directly, but instead to be used inside custom deserializers

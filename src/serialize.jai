@@ -12,7 +12,7 @@ type_to_value :: (input: $T) -> ok:=false, value:Value=.{} {
 }
 
 #if CUSTOM_HANDLERS {
-    #add_context toml_custom_type_to_value: (slot: *void, info: *Type_Info) -> done:bool, ok:bool, toml:Value;
+    #add_context toml_custom_type_to_value:= (slot: *void, info: *Type_Info) -> done:bool, ok:bool, toml:Value { return false, true, .{}; };
 }
 
 // NOTE: Does not deep copy!
