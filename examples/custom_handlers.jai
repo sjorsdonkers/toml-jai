@@ -217,14 +217,10 @@ error_on_superfluous_keys :: () {
         struct_info :*Type_Info_Struct = xx info;
         if array_find(struct_info.notes, "SumType") return false; // SumTypes never allow superfluous fields
 
-        remaining_members := array_copy(struct_info.members); defer array_free(remaining_members);
         for keyvalue: toml.table {
-            for member: remaining_members {
-                if member.flags & (.CONSTANT |.IMPORTED) remove;
-                if keyvalue.key == member.name {
-                    array_unordered_remove_by_index(*remaining_members, it_index);
-                    continue keyvalue;
-                }
+            for member: struct_info.members {
+                if member.flags & (.CONSTANT |.IMPORTED) continue;
+                if keyvalue.key == member.name continue keyvalue;
             }
             log_error("Superfluous key `%` in %.%", keyvalue.key, parent_name, name);
             return true, false; // We are done, we found an error
@@ -235,9 +231,10 @@ error_on_superfluous_keys :: () {
     OnlyA :: struct {
         a: u8;
     }
+    // Normally superfluous keys are ignored.
     ok := Toml.deserialize("a=1 \n b=2", OnlyA); assert(ok);
+    // With the custom handler we can error on them.
     ok  = Toml.deserialize("a=1 \n b=2", OnlyA,, toml_custom_value_to_type = catch_superfluous_keys); assert(!ok);
-
 }
 
 using Toml :: #import, file "../module.jai"(CUSTOM_HANDLERS=true);
