@@ -12,14 +12,14 @@ value_to_type :: (value: Value, $Target: Type) -> ok:=false, value:Target=.{} {
 }
 
 #if CUSTOM_HANDLERS {
-    #add_context toml_custom_value_to_type:= (toml: Value, slot: *void, info:*Type_Info, parent_name:string, name:string) -> done:bool, ok:bool { return false, true; };
+    #add_context toml_custom_value_to_type:= (toml: Value, slot: *void, info:*Type_Info, name:string, parent_name:string) -> done:bool, ok:bool { return false, true; };
 }
 
 // Note meant to be called by the user directly, but instead to be used inside custom deserializers
 // slot is already initialized memory
-value_to_type :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string="", name:string="") -> ok:=false {
+value_to_type :: (toml: Value, slot: *void, info: *Type_Info, name:string="", parent_name:string="") -> ok:=false {
     #if CUSTOM_HANDLERS {
-        done, ok := context.toml_custom_value_to_type(toml, slot, info, parent_name, name);
+        done, ok := context.toml_custom_value_to_type(toml, slot, info, name, parent_name);
         if done return ok;
     }
 
@@ -44,7 +44,7 @@ value_to_type :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string
         memory := alloc(pointer_info.pointer_to.runtime_size);
         initialize_memory(memory, pointer_info.pointer_to);
         cast(**void, slot).* = memory;
-        return value_to_type(toml, memory, pointer_info.pointer_to, parent_name, name);
+        return value_to_type(toml, memory, pointer_info.pointer_to, name, parent_name);
     case .VOID;
         expect(toml.type, .TABLE, parent_name, name);
         if toml.table.count != 0 { return_with_error("Expected empty table for %.%, got %", parent_name, name, toml.table.count);  }
@@ -54,13 +54,13 @@ value_to_type :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string
         expect(toml.type, .TABLE, parent_name, name);
         struct_info :*Type_Info_Struct= xx info;
 
-        if array_find(struct_info.notes, "SumType") { return value_to_sumtype(toml.table, slot, struct_info, parent_name); }
+        if array_find(struct_info.notes, "SumType") { return value_to_sumtype(toml.table, slot, struct_info, name); }
         for member: struct_info.members {
             if member.flags & (.CONSTANT |.IMPORTED) continue;
             found := false;
             for toml.table if it.key == member.name {
                 found = true;
-                ok:= value_to_type(it.value, slot + member.offset_in_bytes, member.type, parent_name, member.name);  if !ok return;
+                ok:= value_to_type(it.value, slot + member.offset_in_bytes, member.type, member.name, name);  if !ok return;
                 break;
             }
             if !found && !array_find(member.notes, "TomlOptional") return_with_error("Missing field %.%", struct_info.name, member.name);
@@ -73,7 +73,7 @@ value_to_type :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string
         fill_array :: (toml_array: []Value, slot: *void, item_info: *Type_Info, parent_name:string) -> ok:=false {
             for idx: 0..toml_array.count-1 {
                 item_slot := slot + item_info.runtime_size * idx;
-                ok := value_to_type(toml_array[idx], item_slot, item_info, parent_name, "[item]"); if !ok return;
+                ok := value_to_type(toml_array[idx], item_slot, item_info, "[item]", parent_name); if !ok return;
             }
             return true;
         }
@@ -107,7 +107,7 @@ value_to_type :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string
         }
         any_value.value_pointer = alloc(any_value.type.runtime_size);
         initialize_memory(any_value.value_pointer, any_value.type);
-        return value_to_type(toml, any_value.value_pointer, any_value.type, parent_name, name);
+        return value_to_type(toml, any_value.value_pointer, any_value.type, name, parent_name);
     case .ENUM;
         expect(toml.type, .STRING, parent_name, name);
         enum_info :*Type_Info_Enum= xx info;
@@ -117,7 +117,7 @@ value_to_type :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string
         Reflection.set_enum_value(slot, enum_info, enum_info.values[index]);
     case .VARIANT;
         variant_info :*Type_Info_Variant= xx info;
-        return value_to_type(toml, slot, variant_info.variant_of, parent_name, name);
+        return value_to_type(toml, slot, variant_info.variant_of, name, parent_name);
     case .PROCEDURE; #through; case .OVERLOAD_SET; #through; case .POLYMORPHIC_VARIABLE; #through;
     case .TYPE;      #through; case .CODE;         #through; case .UNTYPED_LITERAL;      #through;
     case .UNTYPED_ENUM; return_with_error("Deserialization to type % is not supported", info.type);
@@ -142,13 +142,12 @@ value_to_sumtype :: (toml_table: []KeyValue, slot: *void, struct_info: *Type_Inf
     valid, tag_member, union_member, tag_info, union_info:= is_valid_sumtype(struct_info);
     if !valid { return_with_error("SumType % is not valid", struct_info.name); }
 
-    if toml_table.count == 0  return true; // Empty table, nothing to do
     if toml_table.count != 1  return_with_error("SumType % should have exactly one key-value pair", struct_info.name);
 
     for tag_info.names if it == toml_table[0].key {
         Reflection.set_enum_value(slot + tag_member.offset_in_bytes, tag_info, tag_info.values[it_index]);
         active_variant:= union_info.members[it_index];
-        return value_to_type(toml_table[0].value, slot + union_member.offset_in_bytes + active_variant.offset_in_bytes, active_variant.type, parent_name, toml_table[0].key);
+        return value_to_type(toml_table[0].value, slot + union_member.offset_in_bytes + active_variant.offset_in_bytes, active_variant.type, toml_table[0].key, parent_name);
     }
     return_with_error("Key % is not an enum variant of SumType %", toml_table[0].key, struct_info.name);
 }

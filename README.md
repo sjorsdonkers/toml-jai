@@ -44,7 +44,7 @@ The lifetime of all returned objects ends when the memory of the allocator is re
 ## Custom handlers
 
 By default this Toml modules makes several choices like, enums as string, members serialized by their name, no members omitted, etc.
-These choices may be fine for the large majority of use-case but not all. Custom handlers enable the user to modify the serialization/deserialization of types.
+These choices may be fine for the large majority of use-cases but not all. Custom handlers enable the user to modify the serialization/deserialization of types.
 
 Note that these custom handler drive "what" is (de)serialized, they do not help with formatting of the toml.
 

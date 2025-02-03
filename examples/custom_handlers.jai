@@ -1,6 +1,6 @@
 
 // By default this Toml modules makes several choices like, enums as string, members serialized by their name, no members omitted, etc.
-// These choices may be fine for the large majority of use-case but not all. Custom handlers enable the user to modify the serialization/deserialization of types.
+// These choices may be fine for the large majority of use-cases but not all. Custom handlers enable the user to modify the serialization/deserialization of types.
 // Custom handlers have several design goals:
 // - Keep the core Toml module implementation clean from complexity.
 // - Enable custom serialization of types we do not own (external Modules) as we may not be able to add notes or remove members.
@@ -16,6 +16,13 @@
 // This will add 2 procedure members to the context:
 // - toml_custom_type_to_value := (slot: *void, info: *Type_Info) -> done:bool, ok:bool, toml:Value;
 // - toml_custom_value_to_type := (toml: Value, slot: *void, info:*Type_Info, parent_name:string, name:string) -> done:bool, ok:bool;
+
+main :: () {
+    enum_as_int();
+    member_modifications();
+    arbitrary_magic_binary_encoding();
+    error_on_superfluous_keys();
+}
 
 enum_as_int :: () {
     // By default enums are serialized as strings. We can change this to serialize them as their integer value.
@@ -45,7 +52,7 @@ enum_as_int :: () {
 
     // For deserialization it works the same way, but in opposite direction.
     // The custom procedure receives a Toml Value and writes into the slot.
-    custom_value_to_enum :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string, name:string) -> done:=true, ok:=false {
+    custom_value_to_enum :: (toml: Value, slot: *void, info: *Type_Info, name:string, parent_name:string) -> done:=true, ok:=false {
         if info.type != .ENUM return false;
         expect(toml.type, .INT, parent_name, name);
         enum_info :*Type_Info_Enum = xx info;
@@ -90,7 +97,7 @@ member_modifications :: () {
         ok, value := Toml.type_to_value(slot, *modified_info);
         return true, ok, value;
     }
-    custom_value_to_modified :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string, name:string) -> done:=true, ok:=false {
+    custom_value_to_modified :: (toml: Value, slot: *void, info: *Type_Info, name:string, parent_name:string) -> done:=true, ok:=false {
         if info != type_info(ThreeNamed) return false;
         modified_info := two_renamed_type_info();
         ok := Toml.value_to_type(toml, slot, *modified_info, parent_name, name);
@@ -174,7 +181,7 @@ custom_magic_to_value :: (slot: *void, info: *Type_Info) -> done:=true, ok:=fals
     }
     return true, true, ret;
 }
-custom_value_to_magic :: (toml: Value, slot: *void, info: *Type_Info, parent_name:string, name:string) -> done:=true, ok:=false {
+custom_value_to_magic :: (toml: Value, slot: *void, info: *Type_Info, name:string, parent_name:string) -> done:=true, ok:=false {
     if info != type_info(Magic_Bytes) return false;
 
     if toml.type != .TABLE { log_error("Expected table for Magic_Bytes, got %", toml.type); return; }
@@ -202,10 +209,35 @@ custom_value_to_magic :: (toml: Value, slot: *void, info: *Type_Info, parent_nam
     return;
 }
 
-main :: () {
-    enum_as_int();
-    member_modifications();
-    arbitrary_magic_binary_encoding();
+error_on_superfluous_keys :: () {
+    // By default the Toml module ignores superfluous keys in a table.
+    // We can use a custom handler to error on superfluous keys.
+    catch_superfluous_keys :: (toml: Value, slot: *void, info: *Type_Info, name:string, parent_name:string) -> done:=true, ok:=false {
+        if info.type != .STRUCT || toml.type != .TABLE return false;
+        struct_info :*Type_Info_Struct = xx info;
+        if array_find(struct_info.notes, "SumType") return false; // SumTypes never allow superfluous fields
+
+        remaining_members := array_copy(struct_info.members); defer array_free(remaining_members);
+        for keyvalue: toml.table {
+            for member: remaining_members {
+                if member.flags & (.CONSTANT |.IMPORTED) remove;
+                if keyvalue.key == member.name {
+                    array_unordered_remove_by_index(*remaining_members, it_index);
+                    continue keyvalue;
+                }
+            }
+            log_error("Superfluous key `%` in %.%", keyvalue.key, parent_name, name);
+            return true, false; // We are done, we found an error
+        }
+        return false; // We are not done since we are only validating here, the Value still needs to be deserialized
+    }
+
+    OnlyA :: struct {
+        a: u8;
+    }
+    ok := Toml.deserialize("a=1 \n b=2", OnlyA); assert(ok);
+    ok  = Toml.deserialize("a=1 \n b=2", OnlyA,, toml_custom_value_to_type = catch_superfluous_keys); assert(!ok);
+
 }
 
 using Toml :: #import, file "../module.jai"(CUSTOM_HANDLERS=true);
