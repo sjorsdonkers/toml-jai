@@ -20,7 +20,7 @@
 main :: () {
     enum_as_int();
     member_modifications();
-    arbitrary_magic_binary_encoding();
+    arbitrary_binary_encoding();
     error_on_superfluous_keys();
 }
 
@@ -119,7 +119,7 @@ member_modifications :: () {
     assert(three_named4.a == 4 && three_named4.b == 0 && three_named4.c == 6, "%", three_named4);
 }
 
-arbitrary_magic_binary_encoding :: () {
+arbitrary_binary_encoding :: () {
     // The custom handlers enable us to do conversions of arbitrary complexity during serialization/deserialization.
     // In this example we show how data in a binary encoding can be serialized to Toml and back.
     // Remember that this binary blob could be at any part of a struct hierarchy,

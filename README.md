@@ -14,7 +14,7 @@ A module for `TOML v1.0.0` support. It provides functionality to read/write TOML
 ## Deserialize
 `ok, my_struct := Toml.deserialize(toml_string, My_Struct);`
 - Read TOML directly into any (nested) struct or generic `Toml.Value`.
-- Any field not in the TOML is default initialized. Any superfluous fields in the TOML are ignored.
+- Any field not in the TOML fails unless annotated with `@TomlOptional`. Any superfluous fields in the TOML are ignored.
 - Compile-time constants are ignored and not compared.
 - If the parser understands the input it will accept it even if it is officially invalid according to the standard. This may in the future change to be more strict. See the [validation example](examples/validation.jai) for more details.
 
