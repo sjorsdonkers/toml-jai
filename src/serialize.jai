@@ -34,7 +34,7 @@ type_to_value :: (slot: *void, info: *Type_Info) -> ok:=false, toml:Value=.{} {
     case .BOOL;   return true, .{type=.BOOL, bool_value=cast(*bool, slot).*};
     case .STRING; return true, .{type=.STRING, string_value=cast(*string, slot).*}; // No deep copy!
     case .POINTER;
-        assert(cast(**void, slot) != null, "Implementation error: null pointers should be filtered out");
+        if cast(**void, slot).* == null return true, NULL_VALUE; // User can change default null value as module parameter
         ok, value := type_to_value(cast(**void, slot).*, cast(*Type_Info_Pointer, info).pointer_to);
         return ok, value;
     case .VOID;  return true, .{};
@@ -57,7 +57,6 @@ type_to_value :: (slot: *void, info: *Type_Info) -> ok:=false, toml:Value=.{} {
         table: [..]KeyValue;
         for member: struct_info.members {
             if member.flags & (.CONSTANT | .IMPORTED)              continue;
-            if is_null(slot + member.offset_in_bytes, member.type) continue;
             ok, member_value:= type_to_value(slot + member.offset_in_bytes, member.type);  if !ok return;
             array_add(*table, KeyValue.{key=member.name, value=member_value});
         }
@@ -71,14 +70,13 @@ type_to_value :: (slot: *void, info: *Type_Info) -> ok:=false, toml:Value=.{} {
         array_reserve(*array, array_count);
         for idx: 0..array_count-1 {
             element_slot:= array_slot + array_info.element_type.runtime_size * idx;
-            if is_null(element_slot, array_info.element_type) return_with_error("Null pointer in array detected which is not supported");
             ok, record_value:= type_to_value(element_slot, array_info.element_type); if !ok return;
             array_add(*array, record_value);
         }
         return true, .{type=.ARRAY, array=array};
     case .ANY;
         any_value :*Any_Struct= xx slot;
-        assert(any_value.value_pointer != null, "Implementation error: null pointers should be filtered out");
+        if any_value.value_pointer == null return true, NULL_VALUE; // Similar to null pointer
         ok, value:= type_to_value(any_value.value_pointer, any_value.type);
         return ok, value;
     case .ENUM;
@@ -87,7 +85,7 @@ type_to_value :: (slot: *void, info: *Type_Info) -> ok:=false, toml:Value=.{} {
         for enum_info.values  if it == enum_value {
             return true, .{type=.STRING, string_value=enum_info.names[it_index]};
         }
-        assert(false, "Enum value % not found in enum %", enum_value, enum_info.name);
+        return_with_error("Enum value % not found in enum %", enum_value, enum_info.name);
     case .VARIANT;
         ok, value:= type_to_value(slot, cast(*Type_Info_Variant, info).variant_of);
         return ok, value;
@@ -105,18 +103,11 @@ sumtype_to_value :: (slot: *void, struct_info: *Type_Info_Struct) -> ok:=false, 
     active_tag_idx:= Reflection.get_enum_value(slot + tag_member.offset_in_bytes, xx tag_member.type);
     active_variant:= union_info.members[active_tag_idx];
     variant_slot:= slot + union_member.offset_in_bytes + active_variant.offset_in_bytes;
-    if is_null(variant_slot, active_variant.type) return_with_error("Null pointer in SumType detected which is not supported");
 
     ok, union_value:= type_to_value(variant_slot, active_variant.type); if !ok return;
     table: [..]KeyValue;
     array_add(*table, .{key=tag_info.names[active_tag_idx], value=union_value}); // We use the enums string name as the union member may be anonymous
     return true, .{type=.TABLE, table=table};
-}
-
-is_null :: (slot: *void, info: *Type_Info) -> bool {
-    if info.type == .POINTER return cast(**void, slot).* == null;
-    if info.type == .ANY     return cast(*Any_Struct, slot).value_pointer == null;
-    return false;
 }
 
 #scope_module

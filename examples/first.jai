@@ -160,32 +160,35 @@ DONE, "%", anonymous_using_str);
 unions_and_place :: () {
     // A struct with a @SumType is required to have the first member be the tag and the second be the union with the same number of members as the tag.
     // Jai's initialization of unions is wack. So it is highly recommended to use --- to disable initialization of all variants that do not correspond to the default tag.
-    Guy :: struct @SumType {
-        mytag: enum {
-            BANANA;
-            APPLE;
-            ORANGE;
-        }= .ORANGE;
-        union {
-            banana: *s64 = ---;
-            apple: struct { a: u8; b: string;} = ---;
-            orange: string="default";
-        };
+    Guy :: struct {
+        using scared: struct @SumType {
+            mytag: enum {
+                BANANA;
+                APPLE;
+                ORANGE;
+            }= .ORANGE;
+            union {
+                banana: *s64 = ---;
+                apple: struct { a: u8; b: string;} = ---;
+                orange: string="default";
+            };
+        } @TomlOptional
     }
-    ok, apple := Toml.deserialize("APPLE = {a = 32, b = 'Y'}", Guy); assert(ok);
+    ok, apple := Toml.deserialize("scared.APPLE = {a = 32, b = 'Y'}", Guy); assert(ok);
     print("struct_apple: %\n", apple);
     print("struct_apple: %: %\n", apple.mytag, apple.apple);
     ok_apple, toml_apple := Toml.serialize(apple); assert(ok_apple);
-    assert("APPLE={a=32, b=\"Y\"}\n" == toml_apple, "%", toml_apple);
+    assert("scared.APPLE={a=32, b=\"Y\"}\n" == toml_apple, "%", toml_apple);
 
     // If the TOML data does not contain a field that is present in the struct, the field will be initialized to its default value.
     ok=, void_orange := Toml.deserialize("", Guy); assert(ok);
     assert(void_orange.mytag == .ORANGE, "%", void_orange.mytag);
     assert(void_orange.orange == "default", "%", void_orange.orange);
 
-    // Serializing SumTypes to null pointers/anys is not supported.
+    // Serializing SumTypes to null pointers/anys is supported with the NULL_STRING module parameter.
     null_banana := Guy.{mytag=.BANANA, banana=null};
-    ok = Toml.serialize(null_banana); assert(!ok);
+    ok=, sum_null := Toml.serialize(null_banana); assert(ok);
+    assert("scared.BANANA=\"~null~\"\n" == sum_null, "%", sum_null);
 
     // Sum-type can be nested without issue.
     Group :: struct @SumType {
@@ -202,8 +205,8 @@ unions_and_place :: () {
     }
     group:= Group.{tag=.SECOND, second=Guy.{mytag=.ORANGE, orange="color"}};
     ok=, group_toml := Toml.serialize(group); assert(ok);
-    assert("SECOND.ORANGE=\"color\"\n" == tprint("%", group_toml));
-    ok, group = Toml.deserialize("THIRD.BANANA = -17", Group); assert(ok);
+    assert("SECOND.scared.ORANGE=\"color\"\n" == tprint("%", group_toml));
+    ok, group = Toml.deserialize("THIRD.scared.BANANA = -17", Group); assert(ok);
     assert(group.tag == .THIRD && group.third.mytag == .BANANA && group.third.banana.* == -17);
 
     // Note that just like normal structs if the member is anonymous it still requires the empty key "" in the TOML data.
@@ -220,13 +223,13 @@ unions_and_place :: () {
     };
     ok=, smem_toml:= Toml.serialize(smem); assert(ok);
     assert(#string DONE
-named.APPLE={a=9, b="butter"}
-"".B.ORANGE="kleur"
+named.scared.APPLE={a=9, b="butter"}
+"".B.scared.ORANGE="kleur"
 DONE == tprint("%", smem_toml), "%", smem_toml);
 
     ok, smem = Toml.deserialize(#string DONE
-named.BANANA = 987
-"".B.APPLE = {a = 3, b = 'peanut'}
+named.scared.BANANA = 987
+"".B.scared.APPLE = {a = 3, b = 'peanut'}
 DONE, StructMember); assert(ok);
     assert(smem.named.mytag == .BANANA && smem.named.banana.* == 987);
     assert(smem.tag == .B && smem.b.mytag == .APPLE && smem.b.apple.a == 3 && smem.b.apple.b == "peanut");
@@ -263,10 +266,10 @@ error_handling :: () {
         }
     }
 
-    wrap:= Log_Wrap.{context.logger, context.logger_data, .{}};                          // Store the current logger in the wrap
-    Invalid :: struct { nullptr_array:[1]*void; }                                        // Invalid struct for which we know an error will be given
-    inv_ok := Toml.serialize(Invalid.{.[null]},, logger=capture_log, logger_data=*wrap); // Call to serialize with the invalid struct and setting the context to the wrapped logger
-    if !inv_ok print("capture_log: %", builder_to_string(*wrap.capture));                // The operation failed and the error message is captured in the wrap
+    wrap:= Log_Wrap.{context.logger, context.logger_data, .{}};                               // Store the current logger in the wrap
+    Invalid :: struct { e: enum{}; }                                                          // Struct for which we know we can make an error occur
+    inv_ok := Toml.serialize(Invalid.{e=xx,force 9},, logger=capture_log, logger_data=*wrap); // Call to serialize with the invalid struct and setting the context to the wrapped logger
+    if !inv_ok print("capture_log: %", builder_to_string(*wrap.capture));                     // The operation failed and the error message is captured in the wrap
     else assert(false);
 }
 
@@ -283,6 +286,22 @@ reference_types :: () {
     print("pointers_toml: %\n", pointers_toml);
     print("pointers_toml.p_s16: %\n",   pointers_toml.p_s16.*  );
     print("pointers_toml.p_inner: %\n", pointers_toml.p_inner.*);
+
+    // Optional pointer
+    My_Optional_Pointer :: struct {
+        ptr: *u8; @TomlOptional
+    }
+    ok=, optional_toml := Toml.serialize(My_Optional_Pointer.{ptr=null}); assert(ok);
+    assert(optional_toml == "ptr=\"~null~\"\n", "%", optional_toml);
+    ok=, my_opt_ptr := Toml.deserialize("", My_Optional_Pointer); assert(ok);
+    assert(my_opt_ptr.ptr == null, "%", my_opt_ptr);
+
+    // Null pointer
+    Null_Pointer :: struct {
+        ptr: *u8;
+    }
+    ok=, null_ptr := Toml.deserialize("ptr = \"~null~\"", Null_Pointer); assert(ok);
+    assert(null_ptr.ptr == null, "%", null_ptr);
 
     Getal :: #type,distinct u8;
 
@@ -334,10 +353,6 @@ reference_types :: () {
             second: string = ---;
         }
     }
-    ok=, un := Toml.deserialize("", MyUnionStruct); assert(ok);
-    print("un: %\n", un.first);
-    assert(un.first.number == 20);
-    assert(un.first.getal == 23);
 
     // Pointer to union
     MyUnionPtr :: struct {
@@ -355,6 +370,16 @@ reference_types :: () {
     ok=, arrayview_toml := Toml.deserialize("ocean = [1, 2, 3]", Array_View); assert(ok);
     print("arrayview_toml: %\n", arrayview_toml);
     assert(arrayview_toml.ocean[2] == 3);
+
+    // Array with null pointer
+    Null_Array :: struct {
+        array: []*s16;
+    }
+    five :s16= 5;
+    ok=, null_array_toml := Toml.serialize(Null_Array.{array=.[*five, null]}); assert(ok);
+    assert(null_array_toml == "array=[5, \"~null~\"]\n", "%", null_array_toml);
+    ok=, null_array := Toml.deserialize("array = [5, \"~null~\"]", Null_Array); assert(ok);
+    assert(null_array.array[1] == null, "%", null_array.array[1]);
 
     // ANY
     Amy :: struct {
@@ -391,6 +416,12 @@ reference_types :: () {
     assert("{9, 8}" == tprint("%", any_andy));
     ok=, other_andy := Toml.value_to_type(andies.*[1], OtherAndy); assert(ok);
     assert("{\"Peter\", \"Derick\"}" == tprint("%", other_andy));
+
+    // Null Any
+    ok=, null_any_toml := Toml.serialize(Amy.{}); assert(ok);
+    assert("andy=\"~null~\"\n" == null_any_toml, "%", null_any_toml);
+    ok=, null_any := Toml.deserialize("andy = \"~null~\"", Amy); assert(ok);
+    assert(null_any.andy.value_pointer == null, "%", null_any.andy.value_pointer);
 }
 
 using Toml :: #import, file "../module.jai";

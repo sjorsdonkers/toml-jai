@@ -5,7 +5,7 @@
 A module for `TOML v1.0.0` support. It provides functionality to read/write TOML files and convert them directly to/from Jai data structures.
 
 - Full TOML v1.0.0 support.
-- All run-time data types are supported as their native type including reference types (`pointer`, `array`, `any`), with the exception of untagged `unions`.
+- All run-time data types are supported as their native type including reference types (`pointer`, `array`, `any`), with the exception of `untagged unions`.
 - Generic data is supported through the [Toml.Value](src/data.jai) struct.
 - Dates/times are supported types provided in [src/datetime.jai](src/datetime.jai) (until Jai has native types, Apollo_time.Calendar_Time is not usable here).
 - Safe sum-types with `@SumType` notes to indicate the struct has a tag enum followed by a matching union.
@@ -21,7 +21,7 @@ A module for `TOML v1.0.0` support. It provides functionality to read/write TOML
 ## Serialize
 `ok, toml_string := Toml.serialize(my_struct);`
 - Write any (nested) struct or `Toml.Value` to TOML string.
-- Null pointers/null Anys are skipped, null pointers/null Anys in arrays or SumTypes will error.
+- Null pointers/null Anys by default are written as `"~null~"`, this can be controlled via the module parameter `NULL_STRING`.
 - Compile-time `constants` & `imports` are skipped.
 - `#place` members (containing pointers) may not be safe! Overlapping members are all serialized.
 
@@ -85,6 +85,8 @@ Custom handlers have several design goals:
  - Enable data tweaks during serialization as opposed to full copies of nested structure trees (separate structs for serialization and use within the application).
 
 In addition to handlers we currently also support making struct members optional through a @TomlOptional note. This means there are 2 ways to do the same thing and it also requires the data structure to be modified. It is likely this note will be removed when these kinds of operations are better supported through custom handlers.
+
+`NULL_STRING` is introduced as a customization point as it would otherwise be relatively complicated to catch all cases where pointers can occur. Ideally the module parameter would be a Toml.Value, however we can't user module types before the module is loaded, so the null values are limited to strings. Deserialization of the value `"~null~"` for a `*string` member can be surprising as it would result into a null pointer instead of a string with value `"~null~"`. The `~`s are added to make it a string that is less likely to occur naturally.
 
 ### Lexer
 The tokenization/lexer phase completes before the parser starts. As a result memory needs to be allocated to store the tokens. There is no particular reason for this implementation other than that I wanted to experiment with this type of lexer. Unlike traditional lexers the one implemented here does not parse the tokens into literals like int/float/etc it just determines a token starts and ends. It is the responsibility of the parser to interpret the string when it has more context.

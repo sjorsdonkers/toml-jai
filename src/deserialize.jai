@@ -40,6 +40,8 @@ value_to_type :: (toml: Value, slot: *void, info: *Type_Info, name:string="", pa
         expect(toml.type, .STRING, parent_name, name);
         cast(*string, slot).* = copy_string(toml.string_value);
     case .POINTER;
+        if toml == NULL_VALUE return true; // Null pointer
+
         pointer_info :*Type_Info_Pointer= xx info;
         memory := alloc(pointer_info.pointer_to.runtime_size);
         initialize_memory(memory, pointer_info.pointer_to);
@@ -95,6 +97,8 @@ value_to_type :: (toml: Value, slot: *void, info: *Type_Info, name:string="", pa
             ok := fill_array(toml.array, array.data, element_type, name); if !ok return;
         }
     case .ANY;
+        if toml == NULL_VALUE return true; // Similar to null pointer
+
         any_value :*Any_Struct= xx slot;
         if #complete toml.type == {
         case .BOOL;     any_value.type = type_info(type_of(Value.bool_value));
