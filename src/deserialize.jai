@@ -1,5 +1,5 @@
 deserialize :: (contents: string, $Target: Type) -> ok:=false, value:Target=.{} {
-    ok, value := parse(contents,, scoped_pool()); if !ok return;   // Using scoped_pool since Value can be a bit big for temp
+    ok, value := parse_string_to_value_shared_memory(contents,, scoped_pool()); if !ok return;
     ok=, target := value_to_type(value, Target);
     return ok, target;
 }
@@ -7,7 +7,7 @@ deserialize :: (contents: string, $Target: Type) -> ok:=false, value:Target=.{} 
 value_to_type :: (value: Value, $Target: Type) -> ok:=false, value:Target=.{} {
     info :: type_info(Target);
     target :Target;
-    ok := value_to_type(value, *target, info, info.name);
+    ok := value_to_type(value, *target, info, info.name); // Would be nice to provide a shared_memory version as well without having to wire a `shared` flag all the way through
     return ok, target;
 }
 
@@ -65,7 +65,7 @@ value_to_type :: (toml: Value, slot: *void, info: *Type_Info, name:string="", pa
                 ok:= value_to_type(it.value, slot + member.offset_in_bytes, member.type, member.name, name);  if !ok return;
                 break;
             }
-            if !found && !array_find(member.notes, "TomlOptional") return_with_error("Missing field %.%", struct_info.name, member.name);
+            if !found && !array_find(member.notes, "TomlOptional") then return_with_error("Missing field %.%", struct_info.name, member.name);
         }
     case .ARRAY;
         expect(toml.type, .ARRAY, parent_name, name);

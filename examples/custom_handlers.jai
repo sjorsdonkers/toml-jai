@@ -37,7 +37,7 @@ enum_as_int :: () {
     custom_enum_to_value :: (slot: *void, info: *Type_Info) -> done:=true, ok:=false, toml:Value=.{} {
         if info.type != .ENUM return false; // Alternatively we could check specifically for `info != type_info(Paprika)`
         enum_value := Reflection.get_enum_value(slot, xx info);
-        ok, value  := Toml.type_to_value(*enum_value, type_info(s64));
+        ok, value  := Toml.type_to_value_shared_memory(*enum_value, type_info(s64));
         return true, ok, value; // By returning done=true we signal that the returned value should be used and to skip default serialization.
     }
 
@@ -94,7 +94,7 @@ member_modifications :: () {
     custom_modified_to_value :: (slot: *void, info: *Type_Info) -> done:=true, ok:=false, toml:Value=.{} {
         if info != type_info(ThreeNamed) return false; // Use default serialization for everything else by returning done=false.
         modified_info := two_renamed_type_info();
-        ok, value := Toml.type_to_value(slot, *modified_info);
+        ok, value := Toml.type_to_value_shared_memory(slot, *modified_info);
         return true, ok, value;
     }
     custom_value_to_modified :: (toml: Value, slot: *void, info: *Type_Info, name:string, parent_name:string) -> done:=true, ok:=false {
@@ -169,11 +169,11 @@ custom_magic_to_value :: (slot: *void, info: *Type_Info) -> done:=true, ok:=fals
     ret: Toml.Value; // Defaults inits to Table
     if slot.(*u8).* == {
     case 0;
-        ok, flag    := Toml.type_to_value(*"A", type_info(string)); if !ok return;
-        ok=, signed := Toml.type_to_value(slot+1, type_info(s16)); if !ok return;
+        ok, flag    := Toml.type_to_value_shared_memory(*"A", type_info(string)); if !ok return;
+        ok=, signed := Toml.type_to_value_shared_memory(slot+1, type_info(s16)); if !ok return;
         array_add(*ret.table, .{key="flag", value=flag}, .{key="signed", value=signed});
     case 1;
-        ok, array := Toml.type_to_value(slot, type_info([3]u8)); if !ok return;
+        ok, array := Toml.type_to_value_shared_memory(slot, type_info([3]u8)); if !ok return;
         array_add(*ret.table, .{key="unaltered", value=array});
     case;
         log_error("Invalid Magic_Bytes: %", slot.(*Magic_Bytes).*);

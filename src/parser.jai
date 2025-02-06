@@ -7,7 +7,7 @@
 
 // Note this parser is zero-copy except for basic strings as they need to be unescaped
 // As such the keys and strings in the returned Value may point into the source string
-parse :: (contents: string) -> ok:=false, root_table:Value=.{} {
+parse_string_to_value_shared_memory :: (contents: string) -> ok:=false, root_table:Value=.{} {
     ok, tokens := tokenize(contents);  if !ok return; // Not freeing tokens as it will be in a Pool
     scope  := Scope.{contents, tokens, 0, ""};
 
