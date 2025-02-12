@@ -48,7 +48,7 @@ These choices may be fine for the large majority of use-cases but not all. Custo
 
 Note that these custom handler drive "what" is (de)serialized, they do not help with formatting of the toml.
 
-Serialization can be modified by enabling `CUSTOM_HANDLERS` on the module and setting a custom handler procedure in the context.
+Serialization can be modified by changing the a custom handler procedure in the context.
 ```jai
 enum_to_value :: (slot: *void, info: *Type_Info) -> done:=true, ok:=false, toml:Value=.{} {
     if info.type != .ENUM return false;
@@ -61,8 +61,6 @@ ok, toml := Toml.serialize(
     my_struct
     ,, toml_custom_type_to_value = enum_to_value
 );
-
-#import "Toml"(CUSTOM_HANDLERS=true);
 ```
 
 ## Testing

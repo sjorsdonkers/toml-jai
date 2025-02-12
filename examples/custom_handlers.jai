@@ -9,11 +9,7 @@
 //
 // Note that these custom handler drive "what" is (de)serialized, they do not help with formatting of the toml.
 
-// By default custom handler support is not compiled. We need to import the module with CUSTOM_HANDLERS=true to enable it.
-//
-// #import "Toml"(CUSTOM_HANDLERS=true);
-//
-// This will add 2 procedure members to the context:
+// The Toml module adds 2 procedure members to the context:
 // - toml_custom_type_to_value := (slot: *void, info: *Type_Info) -> done:bool, ok:bool, toml:Value;
 // - toml_custom_value_to_type := (toml: Value, slot: *void, info:*Type_Info, parent_name:string, name:string) -> done:bool, ok:bool;
 
@@ -237,6 +233,6 @@ error_on_superfluous_keys :: () {
     ok  = Toml.deserialize("a=1 \n b=2", OnlyA,, toml_custom_value_to_type = catch_superfluous_keys); assert(!ok);
 }
 
-using Toml :: #import, file "../module.jai"(CUSTOM_HANDLERS=true);
+using Toml :: #import, file "../module.jai";
 #import "Basic";
 Reflection :: #import "Reflection";
