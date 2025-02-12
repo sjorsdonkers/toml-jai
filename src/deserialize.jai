@@ -1,27 +1,23 @@
+#add_context toml_custom_value_to_type := default_custom_value_to_type;
+
 deserialize :: (contents: string, $Target: Type) -> ok:=false, value:Target=.{} {
-    ok, value := parse_string_to_value_shared_memory(contents,, scoped_pool()); if !ok return;
+    ok , value  := parse_string_to_value_shared_memory(contents,, scoped_pool()); if !ok return;
     ok=, target := value_to_type(value, Target);
     return ok, target;
 }
 
 value_to_type :: (value: Value, $Target: Type) -> ok:=false, value:Target=.{} {
     info :: type_info(Target);
-    target :Target;
+    target: Target;
     ok := value_to_type(value, *target, info, info.name); // Would be nice to provide a shared_memory version as well without having to wire a `shared` flag all the way through
     return ok, target;
-}
-
-#if CUSTOM_HANDLERS {
-    #add_context toml_custom_value_to_type:= (toml: Value, slot: *void, info:*Type_Info, name:string, parent_name:string) -> done:bool, ok:bool { return false, true; };
 }
 
 // Note meant to be called by the user directly, but instead to be used inside custom deserializers
 // slot is already initialized memory
 value_to_type :: (toml: Value, slot: *void, info: *Type_Info, name:string="", parent_name:string="") -> ok:=false {
-    #if CUSTOM_HANDLERS {
-        done, ok := context.toml_custom_value_to_type(toml, slot, info, name, parent_name);
-        if done return ok;
-    }
+    done, ok := context.toml_custom_value_to_type(toml, slot, info, name, parent_name);
+    if done return ok;
 
     if #complete info.type == {
     case .INTEGER;
@@ -51,12 +47,9 @@ value_to_type :: (toml: Value, slot: *void, info: *Type_Info, name:string="", pa
         expect(toml.type, .TABLE, parent_name, name);
         if toml.table.count != 0 { return_with_error("Expected empty table for %.%, got %", parent_name, name, toml.table.count);  }
     case .STRUCT;
-        if info == type_info(Value) { cast(*Value, slot).* = copy(toml); return true; } // If we encounter a Toml.Value at any point just copy it
-        if value_to_chrono(toml, slot, info) return true;
         expect(toml.type, .TABLE, parent_name, name);
         struct_info :*Type_Info_Struct= xx info;
 
-        if array_find(struct_info.notes, "SumType") { return value_to_sumtype(toml.table, slot, struct_info, name); }
         for member: struct_info.members {
             if member.flags & (.CONSTANT |.IMPORTED) continue;
             found := false;
@@ -127,6 +120,20 @@ value_to_type :: (toml: Value, slot: *void, info: *Type_Info, name:string="", pa
     case .UNTYPED_ENUM; return_with_error("Deserialization to type % is not supported", info.type);
     }
     return true;
+}
+
+default_custom_value_to_type :: (toml: Value, slot: *void, info:*Type_Info, name:string, parent_name:string) -> done:bool, ok:bool {
+    if info.type != .STRUCT return false, true;
+    struct_info :*Type_Info_Struct= xx info;
+
+    if info == type_info(Value) { cast(*Value, slot).* = copy(toml); return true, true; }
+    if value_to_chrono(toml, slot, info) return true, true;
+
+    if array_find(struct_info.notes, "SumType") {
+        if toml.type != .TABLE { log_error("Wrong type for %.%, expected TABLE, got % ", parent_name, name, toml.type); return true, false; } //  TODO Change to expect(..) when reassignment of procedures with defaulted returns is fixed in the compiler
+        return true, value_to_sumtype(toml.table, slot, struct_info, name);
+    }
+    return false, true;
 }
 
 value_to_chrono ::  (toml: Value, slot: *void, info: *Type_Info) -> is_chrono:bool {
