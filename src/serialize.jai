@@ -1,3 +1,5 @@
+#add_context toml_custom_type_to_value := default_custom_type_to_value;
+
 serialize :: (input: $T) -> ok:=false, toml:string="" {
     a := scoped_pool();
     ok, value := type_to_value_shared_memory(*input, type_info(T),, a); if !ok return;
@@ -11,17 +13,11 @@ type_to_value :: (input: $T) -> ok:=false, value:Value=.{} {
     return ok, copy(value); // Would be nice if we could just copy the reused strings and Value arrays and tables.
 }
 
-#if CUSTOM_HANDLERS {
-    #add_context toml_custom_type_to_value:= (slot: *void, info: *Type_Info) -> done:bool, ok:bool, toml:Value { return false, true, .{}; };
-}
-
 // NOTE: Does not deep copy!
 // Not meant to be called directly by the user, but instead to be used inside custom serializers.
 type_to_value_shared_memory :: (slot: *void, info: *Type_Info) -> ok:=false, toml:Value=.{} {
-    #if CUSTOM_HANDLERS {
-        done, ok, value := context.toml_custom_type_to_value(slot, info);
-        if done return ok, value;
-    }
+    done, ok, value := context.toml_custom_type_to_value(slot, info);
+    if done return ok, value;
 
     if #complete info.type == {
     case .INTEGER;
@@ -40,23 +36,13 @@ type_to_value_shared_memory :: (slot: *void, info: *Type_Info) -> ok:=false, tom
     case .VOID;  return true, .{};
     case .STRUCT;
         struct_info :*Type_Info_Struct= xx info;
-        if struct_info == {
-        case type_info(Value);          return true, cast(*Value, slot).*; // No deep copy!
-        case type_info(Chrono);         return true, .{type=.DATETIME, datetime=cast(*Chrono, slot).*};
-        case type_info(Time);           return true, .{type=.DATETIME, datetime=.{type=.LOCAL_TIME,      time=           cast(*Time, slot).*}};
-        case type_info(Date);           return true, .{type=.DATETIME, datetime=.{type=.LOCAL_DATE,      date=           cast(*Date, slot).*}};
-        case type_info(DateTime);       return true, .{type=.DATETIME, datetime=.{type=.LOCAL_DATETIME,  datetime=       cast(*DateTime, slot).*}};
-        case type_info(DateTimeOffset); return true, .{type=.DATETIME, datetime=.{type=.OFFSET_DATETIME, datetime_offset=cast(*DateTimeOffset, slot).*}};
-        }
-
-        if array_find(struct_info.notes, "SumType") { ok, sumtype_value:= sumtype_to_value(slot, struct_info); return ok, sumtype_value; }
         if struct_info.textual_flags & .UNION return_with_error("Untagged unions (%) are not supported, as we cannot determine the active member, use @SumType", ifx struct_info.name then struct_info.name else "anonymous");
 
         // Unlike Basic.print we do re-print all overlapping #place members. This will output the same data multiple times, but is likely more predictable.
         // Otherwise we would need to recursively track the offset is always increase compared to the highest offset.
         table: [..]KeyValue;
         for member: struct_info.members {
-            if member.flags & (.CONSTANT | .IMPORTED)              continue;
+            if member.flags & (.CONSTANT | .IMPORTED) continue;
             ok, member_value:= type_to_value_shared_memory(slot + member.offset_in_bytes, member.type);  if !ok return;
             array_add(*table, KeyValue.{key=member.name, value=member_value});
         }
@@ -94,6 +80,23 @@ type_to_value_shared_memory :: (slot: *void, info: *Type_Info) -> ok:=false, tom
     case .UNTYPED_ENUM;
     }
     return_with_error("Parsing of type % is not supported", info.type);
+}
+
+default_custom_type_to_value :: (slot: *void, info: *Type_Info) -> done:bool, ok:bool, toml:Value {
+    if info.type != .STRUCT return false, true, .{};
+    struct_info :*Type_Info_Struct= xx info;
+
+    if struct_info == {
+    case type_info(Value);          return true, true, cast(*Value, slot).*; // No deep copy!
+    case type_info(Chrono);         return true, true, .{type=.DATETIME, datetime=cast(*Chrono, slot).*};
+    case type_info(Time);           return true, true, .{type=.DATETIME, datetime=.{type=.LOCAL_TIME,      time=           cast(*Time, slot).*}};
+    case type_info(Date);           return true, true, .{type=.DATETIME, datetime=.{type=.LOCAL_DATE,      date=           cast(*Date, slot).*}};
+    case type_info(DateTime);       return true, true, .{type=.DATETIME, datetime=.{type=.LOCAL_DATETIME,  datetime=       cast(*DateTime, slot).*}};
+    case type_info(DateTimeOffset); return true, true, .{type=.DATETIME, datetime=.{type=.OFFSET_DATETIME, datetime_offset=cast(*DateTimeOffset, slot).*}};
+    }
+    if array_find(struct_info.notes, "SumType") { ok, sumtype_value:= sumtype_to_value(slot, struct_info); return true, ok, sumtype_value; }
+
+    return false, true, .{};
 }
 
 sumtype_to_value :: (slot: *void, struct_info: *Type_Info_Struct) -> ok:=false, value:Value=.{} {
