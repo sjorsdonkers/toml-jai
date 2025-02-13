@@ -1,5 +1,3 @@
-#add_context toml_custom_type_to_value := default_custom_type_to_value;
-
 serialize :: (input: $T) -> ok:=false, toml:string="" {
     a := scoped_pool();
     ok, value := type_to_value_shared_memory(*input, type_info(T),, a); if !ok return;
@@ -30,7 +28,7 @@ type_to_value_shared_memory :: (slot: *void, info: *Type_Info) -> ok:=false, tom
     case .BOOL;   return true, .{type=.BOOL, bool_value=cast(*bool, slot).*};
     case .STRING; return true, .{type=.STRING, string_value=cast(*string, slot).*}; // No deep copy!
     case .POINTER;
-        if cast(**void, slot).* == null return true, NULL_VALUE; // User can change default null value as module parameter
+        if cast(**void, slot).* == null return true, context.toml_null_value; // User can change default null value as module parameter
         ok, value := type_to_value_shared_memory(cast(**void, slot).*, cast(*Type_Info_Pointer, info).pointer_to);
         return ok, value;
     case .VOID;  return true, .{};
@@ -62,7 +60,7 @@ type_to_value_shared_memory :: (slot: *void, info: *Type_Info) -> ok:=false, tom
         return true, .{type=.ARRAY, array=array};
     case .ANY;
         any_value :*Any_Struct= xx slot;
-        if any_value.value_pointer == null return true, NULL_VALUE; // Similar to null pointer
+        if any_value.value_pointer == null return true, context.toml_null_value; // Similar to null pointer
         ok, value:= type_to_value_shared_memory(any_value.value_pointer, any_value.type);
         return ok, value;
     case .ENUM;

@@ -1,5 +1,3 @@
-#add_context toml_custom_value_to_type := default_custom_value_to_type;
-
 deserialize :: (contents: string, $Target: Type) -> ok:=false, value:Target=.{} {
     ok , value  := parse_string_to_value_shared_memory(contents,, scoped_pool()); if !ok return;
     ok=, target := value_to_type(value, Target);
@@ -36,7 +34,7 @@ value_to_type :: (toml: Value, slot: *void, info: *Type_Info, name:string="", pa
         expect(toml.type, .STRING, parent_name, name);
         cast(*string, slot).* = copy_string(toml.string_value);
     case .POINTER;
-        if toml == NULL_VALUE return true; // Null pointer
+        if toml == context.toml_null_value return true; // Null pointer
 
         pointer_info :*Type_Info_Pointer= xx info;
         memory := alloc(pointer_info.pointer_to.runtime_size);
@@ -90,7 +88,7 @@ value_to_type :: (toml: Value, slot: *void, info: *Type_Info, name:string="", pa
             ok := fill_array(toml.array, array.data, element_type, name); if !ok return;
         }
     case .ANY;
-        if toml == NULL_VALUE return true; // Similar to null pointer
+        if toml == context.toml_null_value return true; // Similar to null pointer
 
         any_value :*Any_Struct= xx slot;
         if #complete toml.type == {

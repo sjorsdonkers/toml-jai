@@ -21,7 +21,7 @@ A module for `TOML v1.0.0` support. It provides functionality to read/write TOML
 ## Serialize
 `ok, toml_string := Toml.serialize(my_struct);`
 - Write any (nested) struct or `Toml.Value` to TOML string.
-- Null pointers/null Anys by default are written as `"~null~"`, this can be controlled via the module parameter `NULL_STRING`.
+- Null pointers/null Anys by default are written as `"~null~"`, this can be controlled via the context member `toml_null_value`.
 - Compile-time `constants` & `imports` are skipped.
 - `#place` members (containing pointers) may not be safe! Overlapping members are all serialized.
 

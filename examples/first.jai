@@ -287,21 +287,30 @@ reference_types :: () {
     print("pointers_toml.p_s16: %\n",   pointers_toml.p_s16.*  );
     print("pointers_toml.p_inner: %\n", pointers_toml.p_inner.*);
 
+    // Null pointer
+    Null_Pointer :: struct {
+        ptr: *string;
+    }
+    // ~null~ is the default string used to represent null values in the TOML data.
+    ok=, null_ptr := Toml.deserialize("ptr = \"~null~\"", Null_Pointer); assert(ok);
+    assert(null_ptr.ptr == null, "%", null_ptr);
+    // We can change the string used to represent null values in the TOML data to any other Value.
+    ok=, zero_ptr := Toml.deserialize("ptr = 17.0", Null_Pointer,, toml_null_value = Value.{type=.FLOAT, float_value=17.0}); assert(ok);
+    assert(zero_ptr.ptr == null, "%", zero_ptr);
+    // Serialization works the same way.
+    ok=, nil_toml := Toml.serialize(Null_Pointer.{ptr=null},, toml_null_value = Value.{type=.STRING, string_value="nil"}); assert(ok);
+    assert(nil_toml == "ptr=\"nil\"\n", "%", nil_toml);
+
     // Optional pointer
     My_Optional_Pointer :: struct {
         ptr: *u8; @TomlOptional
     }
+    // Optional values are always serialized so it just uses the toml_null_value
     ok=, optional_toml := Toml.serialize(My_Optional_Pointer.{ptr=null}); assert(ok);
     assert(optional_toml == "ptr=\"~null~\"\n", "%", optional_toml);
+    // Since the pointer is optional it deserializes to null if the field is missing.
     ok=, my_opt_ptr := Toml.deserialize("", My_Optional_Pointer); assert(ok);
     assert(my_opt_ptr.ptr == null, "%", my_opt_ptr);
-
-    // Null pointer
-    Null_Pointer :: struct {
-        ptr: *u8;
-    }
-    ok=, null_ptr := Toml.deserialize("ptr = \"~null~\"", Null_Pointer); assert(ok);
-    assert(null_ptr.ptr == null, "%", null_ptr);
 
     Getal :: #type,distinct u8;
 
