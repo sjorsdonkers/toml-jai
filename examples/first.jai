@@ -86,6 +86,15 @@ DONE
     ok=, myfloat := Toml.deserialize("f = 3", MyFloat); assert(ok);
     assert (myfloat.f == 3.0);
 
+    // Zero-sized types will be allocated, just as any other type
+    PointerToZeroSized :: struct {
+        point: *struct {};
+    }
+    ok=, zero_sized := Toml.deserialize("point = {}", PointerToZeroSized); assert(ok);
+    assert(zero_sized.point != null);
+    ok=, zero_sized_toml := Toml.serialize(zero_sized); assert(ok);
+    assert("point={}\n" == zero_sized_toml, "%", zero_sized_toml);
+
     // Pointers, ANY, VIEW and RESIZABLE arrays are supported at any depth in the struct definition.
     // These types that are referencing memory elsewhere will have new memory allocated for them with the context allocator.
     reference_types();
