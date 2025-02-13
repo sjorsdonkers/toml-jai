@@ -15,6 +15,7 @@
 
 main :: () {
     enum_as_int();
+    hashtable_support();
     member_modifications();
     arbitrary_binary_encoding();
     error_on_superfluous_keys();
@@ -64,6 +65,54 @@ enum_as_int :: () {
     ok4, basket4 := Toml.deserialize("paprika=2\neverything_else=3\n", Basket,, toml_custom_value_to_type = custom_value_to_enum); assert(ok4);
     assert(basket3.paprika == .RED && basket3.everything_else == 3, "%", basket3);
     assert(basket4.paprika == .RED && basket4.everything_else == 3, "%", basket3);
+}
+
+hashtable_support :: () {
+    #import "Hash_Table";
+    Str_To_U8 :: Table(string, u8);
+
+    // By default the Toml module does not support Hash_Tables.
+    // We can use custom handlers to serialize and deserialize them.
+    custom_hashtable_to_value :: (slot: *void, info: *Type_Info) -> done:=true, ok:=false, toml:Value=.{} {
+        if info != type_info(Str_To_U8) return false; // TODO Make this work for all Hash_Tables using polymorph_source_struct
+        hash_table := slot.(*Str_To_U8);
+        table: [..]KeyValue;
+        for value, key: hash_table {
+            ok, value := Toml.type_to_value_shared_memory(*value, type_info(Str_To_U8.Value_Type)); if !ok return;
+            array_add(*table, .{key=key, value=value});
+        }
+        return true, true, .{type=.TABLE, table=table};
+    }
+
+    my_hash_table: Str_To_U8;
+    table_add(*my_hash_table, "one", 1);
+    table_add(*my_hash_table, "two", 2);
+
+    // Serialize the Hash_Table with the custom handler.
+    ok, toml := Toml.serialize(my_hash_table,, toml_custom_type_to_value = custom_hashtable_to_value); assert(ok);
+    assert(toml == "one=1\ntwo=2\n" || toml == "two=2\none=1\n", "%", toml);
+
+    // Deserialize the Hash_Table with the custom handler.
+    custom_value_to_hashtable :: (toml: Value, slot: *void, info: *Type_Info, name:string, parent_name:string) -> done:=true, ok:=false {
+        if info != type_info(Str_To_U8) return false;
+        expect(toml.type, .TABLE, parent_name, name);
+
+        hash_table := slot.(*Str_To_U8);
+        table_ensure_space(hash_table, toml.table.count);
+        for keyvalue: toml.table {
+            value: Str_To_U8.Value_Type;
+            ok := Toml.value_to_type(keyvalue.value, *value, type_info(Str_To_U8.Value_Type), name, keyvalue.key); if !ok return;
+            table_add(hash_table, keyvalue.key, value);
+        }
+        return true, true;
+    }
+
+    // Deserialize the Hash_Table with the custom handler.
+    ok, my_hash_table = Toml.deserialize("three=3\nfour=4\n", Str_To_U8,, toml_custom_value_to_type = custom_value_to_hashtable); assert(ok);
+    assert(my_hash_table.count == 2);
+    three:, ok = table_find(*my_hash_table, "three"); assert(ok);
+    four:, ok = table_find(*my_hash_table, "four"); assert(ok);
+    assert(three == 3 && four == 4, "%", my_hash_table);
 }
 
 member_modifications :: () {
