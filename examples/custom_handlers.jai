@@ -68,16 +68,18 @@ enum_as_int :: () {
 }
 
 hashtable_support :: () {
+    // By default the Toml module does not support Hash_Tables.
+    // We can use custom handlers to serialize and deserialize them.
+    // Here we make an implementation for a single specialization of Table, the generic implementation is not trivial.
     #import "Hash_Table";
     Str_To_U8 :: Table(string, u8);
 
-    // By default the Toml module does not support Hash_Tables.
-    // We can use custom handlers to serialize and deserialize them.
     custom_hashtable_to_value :: (slot: *void, info: *Type_Info) -> done:=true, ok:=false, toml:Value=.{} {
-        if info != type_info(Str_To_U8) return false; // TODO Make this work for all Hash_Tables using polymorph_source_struct
+        if info != type_info(Str_To_U8) return false;
         hash_table := slot.(*Str_To_U8);
+
         table: [..]KeyValue;
-        for value, key: hash_table {
+        for value, key: hash_table { // For a generic Hash_Table implementation slot/info based for_expansion needs to be implemented
             ok, value := Toml.type_to_value_shared_memory(*value, type_info(Str_To_U8.Value_Type)); if !ok return;
             array_add(*table, .{key=key, value=value});
         }
@@ -94,7 +96,7 @@ hashtable_support :: () {
 
     // Deserialize the Hash_Table with the custom handler.
     custom_value_to_hashtable :: (toml: Value, slot: *void, info: *Type_Info, name:string, parent_name:string) -> done:=true, ok:=false {
-        if info != type_info(Str_To_U8) return false;
+        if info != type_info(Str_To_U8) return false; // Not a generic implementation see comment on table_add
         expect(toml.type, .TABLE, parent_name, name);
 
         hash_table := slot.(*Str_To_U8);
@@ -102,7 +104,7 @@ hashtable_support :: () {
         for keyvalue: toml.table {
             value: Str_To_U8.Value_Type;
             ok := Toml.value_to_type(keyvalue.value, *value, type_info(Str_To_U8.Value_Type), name, keyvalue.key); if !ok return;
-            table_add(hash_table, keyvalue.key, value);
+            table_add(hash_table, keyvalue.key, value); // How to call table_add in the generic case when we only have slot and type_info?
         }
         return true, true;
     }
