@@ -247,8 +247,7 @@ hashtable_support :: () {
 
         // Retrieve all relevant Type_Info for the specific Hash_Table.
         entries_member := struct_info.members[5]; assert(entries_member.name == "entries");
-        entries_info   :*Type_Info_Array=  xx entries_member.type;
-        entry_info     :*Type_Info_Struct= xx entries_info.element_type;
+        entry_info     :*Type_Info_Struct= xx entries_member.type.(*Type_Info_Array).element_type;
         key_member     := entry_info.members[1];  assert(key_member.name == "key");
         value_member   := entry_info.members[2];  assert(value_member.name == "value");
 
@@ -257,13 +256,10 @@ hashtable_support :: () {
         entries := (slot + entries_member.offset_in_bytes).(*[]void);
         for 0..entries.count-1 {
             entry_slot := entries.data + it * entry_info.runtime_size;
-            hash       := entry_slot.(*u32).*;
-            if hash < FIRST_VALID_HASH  continue;
-            key_slot    := entry_slot + key_member.offset_in_bytes;
-            values_slot := entry_slot + value_member.offset_in_bytes;
+            if entry_slot.(*u32).* < FIRST_VALID_HASH  continue;
 
-            ok, key_as_value := Toml.type_to_value_shared_memory(key_slot, key_member.type);      if !ok return;
-            ok=, value       := Toml.type_to_value_shared_memory(values_slot, value_member.type); if !ok return;
+            ok, key_as_value := Toml.type_to_value_shared_memory(entry_slot + key_member.offset_in_bytes,   key_member.type);   if !ok return;
+            ok=, value       := Toml.type_to_value_shared_memory(entry_slot + value_member.offset_in_bytes, value_member.type); if !ok return;
 
             // Serialize the key as a string regardless of what type it is in the Hash_Table.
             builder: String_Builder;
