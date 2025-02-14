@@ -15,10 +15,10 @@
 
 main :: () {
     enum_as_int();
-    hashtable_support();
     member_modifications();
     arbitrary_binary_encoding();
     error_on_superfluous_keys();
+    hashtable_support();
 }
 
 enum_as_int :: () {
@@ -65,56 +65,6 @@ enum_as_int :: () {
     ok4, basket4 := Toml.deserialize("paprika=2\neverything_else=3\n", Basket,, toml_custom_value_to_type = custom_value_to_enum); assert(ok4);
     assert(basket3.paprika == .RED && basket3.everything_else == 3, "%", basket3);
     assert(basket4.paprika == .RED && basket4.everything_else == 3, "%", basket3);
-}
-
-hashtable_support :: () {
-    // By default the Toml module does not support Hash_Tables.
-    // We can use custom handlers to serialize and deserialize them.
-    // Here we make an implementation for a single specialization of Table, the generic implementation is not trivial.
-    #import "Hash_Table";
-    Str_To_U8 :: Table(string, u8);
-
-    custom_hashtable_to_value :: (slot: *void, info: *Type_Info) -> done:=true, ok:=false, toml:Value=.{} {
-        if info != type_info(Str_To_U8) return false;
-        hash_table := slot.(*Str_To_U8);
-
-        table: [..]KeyValue;
-        for value, key: hash_table { // For a generic Hash_Table implementation slot/info based for_expansion needs to be implemented
-            ok, value := Toml.type_to_value_shared_memory(*value, type_info(Str_To_U8.Value_Type)); if !ok return;
-            array_add(*table, .{key=key, value=value});
-        }
-        return true, true, .{type=.TABLE, table=table};
-    }
-
-    my_hash_table: Str_To_U8;
-    table_add(*my_hash_table, "one", 1);
-    table_add(*my_hash_table, "two", 2);
-
-    // Serialize the Hash_Table with the custom handler.
-    ok, toml := Toml.serialize(my_hash_table,, toml_custom_type_to_value = custom_hashtable_to_value); assert(ok);
-    assert(toml == "one=1\ntwo=2\n" || toml == "two=2\none=1\n", "%", toml);
-
-    // Deserialize the Hash_Table with the custom handler.
-    custom_value_to_hashtable :: (toml: Value, slot: *void, info: *Type_Info, name:string, parent_name:string) -> done:=true, ok:=false {
-        if info != type_info(Str_To_U8) return false; // Not a generic implementation see comment on table_add
-        expect(toml.type, .TABLE, parent_name, name);
-
-        hash_table := slot.(*Str_To_U8);
-        table_ensure_space(hash_table, toml.table.count);
-        for keyvalue: toml.table {
-            value: Str_To_U8.Value_Type;
-            ok := Toml.value_to_type(keyvalue.value, *value, type_info(Str_To_U8.Value_Type), name, keyvalue.key); if !ok return;
-            table_add(hash_table, keyvalue.key, value); // How to call table_add in the generic case when we only have slot and type_info?
-        }
-        return true, true;
-    }
-
-    // Deserialize the Hash_Table with the custom handler.
-    ok, my_hash_table = Toml.deserialize("three=3\nfour=4\n", Str_To_U8,, toml_custom_value_to_type = custom_value_to_hashtable); assert(ok);
-    assert(my_hash_table.count == 2);
-    three:, ok = table_find(*my_hash_table, "three"); assert(ok);
-    four:, ok = table_find(*my_hash_table, "four"); assert(ok);
-    assert(three == 3 && four == 4, "%", my_hash_table);
 }
 
 member_modifications :: () {
@@ -282,6 +232,79 @@ error_on_superfluous_keys :: () {
     ok := Toml.deserialize("a=1 \n b=2", OnlyA); assert(ok);
     // With the custom handler we can error on them.
     ok  = Toml.deserialize("a=1 \n b=2", OnlyA,, toml_custom_value_to_type = catch_superfluous_keys); assert(!ok);
+}
+
+hashtable_support :: () {
+    #import "Hash_Table";
+    Str_To_U8 :: Table(string, u8);
+
+    // By default the Toml module does not support Hash_Tables.
+    // We can use custom handlers to serialize and deserialize them.
+    custom_hashtable_to_value :: (slot: *void, info: *Type_Info) -> done:=true, ok:=false, toml:Value=.{} {
+        if info.type != .STRUCT then return false;
+        struct_info :*Type_Info_Struct= xx info;
+        if struct_info.polymorph_source_struct != type_info(Table(void, void)).polymorph_source_struct then return false;
+
+        // Retrieve all relevant Type_Info for the specific Hash_Table.
+        entries_member := struct_info.members[5]; assert(entries_member.name == "entries");
+        entries_info   :*Type_Info_Array=  xx entries_member.type;
+        entry_info     :*Type_Info_Struct= xx entries_info.element_type;
+        key_member     := entry_info.members[1];  assert(key_member.name == "key");
+        value_member   := entry_info.members[2];  assert(value_member.name == "value");
+
+        // Loop over all entries similar to Hash_Table::for_expansion, but for slot&type_info.
+        table: [..]KeyValue;
+        entries := (slot + entries_member.offset_in_bytes).(*[]void);
+        for 0..entries.count-1 {
+            entry_slot := entries.data + it * entry_info.runtime_size;
+            hash       := entry_slot.(*u32).*;
+            if hash < FIRST_VALID_HASH  continue;
+            key_slot    := entry_slot + key_member.offset_in_bytes;
+            values_slot := entry_slot + value_member.offset_in_bytes;
+
+            ok, key_as_value := Toml.type_to_value_shared_memory(key_slot, key_member.type);      if !ok return;
+            ok=, value       := Toml.type_to_value_shared_memory(values_slot, value_member.type); if !ok return;
+
+            // Serialize the key as a string regardless of what type it is in the Hash_Table.
+            builder: String_Builder;
+            if key_as_value.type == .STRING print_to_builder_escaped(*builder, key_as_value.string_value, true);
+            else                            print_inline_value_to_builder(*builder, key_as_value);
+            key := builder_to_string(*builder);
+
+            array_add(*table, .{key=key, value=value});
+        }
+        return true, true, .{type=.TABLE, table=table};
+    }
+
+    my_hash_table: Str_To_U8;
+    table_add(*my_hash_table, "one", 1);
+    table_add(*my_hash_table, "two", 2);
+
+    // Serialize the Hash_Table with the custom handler.
+    ok, toml := Toml.serialize(my_hash_table,, toml_custom_type_to_value = custom_hashtable_to_value); assert(ok);
+    assert(toml == "one=1\ntwo=2\n" || toml == "two=2\none=1\n", "%", toml);
+
+    // Deserialize the Hash_Table with the custom handler.
+    custom_value_to_hashtable :: (toml: Value, slot: *void, info: *Type_Info, name:string, parent_name:string) -> done:=true, ok:=false {
+        if info != type_info(Str_To_U8) return false; // Not a generic implementation see comment on table_add
+        expect(toml.type, .TABLE, parent_name, name);
+
+        hash_table := slot.(*Str_To_U8);
+        table_ensure_space(hash_table, toml.table.count);
+        for keyvalue: toml.table {
+            value: Str_To_U8.Value_Type;
+            ok := Toml.value_to_type(keyvalue.value, *value, type_info(Str_To_U8.Value_Type), name, keyvalue.key); if !ok return;
+            table_add(hash_table, keyvalue.key, value); // How to call table_add in the generic case when we only have slot and type_info?
+        }
+        return true, true;
+    }
+
+    // Deserialize the Hash_Table with the custom handler.
+    ok, my_hash_table = Toml.deserialize("three=3\nfour=4\n", Str_To_U8,, toml_custom_value_to_type = custom_value_to_hashtable); assert(ok);
+    assert(my_hash_table.count == 2);
+    three:, ok = table_find(*my_hash_table, "three"); assert(ok);
+    four:, ok = table_find(*my_hash_table, "four"); assert(ok);
+    assert(three == 3 && four == 4, "%", my_hash_table);
 }
 
 using Toml :: #import, file "../module.jai";
