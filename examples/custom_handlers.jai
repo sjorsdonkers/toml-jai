@@ -236,10 +236,10 @@ error_on_superfluous_keys :: () {
 
 hashtable_support :: () {
     #import "Hash_Table";
-    Str_To_U8 :: Table(string, u8);
 
     // By default the Toml module does not support Hash_Tables.
     // We can use custom handlers to serialize and deserialize them.
+    // Hash_Table.Table is a polymorphic struct as such the size of the entries are not known at compile time.
     custom_hashtable_to_value :: (slot: *void, info: *Type_Info) -> done:=true, ok:=false, toml:Value=.{} {
         if info.type != .STRUCT then return false;
         struct_info :*Type_Info_Struct= xx info;
@@ -275,14 +275,21 @@ hashtable_support :: () {
         }
         return true, true, .{type=.TABLE, table=table};
     }
-
+    Str_To_U8 :: Table(string, u8);
     my_hash_table: Str_To_U8;
-    table_add(*my_hash_table, "one", 1);
-    table_add(*my_hash_table, "two", 2);
 
     // Serialize the Hash_Table with the custom handler.
+    table_add(*my_hash_table, "one", 1);
+    table_add(*my_hash_table, "two", 2);
     ok, toml := Toml.serialize(my_hash_table,, toml_custom_type_to_value = custom_hashtable_to_value); assert(ok);
     assert(toml == "one=1\ntwo=2\n" || toml == "two=2\none=1\n", "%", toml);
+
+    // The custom handle has a generic implementation so works with any specialization of a Hash_Table.
+    // The key does not need to be a string, but it will be serialized as a string.
+    float_table: Table(float, *u8);
+    table_add(*float_table, 3.3, New(u8)).*.* = 3;
+    ok=, float_toml := Toml.serialize(float_table,, toml_custom_type_to_value = custom_hashtable_to_value); assert(ok);
+    assert(float_toml == "\"3.3\"=3\n", "%", float_toml);
 
     // Deserialize the Hash_Table with the custom handler.
     custom_value_to_hashtable :: (toml: Value, slot: *void, info: *Type_Info, name:string, parent_name:string) -> done:=true, ok:=false {
