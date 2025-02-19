@@ -18,6 +18,7 @@ main :: () {
     member_modifications();
     arbitrary_binary_encoding();
     error_on_superfluous_keys();
+    polymorphic_types_like_hashtable_support();
 }
 
 enum_as_int :: () {
@@ -231,6 +232,106 @@ error_on_superfluous_keys :: () {
     ok := Toml.deserialize("a=1 \n b=2", OnlyA); assert(ok);
     // With the custom handler we can error on them.
     ok  = Toml.deserialize("a=1 \n b=2", OnlyA,, toml_custom_value_to_type = catch_superfluous_keys); assert(!ok);
+}
+
+polymorphic_types_like_hashtable_support :: () {
+    #import "Hash_Table";
+
+    // By default the Toml module does not support Hash_Tables.
+    // We can use custom handlers to serialize and deserialize them.
+    // Hash_Table.Table is a polymorphic struct as such the size of the entries are not known at compile time.
+    custom_hashtable_to_value :: (slot: *void, info: *Type_Info) -> done:=true, ok:=false, toml:Value=.{} {
+        if info.type != .STRUCT then return false;
+        struct_info :*Type_Info_Struct= xx info;
+        if struct_info.polymorph_source_struct != type_info(Table(void, void)).polymorph_source_struct then return false;
+
+        // Retrieve all relevant Type_Info for the specific Hash_Table.
+        entries_member := struct_info.members[5]; assert(entries_member.name == "entries");
+        entry_info     :*Type_Info_Struct= xx entries_member.type.(*Type_Info_Array).element_type;
+        key_member     := entry_info.members[1];  assert(key_member.name == "key");
+        value_member   := entry_info.members[2];  assert(value_member.name == "value");
+
+        // Loop over all entries similar to Hash_Table::for_expansion, but for slot&type_info.
+        table: [..]KeyValue;
+        entries := (slot + entries_member.offset_in_bytes).(*[]void);
+        for 0..entries.count-1 {
+            entry_slot := entries.data + it * entry_info.runtime_size;
+            if entry_slot.(*u32).* < FIRST_VALID_HASH  continue;
+
+            ok, key_as_value := Toml.type_to_value_shared_memory(entry_slot + key_member.offset_in_bytes,   key_member.type);   if !ok return;
+            ok=, value       := Toml.type_to_value_shared_memory(entry_slot + value_member.offset_in_bytes, value_member.type); if !ok return;
+
+            // Serialize the key as a string regardless of what type it is in the Hash_Table.
+            builder: String_Builder;
+            if key_as_value.type == .STRING print_to_builder_escaped(*builder, key_as_value.string_value, true);
+            else                            print_inline_value_to_builder(*builder, key_as_value);
+            key := builder_to_string(*builder);
+
+            array_add(*table, .{key=key, value=value});
+        }
+        return true, true, .{type=.TABLE, table=table};
+    }
+    Str_To_U8 :: Table(string, u8);
+    my_hash_table: Str_To_U8;
+
+    // Serialize the Hash_Table with the custom handler.
+    table_add(*my_hash_table, "one", 1);
+    table_add(*my_hash_table, "two", 2);
+    ok, toml := Toml.serialize(my_hash_table,, toml_custom_type_to_value = custom_hashtable_to_value); assert(ok);
+    assert(toml == "one=1\ntwo=2\n" || toml == "two=2\none=1\n", "%", toml);
+
+    // The custom handle has a generic implementation so works with any specialization of a Hash_Table.
+    // The key does not need to be a string, but it will be serialized as a string.
+    float_table: Table(float, *u8);
+    table_add(*float_table, 3.3, New(u8)).*.* = 3;
+    ok=, float_toml := Toml.serialize(float_table,, toml_custom_type_to_value = custom_hashtable_to_value); assert(ok);
+    assert(float_toml == "\"3.3\"=3\n", "%", float_toml);
+
+    // Deserialization for polymorphic types is likely to be more difficult. In the case of Hash_Table we need to be able to call table_add.
+    // This is a polymorphic procedure thus we need to know the types at compile time to be able to call it.
+    // - We could write a metaprogram that inserts a switch statement holding all possible Hash_Tables used in the application.
+    // - We could provide limited support by reimplementing table_add with a slot/info interface, note however this also requires us to reimplement
+    // other procedures like hash_function and compare_function which may be user defined in which case we can't.
+    // An alternative approach is to reimplement the Toml module to generate all code at compile time instead of the current runtime reflection slot/info interface.
+    // For now we just opt to provide a helper procedure to make it easy for a user to add support for each of their Hash_Tables.
+    custom_value_to_hashtable :: (toml: Value, slot: *void, info: *Type_Info, name:string, parent_name:string) -> done:=true, ok:=false {
+        // We have not found a way to make a generic implementation for any Hash_Table, so instead we need to specialize deserialization for each Hash_Table parameterization we want to support.
+        done, ok := value_to_hashtable(Str_To_U8, toml, slot, info, name, parent_name);
+        if done return done, ok;
+
+        // Runtime check if we did not forget to add a Hash_Table specialization.
+        if info.type != .STRUCT return false;
+        struct_info :*Type_Info_Struct= xx info;
+        assert(struct_info.polymorph_source_struct != type_info(Table(void, void)).polymorph_source_struct,
+            "Unsupported Hash_Table specialization: %", struct_info.name);
+        return false;
+    }
+
+    // Deserialize the Hash_Table with a custom handler.
+    ok, my_hash_table = Toml.deserialize("three=3\nfour=4\n", Str_To_U8,, toml_custom_value_to_type = custom_value_to_hashtable); assert(ok);
+    assert(my_hash_table.count == 2);
+    three:, ok = table_find(*my_hash_table, "three"); assert(ok);
+    four:, ok = table_find(*my_hash_table, "four"); assert(ok);
+    assert(three == 3 && four == 4, "%", my_hash_table);
+}
+
+// Helper procedure for deserializing a specific type of Hash_Table (Table_Type).
+// This procedure needs to be called in the custom handler for every type of hash table..
+value_to_hashtable :: ($Table_Type: Type, toml: Value, slot: *void, info: *Type_Info, name:string, parent_name:string) -> done:=true, ok:=false {
+    if info != type_info(Table_Type) return false;
+    struct_info :*Type_Info_Struct= xx info;
+    assert(info.type == .STRUCT);
+    assert(struct_info.polymorph_source_struct == type_info(Table(void, void)).polymorph_source_struct);
+    expect(toml.type, .TABLE, parent_name, name);
+
+    hash_table := slot.(*Table_Type);
+    table_ensure_space(hash_table, toml.table.count);
+    for keyvalue: toml.table {
+        value: Table_Type.Value_Type;
+        ok := Toml.value_to_type(keyvalue.value, *value, type_info(Table_Type.Value_Type), name, keyvalue.key); if !ok return;
+        table_add(hash_table, keyvalue.key, value); // How to call table_add in the generic case when we only have slot and type_info?
+    }
+    return true, true;
 }
 
 using Toml :: #import, file "../module.jai";

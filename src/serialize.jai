@@ -111,8 +111,6 @@ sumtype_to_value :: (slot: *void, struct_info: *Type_Info_Struct) -> ok:=false, 
     return true, .{type=.TABLE, table=table};
 }
 
-#scope_module
-
 print_table_to_builder :: (builder: *String_Builder, value: Value, parent_key: string = "") {
     assert(value.type == .TABLE, "Only tables can be serialized at the top level, got %", value.type);
     // Key=Value pairs
