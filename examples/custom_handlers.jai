@@ -6,6 +6,7 @@
 // - Enable custom serialization of types we do not own (external Modules) as we may not be able to add notes or remove members.
 // - The same type should be serializable in different ways defined at the procedure call site, not struct definition.
 // - Enable data tweaks during serialization as opposed to full copies of nested structure trees (separate structs for serialization and use within the application).
+// - The user should be able to opt-out of the default behavior of handling special types like Toml.Value, Chrono, and SumTypes. A user can opt-out by setting a procedure which is a no-op or any procedure that does not call the default_custom_handler.
 //
 // Note that these custom handler drive "what" is (de)serialized, they do not help with formatting of the toml.
 
