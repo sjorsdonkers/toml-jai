@@ -18,7 +18,7 @@ main :: () {
     member_modifications();
     arbitrary_binary_encoding();
     error_on_superfluous_keys();
-    hashtable_support();
+    polymorphic_types_like_hashtable_support();
 }
 
 enum_as_int :: () {
@@ -234,7 +234,7 @@ error_on_superfluous_keys :: () {
     ok  = Toml.deserialize("a=1 \n b=2", OnlyA,, toml_custom_value_to_type = catch_superfluous_keys); assert(!ok);
 }
 
-hashtable_support :: () {
+polymorphic_types_like_hashtable_support :: () {
     #import "Hash_Table";
 
     // By default the Toml module does not support Hash_Tables.
@@ -287,14 +287,27 @@ hashtable_support :: () {
     ok=, float_toml := Toml.serialize(float_table,, toml_custom_type_to_value = custom_hashtable_to_value); assert(ok);
     assert(float_toml == "\"3.3\"=3\n", "%", float_toml);
 
-    // Deserialize the Hash_Table with the custom handler.
+    // Deserialization for polymorphic types is likely to be more difficult. In the case of Hash_Table we need to be able to call table_add.
+    // This is a polymorphic procedure thus we need to know the types at compile time to be able to call it.
+    // - We could write a metaprogram that inserts a switch statement holding all possible Hash_Tables used in the application.
+    // - We could provide limited support by reimplementing table_add with a slot/info interface, note however this also requires us to reimplement
+    // other procedures like hash_function and compare_function which may be user defined in which case we can't.
+    // An alternative approach is to reimplement the Toml module to generate all code at compile time instead of the current runtime reflection slot/info interface.
+    // For now we just opt to provide a helper procedure to make it easy for a user to add support for each of their Hash_Tables.
     custom_value_to_hashtable :: (toml: Value, slot: *void, info: *Type_Info, name:string, parent_name:string) -> done:=true, ok:=false {
         // We have not found a way to make a generic implementation for any Hash_Table, so instead we need to specialize deserialization for each Hash_Table parameterization we want to support.
         done, ok := value_to_hashtable(Str_To_U8, toml, slot, info, name, parent_name);
-        return done, ok;
+        if done return done, ok;
+
+        // Runtime check if we did not forget to add a Hash_Table specialization.
+        if info.type != .STRUCT return false;
+        struct_info :*Type_Info_Struct= xx info;
+        assert(struct_info.polymorph_source_struct != type_info(Table(void, void)).polymorph_source_struct,
+            "Unsupported Hash_Table specialization: %", struct_info.name);
+        return false;
     }
 
-    // Deserialize the Hash_Table with the custom handler.
+    // Deserialize the Hash_Table with a custom handler.
     ok, my_hash_table = Toml.deserialize("three=3\nfour=4\n", Str_To_U8,, toml_custom_value_to_type = custom_value_to_hashtable); assert(ok);
     assert(my_hash_table.count == 2);
     three:, ok = table_find(*my_hash_table, "three"); assert(ok);
