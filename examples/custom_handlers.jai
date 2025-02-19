@@ -289,17 +289,9 @@ hashtable_support :: () {
 
     // Deserialize the Hash_Table with the custom handler.
     custom_value_to_hashtable :: (toml: Value, slot: *void, info: *Type_Info, name:string, parent_name:string) -> done:=true, ok:=false {
-        if info != type_info(Str_To_U8) return false; // Not a generic implementation see comment on table_add
-        expect(toml.type, .TABLE, parent_name, name);
-
-        hash_table := slot.(*Str_To_U8);
-        table_ensure_space(hash_table, toml.table.count);
-        for keyvalue: toml.table {
-            value: Str_To_U8.Value_Type;
-            ok := Toml.value_to_type(keyvalue.value, *value, type_info(Str_To_U8.Value_Type), name, keyvalue.key); if !ok return;
-            table_add(hash_table, keyvalue.key, value); // How to call table_add in the generic case when we only have slot and type_info?
-        }
-        return true, true;
+        // We have not found a way to make a generic implementation for any Hash_Table, so instead we need to specialize deserialization for each Hash_Table parameterization we want to support.
+        done, ok := value_to_hashtable(Str_To_U8, toml, slot, info, name, parent_name);
+        return done, ok;
     }
 
     // Deserialize the Hash_Table with the custom handler.
@@ -308,6 +300,25 @@ hashtable_support :: () {
     three:, ok = table_find(*my_hash_table, "three"); assert(ok);
     four:, ok = table_find(*my_hash_table, "four"); assert(ok);
     assert(three == 3 && four == 4, "%", my_hash_table);
+}
+
+// Helper procedure for deserializing a specific type of Hash_Table (Table_Type).
+// This procedure needs to be called in the custom handler for every type of hash table..
+value_to_hashtable :: ($Table_Type: Type, toml: Value, slot: *void, info: *Type_Info, name:string, parent_name:string) -> done:=true, ok:=false {
+    if info != type_info(Table_Type) return false;
+    struct_info :*Type_Info_Struct= xx info;
+    assert(info.type == .STRUCT);
+    assert(struct_info.polymorph_source_struct == type_info(Table(void, void)).polymorph_source_struct);
+    expect(toml.type, .TABLE, parent_name, name);
+
+    hash_table := slot.(*Table_Type);
+    table_ensure_space(hash_table, toml.table.count);
+    for keyvalue: toml.table {
+        value: Table_Type.Value_Type;
+        ok := Toml.value_to_type(keyvalue.value, *value, type_info(Table_Type.Value_Type), name, keyvalue.key); if !ok return;
+        table_add(hash_table, keyvalue.key, value); // How to call table_add in the generic case when we only have slot and type_info?
+    }
+    return true, true;
 }
 
 using Toml :: #import, file "../module.jai";
