@@ -91,18 +91,9 @@ value_to_type :: (toml: Value, slot: *void, info: *Type_Info, name:string="", pa
         if toml == context.toml_null_value return true; // Similar to null pointer
 
         any_value :*Any_Struct= xx slot;
-        if #complete toml.type == {
-        case .BOOL;     any_value.type = type_info(type_of(Value.bool_value));
-        case .INT;      any_value.type = type_info(type_of(Value.int_value));
-        case .FLOAT;    any_value.type = type_info(type_of(Value.float_value));
-        case .STRING;   any_value.type = type_info(type_of(Value.string_value));
-        case .DATETIME; any_value.type = type_info(type_of(Value.datetime));
-        case .ARRAY;    any_value.type = type_info(type_of(Value.array));
-        case .TABLE;    any_value.type = type_info(type_of(Value.table));
-        }
+        any_value.type = type_info(Value);
         any_value.value_pointer = alloc(any_value.type.runtime_size);
-        initialize_memory(any_value.value_pointer, any_value.type);
-        return value_to_type(toml, any_value.value_pointer, any_value.type, name, parent_name);
+        any_value.value_pointer.(*Value).* = copy(toml); // No recursion so we don't rely on the custom_value_to_type
     case .ENUM;
         expect(toml.type, .STRING, parent_name, name);
         enum_info :*Type_Info_Enum= xx info;

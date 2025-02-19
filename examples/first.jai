@@ -400,25 +400,22 @@ reference_types :: () {
     assert(null_array.array[1] == null, "%", null_array.array[1]);
 
     // ANY
+    // The serialization of an Any is loses information, specifically the type.
+    // Upon deserialization the type is always Toml.Value.
     Amy :: struct {
         andy: Any;
     }
-    ok=, toml4 := Toml.deserialize("andy = 3", Amy); assert(ok);
-    print("toml4: %\n", toml4);
-    assert("{3}" == tprint("%", toml4));
-    ok=, toml4 = Toml.deserialize("andy = 'hello'", Amy); assert(ok);
-    assert("{\"hello\"}" == tprint("%", toml4));
-    ok=, toml4 = Toml.deserialize("andy = 3.3", Amy); assert(ok);
-    assert("{3.3}" == tprint("%", toml4));
-    ok=, toml4 = Toml.deserialize("andy = true", Amy); assert(ok);
-    assert("{true}" == tprint("%", toml4));
-    ok=, toml4 = Toml.deserialize("andy = [1, 7, 3]", Amy); assert(ok);
-    assert(toml4.andy.type.type == .ARRAY);
-    array_info :*Type_Info_Array= xx toml4.andy.type;
-    assert(array_info.element_type == type_info(Toml.Value));
-    for cast(*[]Toml.Value, toml4.andy.value_pointer).* { assert(it.type == .INT); }
-    ok=, toml4 = Toml.deserialize("andy = [1, 'd', 3]", Amy); assert(ok);
-    print("%\n", toml4);
+    my_amy := Amy.{andy=39};
+    ok=, amy_toml := Toml.serialize(my_amy); assert(ok);
+    assert("andy=39\n" == amy_toml, "%", amy_toml);
+
+    ok=, toml4 := Toml.deserialize(amy_toml, Amy); assert(ok);
+    assert(toml4.andy.type == type_info(Toml.Value)); // The any is has not been recovered to an int, but instead is a Toml.Value holding the int.
+    assert(39 == toml4.andy.value_pointer.(*Value).int_value, "%", toml4);
+    // Since it an Any is always of type Toml.Value we can use the value_to_type procedure to recover it as the original type.
+    original: u8;
+    ok = Toml.value_to_type(toml4.andy.value_pointer.(*Value), *original, type_info(u8)); assert(ok);
+    assert(original == 39);
 
     AnyAndy :: struct {
         any_andy: s16;
@@ -429,10 +426,10 @@ reference_types :: () {
         other_amy: string;
     }
     ok=, toml5 := Toml.deserialize("[[andy]]\nany_andy = 9\nany_amy = 8\n[[andy]]\nother_andy = 'Peter'\nother_amy = 'Derick'", Amy); assert(ok);
-    andies := cast(*[]Toml.Value, toml5.andy.value_pointer);
-    ok=, any_andy := Toml.value_to_type(andies.*[0], AnyAndy); assert(ok);
+    andies := toml5.andy.value_pointer.(*Value).array;
+    ok=, any_andy := Toml.value_to_type(andies[0], AnyAndy); assert(ok);
     assert("{9, 8}" == tprint("%", any_andy));
-    ok=, other_andy := Toml.value_to_type(andies.*[1], OtherAndy); assert(ok);
+    ok=, other_andy := Toml.value_to_type(andies[1], OtherAndy); assert(ok);
     assert("{\"Peter\", \"Derick\"}" == tprint("%", other_andy));
 
     // Null Any
