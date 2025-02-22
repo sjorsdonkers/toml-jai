@@ -13,7 +13,7 @@ type_to_value :: (input: $T) -> ok:=false, value:Value=.{} {
 
 type_to_value_shared_memory :: (data: $T) -> ok:=false, toml:Value=.{} {
     info :: type_info(T);
-    done, custom_ok, custom_value := context.toml_custom_type_to_value(*data, type_info(T));
+    done, custom_ok, custom_value := custom_type_to_value(data, type_info(T));
     if done return custom_ok, custom_value;
 
     #if info.type == {
@@ -40,12 +40,12 @@ type_to_value_shared_memory :: (data: $T) -> ok:=false, toml:Value=.{} {
             for member: info.members {
                 if member.flags & (.CONSTANT | .IMPORTED) continue;
                 if member.name {
-                    print_to_builder(*builder, "ok, member_value = type_to_value_shared_memory(data.%);  if !ok return;\n", member.name);
+                    print_to_builder(*builder, "ok, member_value = type_to_value_shared_memory(data.%);  if !ok return;\n", member.name); // can always do anon version
                     print_to_builder(*builder, "array_add(*table, KeyValue.{key=\"%\", value=member_value});\n"           , member.name);
                 } else {
-                    print_to_builder(*builder, "anon_type_%1    :: #run cast(*Type, *info.members[%1].type).*;\n"                           , it_index);
+                    print_to_builder(*builder, "anon_type_%1    :: #run cast(*Type, *info.members[%1].type).*;\n"                          , it_index);
                     print_to_builder(*builder, "anon_value_%1   := ((*data).(*void) + info.members[%1].offset_in_bytes).(*anon_type_%1);\n", it_index);
-                    print_to_builder(*builder, "ok, member_value = type_to_value_shared_memory(anon_value_%1.*);  if !ok return;\n"      , it_index);
+                    print_to_builder(*builder, "ok, member_value = type_to_value_shared_memory(anon_value_%1.*);  if !ok return;\n"        , it_index);
                     print_to_builder(*builder, "array_add(*table, KeyValue.{key=\"\", value=member_value});\n");
                 }
             }
@@ -146,6 +146,79 @@ type_to_value_shared_memory :: (slot: *void, info: *Type_Info) -> ok:=false, tom
     return_with_error("Parsing of type % is not supported", info.type);
 }
 
+// custom_type_info :: (info: *Type_Info) -> *Type_Info {
+
+// }
+
+// custom_type_to_value :: (data: Value, $info: *Type_Info) -> done:bool, ok:bool, toml:Value {
+//     return true, true, data; // No deep copy!
+// }
+// custom_type_to_value :: (data: Chrono, $info: *Type_Info) -> done:bool, ok:bool, toml:Value {
+//     return true, true, .{type=.DATETIME, datetime=data};
+// }
+// custom_type_to_value :: (data: Time, $info: *Type_Info) -> done:bool, ok:bool, toml:Value {
+//     return true, true, .{type=.LOCAL_TIME, time=data};
+// }
+// custom_type_to_value :: (data: Date, $info: *Type_Info) -> done:bool, ok:bool, toml:Value {
+//     return true, true, .{type=.LOCAL_DATE, date=data};
+// }
+// custom_type_to_value :: (data: DateTime, $info: *Type_Info) -> done:bool, ok:bool, toml:Value {
+//     return true, true, .{type=.LOCAL_DATETIME, datetime=data};
+// }
+// custom_type_to_value :: (data: DateTimeOffset, $info: *Type_Info) -> done:bool, ok:bool, toml:Value {
+//     return true, true, .{type=.OFFSET_DATETIME, datetime_offset=data};
+// }
+
+custom_type_to_value :: (data: $T, $info: *Type_Info) -> done:=true, ok:=false, toml:Value=.{} {
+    #if T == {
+    case Value;          return true, true, data; // No deep copy!
+    case Chrono;         return true, true, .{type=.DATETIME, datetime=data};
+    case Time;           return true, true, .{type=.DATETIME, datetime=.{type=.LOCAL_TIME, time=data}};
+    case Date;           return true, true, .{type=.DATETIME, datetime=.{type=.LOCAL_DATE, date=data}};
+    case DateTime;       return true, true, .{type=.DATETIME, datetime=.{type=.LOCAL_DATETIME, datetime=data}};
+    case DateTimeOffset; return true, true, .{type=.DATETIME, datetime=.{type=.OFFSET_DATETIME, datetime_offset=data}};
+    }
+
+    #if info.type != .STRUCT return false;
+    struct_info :*Type_Info_Struct: xx info;
+    #if #run array_find(struct_info.notes, "SumType") {
+        ok, sumtype_value:= sumtype_to_value2(data, struct_info); return true, ok, sumtype_value;
+    }
+    return false;
+}
+
+sumtype_to_value2 :: (data: $T, $info: *Type_Info_Struct) -> ok:=false, value:Value=.{} {
+    #insert -> string {
+        valid, tag_member, union_member, tag_info, union_info := is_valid_sumtype(info);
+        assert(valid, "SumType % is not valid", info.name);
+
+        // tag_member   = "info.members[0]";
+        // union_member = "info.members[1]";
+
+        builder: String_Builder;
+        append(*builder,#string DONE
+Tag_Type  :: #run cast(*Type, *info.members[0].type).*;
+tag_value := ((*data).(*void) + info.members[0].offset_in_bytes).(*Tag_Type);
+
+table: [..]KeyValue;
+if #complete tag_value.* == {
+DONE);
+        for tag: tag_info.names {
+            print_to_builder(*builder, #string DONE
+case .%2;
+    Variant_Type      :: #run cast(*Type, *info.members[1].type.(*Type_Info_Struct).members[%1].type).*;
+    variant_data      := ((*data).(*void) + info.members[1].offset_in_bytes + info.members[1].type.(*Type_Info_Struct).members[%1].offset_in_bytes).(*Variant_Type);
+    ok, variant_value := type_to_value_shared_memory(variant_data.*);  if !ok return;
+    array_add(*table, KeyValue.{key="%2", value=variant_value});
+DONE, it_index, tag);
+
+            // We use the enums string name as key as the union member may be anonymous
+        }
+        append(*builder, "}\nreturn true, .{type=.TABLE, table=table};");
+        return builder_to_string(*builder);
+    }
+}
+
 default_custom_type_to_value :: (slot: *void, info: *Type_Info) -> done:bool, ok:bool, toml:Value {
     if info.type != .STRUCT return false, true, .{};
     struct_info :*Type_Info_Struct= xx info;
@@ -164,14 +237,14 @@ default_custom_type_to_value :: (slot: *void, info: *Type_Info) -> done:bool, ok
 }
 
 sumtype_to_value :: (slot: *void, struct_info: *Type_Info_Struct) -> ok:=false, value:Value=.{} {
-    valid, tag_member, union_member, tag_info, union_info:= is_valid_sumtype(struct_info);
+    valid, tag_member, union_member, tag_info, union_info := is_valid_sumtype(struct_info);
     if !valid { return_with_error("SumType % is not valid", struct_info.name); }
 
-    active_tag_idx:= Reflection.get_enum_value(slot + tag_member.offset_in_bytes, xx tag_member.type);
-    active_variant:= union_info.members[active_tag_idx];
-    variant_slot:= slot + union_member.offset_in_bytes + active_variant.offset_in_bytes;
+    active_tag_idx := Reflection.get_enum_value(slot + tag_member.offset_in_bytes, xx tag_member.type);
+    active_variant := union_info.members[active_tag_idx];
+    variant_slot   := slot + union_member.offset_in_bytes + active_variant.offset_in_bytes;
 
-    ok, union_value:= type_to_value_shared_memory(variant_slot, active_variant.type); if !ok return;
+    ok, union_value := type_to_value_shared_memory(variant_slot, active_variant.type); if !ok return;
     table: [..]KeyValue;
     array_add(*table, .{key=tag_info.names[active_tag_idx], value=union_value}); // We use the enums string name as the union member may be anonymous
     return true, .{type=.TABLE, table=table};

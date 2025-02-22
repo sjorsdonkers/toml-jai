@@ -1,13 +1,4 @@
 Value :: struct @SumType {
-    Type :: enum u8 {
-        BOOL;
-        INT;
-        FLOAT;
-        STRING;
-        DATETIME;
-        ARRAY;
-        TABLE;
-    }
     type :Type= .TABLE;
     union {
         bool_value   : bool = ---;
@@ -18,6 +9,15 @@ Value :: struct @SumType {
         array        : [..]Value = ---;
         table        : [..]KeyValue;
     };
+    Type :: enum u8 {
+        BOOL;
+        INT;
+        FLOAT;
+        STRING;
+        DATETIME;
+        ARRAY;
+        TABLE;
+    }
 }
 KeyValue :: struct {
     key        :  string;

@@ -32,7 +32,7 @@ parse_header :: (root_table: *Value, scope: Scope) -> ok:=false, value:*Value=nu
     if !has_next(scope) || peek_token(scope).type != Token.Type.SCOPE_BRACKET{
         // Parse [table] header
         ok, current_table, is_new := parse_key(root_table, scope); if !ok return;
-        if !is_new && current_table.type != Value.Type.TABLE {
+        if !is_new && current_table.type != .TABLE {
             return_with_error_line(scope.source, peek(scope.tokens).loc, "Cannot use key as Table header as it already has a value: %", current_table.type);
         }
         return true, current_table;
@@ -56,7 +56,7 @@ parse_header :: (root_table: *Value, scope: Scope) -> ok:=false, value:*Value=nu
 // Parse: key. key.'key'."etc"
 parse_key :: (parent: *Value, scope: Scope) -> ok:=false, leaf:*Value=null, leaf_is_new:bool=false {
     if !has_next(scope) { return_with_error("Unexpected end of scope while parsing key"); }
-    if parent.type != Value.Type.TABLE { return_with_error("Cannot use key as table as it already has a value: %", parent.type); }
+    if parent.type != .TABLE { return_with_error("Cannot use key as table as it already has a value: %", parent.type); }
 
     // Get or insert key
     find_or_insert_new :: (array: *[..]KeyValue, key: string) -> is_new:bool, *Value {
@@ -71,7 +71,7 @@ parse_key :: (parent: *Value, scope: Scope) -> ok:=false, leaf:*Value=null, leaf
     if has_next(scope) {
         ok = eat_expected_key(*scope, .DOT); if !ok return;
         // If this is an Array of Tables header then we are going to add into its last table
-        if current_value.type == Value.Type.ARRAY then { current_value = peek_pointer(current_value.array); }
+        if current_value.type == .ARRAY then { current_value = peek_pointer(current_value.array); }
         ok=, current_value, current_is_new = parse_key(current_value, scope); if !ok return;
     }
     return true, current_value, current_is_new;
