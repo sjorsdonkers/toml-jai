@@ -240,7 +240,8 @@ polymorphic_types_like_hashtable_support :: () {
 
     // By default the Toml module does not support Hash_Tables.
     // We can use custom handlers to serialize and deserialize them.
-    // Hash_Table.Table is a polymorphic struct as such the size of the entries are not known at compile time.
+    // To make a generic implementation for all parameterization of Hash_Table we need to do a bit more work
+    // like getting the type_info of each member and reimplementing the for_expansion.
     custom_hashtable_to_value :: (slot: *void, info: *Type_Info) -> done:=true, ok:=false, toml:Value=.{} {
         if info.type != .STRUCT then return false;
         struct_info :*Type_Info_Struct= xx info;

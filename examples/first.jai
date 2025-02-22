@@ -158,7 +158,7 @@ using_members :: () {
     ok=, anonymous_using:= Toml.deserialize("'' = { q = 96, t = 'hello' }", Anonymous_Using); assert(ok);
     assert(anonymous_using.q == 96, "%", anonymous_using.q);
     assert(anonymous_using.t == "hello", "%", anonymous_using.t);
-    // When serializing an anonymous using member it will not omit the member name, consistent with deserialization.
+    // When serializing an anonymous using member it will not omit the empty member name, consistent with deserialization.
     ok=, anonymous_using_str := Toml.serialize(anonymous_using); assert(ok);
     assert(anonymous_using_str == #string DONE
 "".q=96

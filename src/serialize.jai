@@ -1,14 +1,80 @@
 serialize :: (input: $T) -> ok:=false, toml:string="" {
     a := scoped_pool();
-    ok, value := type_to_value_shared_memory(*input, type_info(T),, a); if !ok return;
+    ok, value := type_to_value_shared_memory(input,, a); if !ok return;
     builder: String_Builder;
     print_table_to_builder(*builder, value,, a);
     return true, builder_to_string(*builder);
 }
 
 type_to_value :: (input: $T) -> ok:=false, value:Value=.{} {
-    ok, value := type_to_value_shared_memory(*input, type_info(T),, scoped_pool()); if !ok return;
+    ok, value := type_to_value_shared_memory(input,, scoped_pool()); if !ok return;
     return ok, copy(value); // Would be nice if we could just copy the reused strings and Value arrays and tables.
+}
+
+type_to_value_shared_memory :: (data: $T) -> ok:=false, toml:Value=.{} {
+    info :: type_info(T);
+    done, custom_ok, custom_value := context.toml_custom_type_to_value(*data, type_info(T));
+    if done return custom_ok, custom_value;
+
+    #if info.type == {
+    case .INTEGER; #if T == u64 if data > 0x7fff_ffff_ffff_ffff { return_with_error("Value % is out of s64 range", data); }
+                  return true, .{type = .INT,    int_value    = data.(s64, no_check)};
+    case .FLOAT;  return true, .{type = .FLOAT,  float_value  = xx data};
+    case .BOOL;   return true, .{type = .BOOL,   bool_value   = data};
+    case .STRING; return true, .{type = .STRING, string_value = data}; // No deep copy!
+    case .POINTER;
+        if data == null return true, context.toml_null_value; // User can change default null value as module parameter
+        ok, value := type_to_value_shared_memory(data.*);
+        return ok, value;
+    case .VOID;  return true, .{};
+    case .STRUCT;
+        if info.textual_flags & .UNION return_with_error("Untagged unions (%) are not supported, as we cannot determine the active member, use @SumType", ifx info.name then info.name else "anonymous");
+
+        // Unlike Basic.print we do re-print all overlapping #place members. This will output the same data multiple times, but is likely more predictable.
+        // Otherwise we would need to recursively track to check whether the offset is always increasing compared to the highest offset.
+        table: [..]KeyValue;
+        ok: bool;
+        member_value: Value;
+        #insert -> string {
+            builder: String_Builder;
+            for member: info.members {
+                if member.flags & (.CONSTANT | .IMPORTED) continue;
+                if member.name {
+                    print_to_builder(*builder, "ok, member_value = type_to_value_shared_memory(data.%);  if !ok return;\n", member.name);
+                    print_to_builder(*builder, "array_add(*table, KeyValue.{key=\"%\", value=member_value});\n"           , member.name);
+                } else {
+                    print_to_builder(*builder, "anon_type_%1    :: #run cast(*Type, *info.members[%1].type).*;\n"                           , it_index);
+                    print_to_builder(*builder, "anon_value_%1   := ((*data).(*void) + info.members[%1].offset_in_bytes).(*anon_type_%1);\n", it_index);
+                    print_to_builder(*builder, "ok, member_value = type_to_value_shared_memory(anon_value_%1.*);  if !ok return;\n"      , it_index);
+                    print_to_builder(*builder, "array_add(*table, KeyValue.{key=\"\", value=member_value});\n");
+                }
+            }
+            return builder_to_string(*builder);
+        }
+        return true, .{type=.TABLE, table=table};
+    case .ARRAY;
+        array: [..]Value;
+        array_reserve(*array, data.count);
+        for data {
+            ok, record_value:= type_to_value_shared_memory(it); if !ok return;
+            array_add(*array, record_value);
+        }
+        return true, .{type=.ARRAY, array=array};
+    case .ANY;
+        if data.value_pointer == null return true, context.toml_null_value; // Similar to null pointer
+        ok, value:= type_to_value_shared_memory(data.value_pointer, data.type);
+        return ok, value;
+    case .ENUM;
+        for info.values  if it == data.(s64) {
+            return true, .{type=.STRING, string_value=info.names[it_index]};
+        }
+        return_with_error("Enum value % not found in enum %", data, info.name);
+    case .VARIANT;
+        base_type :: #run cast(*Type, *info.variant_of).*;
+        ok, value:= type_to_value_shared_memory(data.(base_type));
+        return ok, value;
+    }
+    return_with_error("Parsing of type % is not supported", info.type);
 }
 
 // NOTE: Does not deep copy!
@@ -53,7 +119,7 @@ type_to_value_shared_memory :: (slot: *void, info: *Type_Info) -> ok:=false, tom
         array: [..]Value;
         array_reserve(*array, array_count);
         for idx: 0..array_count-1 {
-            element_slot:= array_slot + array_info.element_type.runtime_size * idx;
+            element_slot := array_slot + array_info.element_type.runtime_size * idx;
             ok, record_value:= type_to_value_shared_memory(element_slot, array_info.element_type); if !ok return;
             array_add(*array, record_value);
         }
@@ -61,7 +127,7 @@ type_to_value_shared_memory :: (slot: *void, info: *Type_Info) -> ok:=false, tom
     case .ANY;
         any_value :*Any_Struct= xx slot;
         if any_value.value_pointer == null return true, context.toml_null_value; // Similar to null pointer
-        ok, value:= type_to_value_shared_memory(any_value.value_pointer, any_value.type);
+        ok, value := type_to_value_shared_memory(any_value.value_pointer, any_value.type);
         return ok, value;
     case .ENUM;
         enum_info :*Type_Info_Enum= xx info;
@@ -243,4 +309,5 @@ build_dotted_key :: (parent_key: string, key: string) -> string {
 #scope_file
 #import "Basic";
 #import "Math";
+#import "Compiler";
 Reflection :: #import "Reflection";
