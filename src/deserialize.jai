@@ -14,7 +14,7 @@ value_to_type :: (value: Value, $Target: Type) -> ok:=false, value:Target=.{} {
 // Note meant to be called by the user directly, but instead to be used inside custom deserializers
 // slot is already initialized memory
 value_to_type :: (toml: Value, slot: *void, info: *Type_Info, name:string="", parent_name:string="") -> ok:=false {
-    done, ok := context.toml_custom_value_to_type(toml, slot, info, name, parent_name);
+    done, ok := default_custom_value_to_type(toml, slot, info, name, parent_name);
     if done return ok;
 
     if #complete info.type == {
@@ -164,7 +164,7 @@ is_valid_sumtype :: (struct_info: *Type_Info_Struct) -> bool, tag_member:*Type_I
 }
 
 expect :: inline (given: Value.Type, expected: Value.Type, struct_name: string, member_name: string) #expand {
-    if given != expected { `return_with_error("Wrong type for %.%, expected %, got % ", struct_name, member_name, expected, given); }
+    if given != expected { log_error("Wrong type for %.%, expected %, got % ", struct_name, member_name, expected, given); return; }
 }
 
 #scope_module
