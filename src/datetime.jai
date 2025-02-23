@@ -3,12 +3,6 @@
 // These types are to be removed when there is a commonly used datetime module in Jai
 
 Chrono :: struct @SumType {
-    Type :: enum u8 {
-        LOCAL_TIME;
-        LOCAL_DATE;
-        LOCAL_DATETIME;
-        OFFSET_DATETIME;
-    }
     type: Type;
     union {
         time: Time;
@@ -16,6 +10,12 @@ Chrono :: struct @SumType {
         datetime: DateTime = ---;
         datetime_offset: DateTimeOffset = ---;
     };
+    Type :: enum u8 {
+        LOCAL_TIME;
+        LOCAL_DATE;
+        LOCAL_DATETIME;
+        OFFSET_DATETIME;
+    }
 }
 Time :: struct {
     hour       : u8;

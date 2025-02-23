@@ -101,7 +101,8 @@ sumtype_to_value :: (slot: *void, struct_info: *Type_Info_Struct) -> ok:=false, 
     valid, tag_member, union_member, tag_info, union_info:= is_valid_sumtype(struct_info);
     if !valid { return_with_error("SumType % is not valid", struct_info.name); }
 
-    active_tag_idx:= Reflection.get_enum_value(slot + tag_member.offset_in_bytes, xx tag_member.type);
+    active_tag:= Reflection.get_enum_value(slot + tag_member.offset_in_bytes, xx tag_member.type);
+    found, active_tag_idx := array_find(tag_info.values, active_tag); if !found { return_with_error("Active tag % not found in %", active_tag, tag_info.name); }
     active_variant:= union_info.members[active_tag_idx];
     variant_slot:= slot + union_member.offset_in_bytes + active_variant.offset_in_bytes;
 

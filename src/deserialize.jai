@@ -153,7 +153,7 @@ value_to_sumtype :: (toml_table: []KeyValue, slot: *void, struct_info: *Type_Inf
 }
 
 is_valid_sumtype :: (struct_info: *Type_Info_Struct) -> bool, tag_member:*Type_Info_Struct_Member=null, union_member:*Type_Info_Struct_Member=null, tag_info:*Type_Info_Enum=null, union_info:*Type_Info_Struct=null {
-    if struct_info.members.count != 2                                      return false;
+    if struct_info.members.count < 2                                       return false;
     tag_member, union_member:= *struct_info.members[0], *struct_info.members[1];
     if tag_member.type.type != .ENUM || union_member.type.type != .STRUCT  return false;
     tag_info :*Type_Info_Enum= xx tag_member.type;
