@@ -164,7 +164,7 @@ is_valid_sumtype :: (struct_info: *Type_Info_Struct) -> bool, tag_member:*Type_I
 }
 
 expect :: inline (given: Value.Type, expected: Value.Type, struct_name: string, member_name: string) #expand {
-    if given != expected { log_error("Wrong type for %.%, expected %, got % ", struct_name, member_name, expected, given); return; }
+    if given != expected { log_error("Wrong type for %.%, expected %, got % ", struct_name, member_name, expected, given); `return; }
 }
 
 #scope_module
