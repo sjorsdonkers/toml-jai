@@ -243,9 +243,7 @@ range_check_and_store :: (value: s64, info: *Type_Info_Integer, pointer: *void) 
 
 scoped_pool :: () -> Allocator #expand {
     pool: Flat_Pool;
-    a: Allocator;
-    a.proc = flat_pool_allocator_proc;
-    a.data = *pool;
+    a := Allocator.{flat_pool_allocator_proc, *pool};
     `defer fini(*pool);
     return a;
 }
