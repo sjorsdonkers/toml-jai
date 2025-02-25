@@ -14,7 +14,7 @@ value_to_type :: (value: Value, $Target: Type) -> ok:=false, value:Target=.{} {
 // Note meant to be called by the user directly, but instead to be used inside custom deserializers
 // slot is already initialized memory
 value_to_type :: (toml: Value, slot: *void, info: *Type_Info, name:string="", parent_name:string="") -> ok:=false {
-    done, ok := context.toml_custom_value_to_type(toml, slot, info, name, parent_name);
+    done, ok := default_custom_value_to_type(toml, slot, info, name, parent_name);
     if done return ok;
 
     if #complete info.type == {
