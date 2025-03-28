@@ -1,21 +1,84 @@
 serialize :: (input: $T) -> ok:=false, toml:string="" {
     a := scoped_pool();
-    ok, value := type_to_value_shared_memory(*input, type_info(T),, a); if !ok return;
+    ok, value := type_to_value_shared_memory(input, type_info(T),, a); if !ok return;
     builder: String_Builder;
     print_table_to_builder(*builder, value,, a);
     return true, builder_to_string(*builder);
 }
 
 type_to_value :: (input: $T) -> ok:=false, value:Value=.{} {
-    ok, value := type_to_value_shared_memory(*input, type_info(T),, scoped_pool()); if !ok return;
+    ok, value := type_to_value_shared_memory(input, type_info(T),, scoped_pool()); if !ok return;
     return ok, copy(value); // Would be nice if we could just copy the reused strings and Value arrays and tables.
+}
+
+type_to_value_shared_memory :: (data: $T, $info: *Type_Info) -> ok:=false, toml:Value=.{} {
+    done, custom_ok, custom_value := #insert,scope() CUSTOM_TYPE_TO_VALUE;
+    if done return custom_ok, custom_value;
+
+    #if (#run info.type) == {
+    case .INTEGER; #if T == u64 if data > 0x7fff_ffff_ffff_ffff { return_with_error("Value % is out of s64 range", data); }
+                  return true, .{type = .INT,    int_value    = data.(s64, no_check)};
+    case .FLOAT;  return true, .{type = .FLOAT,  float_value  = xx data};
+    case .BOOL;   return true, .{type = .BOOL,   bool_value   = data};
+    case .STRING; return true, .{type = .STRING, string_value = data}; // No deep copy!
+    case .POINTER;
+        if data == null return true, context.toml_null_value; // User can change default null value as module parameter
+        ok, value := type_to_value_shared_memory(data.*, #run info.(*Type_Info_Pointer).pointer_to);
+        return ok, value;
+    case .VOID;  return true, .{};
+    case .STRUCT;
+        struct_info :: info.(*Type_Info_Struct);
+        #if #run struct_info.textual_flags & .UNION return_with_error("Untagged unions (%) are not supported, as we cannot determine the active member, use @SumType", ifx struct_info.name then struct_info.name else "anonymous");
+
+        // Unlike Basic.print we do re-print all overlapping #place members. This will output the same data multiple times, but is likely more predictable.
+        // Otherwise we would need to recursively track to check whether the offset is always increasing compared to the highest offset.
+        table: [..]KeyValue;
+        ok: bool;
+        member_value: Value;
+        #insert -> string {
+            builder: String_Builder;
+            for member: struct_info.members {
+                if member.flags & (.CONSTANT | .IMPORTED) continue;
+                    print_to_builder(*builder, "Anon_Type_%1    :: #run get_type(struct_info.members[%1].type);\n"                                , it_index);
+                    print_to_builder(*builder, "anon_value_%1   := ((*data).(*void) + #run struct_info.members[%1].offset_in_bytes).(*Anon_Type_%1);\n", it_index);
+                    print_to_builder(*builder, "ok, member_value = type_to_value_shared_memory(anon_value_%1.*, type_info(Anon_Type_%1));  if !ok return;\n"        , it_index);
+                    print_to_builder(*builder, "array_add(*table, KeyValue.{key=\"%\", value=member_value});\n", member.name);
+            }
+            return builder_to_string(*builder);
+        }
+        return true, .{type=.TABLE, table=table};
+    case .ARRAY;
+        array: [..]Value;
+        array_reserve(*array, data.count);
+        for data {
+            ok, record_value:= type_to_value_shared_memory(it, #run info.(*Type_Info_Array).element_type); if !ok return;
+            array_add(*array, record_value);
+        }
+        return true, .{type=.ARRAY, array=array};
+    case .ANY;
+        if data.value_pointer == null return true, context.toml_null_value; // Similar to null pointer
+        ok, value:= type_to_value_shared_memory_runtime(data.value_pointer, data.type);
+        return ok, value;
+    case .ENUM;
+        enum_info :: info.(*Type_Info_Enum);
+        for enum_info.values  if it == data.(s64) {
+            return true, .{type=.STRING, string_value=enum_info.names[it_index]};
+        }
+        return_with_error("Enum value % not found in enum %", data, enum_info.name);
+    case .VARIANT;
+        variant_info :: info.(*Type_Info_Variant);
+        base_type :: #run get_type(variant_info.variant_of);
+        ok, value:= type_to_value_shared_memory(data.(base_type), #run variant_info.variant_of);
+        return ok, value;
+    }
+    return_with_error("Parsing of type % is not supported", info.type);
 }
 
 // NOTE: Does not deep copy!
 // Not meant to be called directly by the user, but instead to be used inside custom serializers.
-type_to_value_shared_memory :: (slot: *void, info: *Type_Info) -> ok:=false, toml:Value=.{} {
-    done, ok, value := context.toml_custom_type_to_value(slot, info);
-    if done return ok, value;
+type_to_value_shared_memory_runtime :: (slot: *void, info: *Type_Info) -> ok:=false, toml:Value=.{} {
+    // done, ok, value := context.toml_custom_type_to_value(slot, info);
+    // if done return ok, value;
 
     if #complete info.type == {
     case .INTEGER;
@@ -29,7 +92,7 @@ type_to_value_shared_memory :: (slot: *void, info: *Type_Info) -> ok:=false, tom
     case .STRING; return true, .{type=.STRING, string_value=cast(*string, slot).*}; // No deep copy!
     case .POINTER;
         if cast(**void, slot).* == null return true, context.toml_null_value; // User can change default null value as module parameter
-        ok, value := type_to_value_shared_memory(cast(**void, slot).*, cast(*Type_Info_Pointer, info).pointer_to);
+        ok, value := type_to_value_shared_memory_runtime(cast(**void, slot).*, cast(*Type_Info_Pointer, info).pointer_to);
         return ok, value;
     case .VOID;  return true, .{};
     case .STRUCT;
@@ -41,7 +104,7 @@ type_to_value_shared_memory :: (slot: *void, info: *Type_Info) -> ok:=false, tom
         table: [..]KeyValue;
         for member: struct_info.members {
             if member.flags & (.CONSTANT | .IMPORTED) continue;
-            ok, member_value:= type_to_value_shared_memory(slot + member.offset_in_bytes, member.type);  if !ok return;
+            ok, member_value:= type_to_value_shared_memory_runtime(slot + member.offset_in_bytes, member.type);  if !ok return;
             array_add(*table, KeyValue.{key=member.name, value=member_value});
         }
         return true, .{type=.TABLE, table=table};
@@ -53,15 +116,15 @@ type_to_value_shared_memory :: (slot: *void, info: *Type_Info) -> ok:=false, tom
         array: [..]Value;
         array_reserve(*array, array_count);
         for idx: 0..array_count-1 {
-            element_slot:= array_slot + array_info.element_type.runtime_size * idx;
-            ok, record_value:= type_to_value_shared_memory(element_slot, array_info.element_type); if !ok return;
+            element_slot := array_slot + array_info.element_type.runtime_size * idx;
+            ok, record_value:= type_to_value_shared_memory_runtime(element_slot, array_info.element_type); if !ok return;
             array_add(*array, record_value);
         }
         return true, .{type=.ARRAY, array=array};
     case .ANY;
         any_value :*Any_Struct= xx slot;
         if any_value.value_pointer == null return true, context.toml_null_value; // Similar to null pointer
-        ok, value:= type_to_value_shared_memory(any_value.value_pointer, any_value.type);
+        ok, value := type_to_value_shared_memory_runtime(any_value.value_pointer, any_value.type);
         return ok, value;
     case .ENUM;
         enum_info :*Type_Info_Enum= xx info;
@@ -71,13 +134,58 @@ type_to_value_shared_memory :: (slot: *void, info: *Type_Info) -> ok:=false, tom
         }
         return_with_error("Enum value % not found in enum %", enum_value, enum_info.name);
     case .VARIANT;
-        ok, value:= type_to_value_shared_memory(slot, cast(*Type_Info_Variant, info).variant_of);
+        ok, value:= type_to_value_shared_memory_runtime(slot, cast(*Type_Info_Variant, info).variant_of);
         return ok, value;
     case .PROCEDURE; #through;  case .OVERLOAD_SET; #through;  case .POLYMORPHIC_VARIABLE; #through;
     case .TYPE;      #through;  case .CODE;         #through;  case .UNTYPED_LITERAL;      #through;
     case .UNTYPED_ENUM;
     }
     return_with_error("Parsing of type % is not supported", info.type);
+}
+
+custom_type_to_value :: (data: $T, $info: *Type_Info) -> done:=true, ok:=false, toml:Value=.{} {
+    #if T == {
+    case Value;          return true, true, data; // No deep copy!
+    case Chrono;         return true, true, .{type=.DATETIME, datetime=data};
+    case Time;           return true, true, .{type=.DATETIME, datetime=.{type=.LOCAL_TIME, time=data}};
+    case Date;           return true, true, .{type=.DATETIME, datetime=.{type=.LOCAL_DATE, date=data}};
+    case DateTime;       return true, true, .{type=.DATETIME, datetime=.{type=.LOCAL_DATETIME, datetime=data}};
+    case DateTimeOffset; return true, true, .{type=.DATETIME, datetime=.{type=.OFFSET_DATETIME, datetime_offset=data}};
+    }
+    done, ok, sumtype_value := sumtype_to_value2(data, info); if done return true, ok, sumtype_value;
+    return false;
+}
+
+sumtype_to_value2 :: (data: $T, $info: *Type_Info) -> done:=true, ok:=false, value:Value=.{} {
+    #if #run info.type != .STRUCT return false;
+    struct_info :*Type_Info_Struct: xx info;
+    #if !#run array_find(struct_info.notes, "SumType") return false;
+    else {
+        #insert -> string {
+            valid, tag_member, union_member, tag_info, union_info := is_valid_sumtype(struct_info);
+            assert(valid, "SumType % is not valid", struct_info.name);
+
+            builder: String_Builder;
+            append(*builder,#string DONE
+Tag_Type  :: #run get_type(struct_info.members[0].type); // struct_info.members[0] is the tag member
+tag_value := ((*data).(*void) + #run struct_info.members[0].offset_in_bytes).(*Tag_Type);
+
+table: [..]KeyValue;
+if #complete tag_value.* == {
+DONE);
+            for tag: tag_info.names {
+                print_to_builder(*builder, #string DONE
+case .%2;
+    Variant_Type      :: #run get_type(struct_info.members[1].type.(*Type_Info_Struct).members[%1].type); // struct_info.members[1] is the union member
+    variant_data      := ((*data).(*void) + #run struct_info.members[1].offset_in_bytes + struct_info.members[1].type.(*Type_Info_Struct).members[%1].offset_in_bytes).(*Variant_Type);
+    ok, variant_value := type_to_value_shared_memory(variant_data.*, type_info(Variant_Type));  if !ok return;
+    array_add(*table, KeyValue.{key="%2", value=variant_value}); // We use the enums string name as key as the union member may be anonymous
+DONE, it_index, tag);
+            }
+            append(*builder, "}\nreturn true, true, .{type=.TABLE, table=table};");
+            return builder_to_string(*builder);
+        }
+    }
 }
 
 default_custom_type_to_value :: (slot: *void, info: *Type_Info) -> done:bool, ok:bool, toml:Value {
@@ -98,7 +206,7 @@ default_custom_type_to_value :: (slot: *void, info: *Type_Info) -> done:bool, ok
 }
 
 sumtype_to_value :: (slot: *void, struct_info: *Type_Info_Struct) -> ok:=false, value:Value=.{} {
-    valid, tag_member, union_member, tag_info, union_info:= is_valid_sumtype(struct_info);
+    valid, tag_member, union_member, tag_info, union_info := is_valid_sumtype(struct_info);
     if !valid { return_with_error("SumType % is not valid", struct_info.name); }
 
     active_tag:= Reflection.get_enum_value(slot + tag_member.offset_in_bytes, xx tag_member.type);
@@ -106,7 +214,7 @@ sumtype_to_value :: (slot: *void, struct_info: *Type_Info_Struct) -> ok:=false, 
     active_variant:= union_info.members[active_tag_idx];
     variant_slot:= slot + union_member.offset_in_bytes + active_variant.offset_in_bytes;
 
-    ok, union_value:= type_to_value_shared_memory(variant_slot, active_variant.type); if !ok return;
+    ok, union_value := type_to_value_shared_memory_runtime(variant_slot, active_variant.type); if !ok return;
     table: [..]KeyValue;
     array_add(*table, .{key=tag_info.names[active_tag_idx], value=union_value}); // We use the enums string name as the union member may be anonymous
     return true, .{type=.TABLE, table=table};
@@ -244,4 +352,5 @@ build_dotted_key :: (parent_key: string, key: string) -> string {
 #scope_file
 #import "Basic";
 #import "Math";
+#import "Compiler";
 Reflection :: #import "Reflection";

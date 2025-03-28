@@ -1,3 +1,6 @@
+// The Value that will be used to represent null values for in the toml.
+#add_context toml_null_value := Value.{type=.STRING, string_value="~null~"};
+
 Value :: struct @SumType {
     type :Type= .TABLE;
     union {
