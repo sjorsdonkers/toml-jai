@@ -1,6 +1,6 @@
 # TOML-jai
 
-![](https://img.shields.io/badge/Jai-beta%200.2.011-blue.svg)
+![](https://img.shields.io/badge/Jai-beta%200.2.012-blue.svg)
 
 A module for `TOML v1.0.0` support. It provides functionality to read/write TOML files and convert them directly to/from Jai data structures.
 

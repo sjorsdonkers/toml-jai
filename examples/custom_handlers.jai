@@ -311,8 +311,8 @@ polymorphic_types_like_hashtable_support :: () {
     // Deserialize the Hash_Table with a custom handler.
     ok, my_hash_table = Toml.deserialize("three=3\nfour=4\n", Str_To_U8,, toml_custom_value_to_type = custom_value_to_hashtable); assert(ok);
     assert(my_hash_table.count == 2);
-    three:, ok = table_find(*my_hash_table, "three"); assert(ok);
-    four:, ok = table_find(*my_hash_table, "four"); assert(ok);
+    ok=, three:= table_find_new(*my_hash_table, "three"); assert(ok);
+    ok=, four:= table_find_new(*my_hash_table, "four"); assert(ok);
     assert(three == 3 && four == 4, "%", my_hash_table);
 }
 
