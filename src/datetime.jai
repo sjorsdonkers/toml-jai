@@ -50,20 +50,20 @@ parse_datetime :: (input: string) -> ok:=false, value:Chrono=.{} {
 
     // Must be datetime [offset]
     if input.count < 19 return;
-    if input[10] != #char "T" && input[10] != #char " " return; // NOTE: TOML does not allow lowercase T
+    if input[10] != "T" && input[10] != " " return; // NOTE: TOML does not allow lowercase T
     time_str := slice(input, 11, input.count-11);
 
-    if time_str[time_str.count-1] == #char "Z" { // NOTE: TOML does not allow lowercase Z
+    if time_str[time_str.count-1] == "Z" { // NOTE: TOML does not allow lowercase Z
         // Datetime with Zulu time
         success, time = parse_time(slice(time_str, 0, time_str.count-1)); if !success return;
         return true, .{type=.OFFSET_DATETIME, datetime_offset=.{date=date, time=time, offset_hour=0, offset_minute=0}};
-    } else if time_str[time_str.count-6] == #char "+" || time_str[time_str.count-6] == #char "-" {
+    } else if time_str[time_str.count-6] == "+" || time_str[time_str.count-6] == "-" {
         // Datetime with timezone by offset
         success, time = parse_time(slice(time_str, 0, time_str.count-6)); if !success return;
 
-        offset_is_negative := time_str[time_str.count-6] == #char "-";
+        offset_is_negative := time_str[time_str.count-6] == "-";
         offset_hour := slice_to_int(time_str, time_str.count-5, 2, u8);
-        if time_str[time_str.count-3] != #char ":" return;
+        if time_str[time_str.count-3] != ":" return;
         offset_minute := slice_to_int(time_str, time_str.count-2, 2, u8);
 
         return true, .{type=.OFFSET_DATETIME, datetime_offset=.{date=date, time=time, offset_hour=offset_hour, offset_minute=offset_minute, offset_is_negative=offset_is_negative}};
@@ -77,13 +77,13 @@ parse_datetime :: (input: string) -> ok:=false, value:Chrono=.{} {
 // Parses a time in the format "HH:MM:SS[.SSS]", extra characters may only be digits
 parse_time :: (input: string) -> ok:=false, value:Time=.{} {
     if input.count < 8 return;
-    if input[2] != #char ":" || input[5] != #char ":" return;
+    if input[2] != ":" || input[5] != ":" return;
     hour   := slice_to_int(input, 0, 2, u8);
     minute := slice_to_int(input, 3, 2, u8);
     second := slice_to_int(input, 6, 2, u8);
     millisecond :u16=0;
     if input.count > 8 {
-        if input[8] != #char "." return;
+        if input[8] != "." return;
         ms_digit_count := min(3, input.count - 9);
         millisecond  = slice_to_int(input, 9, ms_digit_count, u16);
         if ms_digit_count > 3 { // We only store the minimum required precision to support (milliseconds)
@@ -96,7 +96,7 @@ parse_time :: (input: string) -> ok:=false, value:Time=.{} {
 // Parses a date in the format "YYYY-MM-DD", extra characters are ignored
 parse_date :: (input: string) -> ok:=false, value:Date=.{} {
     if input.count < 10 return;
-    if input[4] != #char "-" || input[7] != #char "-" return;
+    if input[4] != "-" || input[7] != "-" return;
     year  := slice_to_int(input, 0, 4, u16);
     month := slice_to_int(input, 5, 2, u8);
     day   := slice_to_int(input, 8, 2, u8);

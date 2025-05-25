@@ -163,7 +163,7 @@ parse_literal :: (scope: *Scope) -> ok:=false, literal:Value=.{} {
         if has_next(scope) {
             next := peek_token(scope);
             if next.type == .RAW
-            && (token.str.data + token.str.count).* == #char " "
+            && (token.str.data + token.str.count).* == " "
             && token.str.data + token.str.count + 1 == next.str.data {
                 date_input.count += 1 + eat_token(scope).str.count;
             }
@@ -183,7 +183,7 @@ unescape :: (basic_token: Token, source: string) -> ok:=false, escaped:string=""
     builder: String_Builder;
     pos := 0;
     while pos < basic.count {
-        if basic[pos] != #char "\\" {
+        if basic[pos] != "\\" {
             append(*builder, basic[pos]);
             pos += 1;
             continue;
@@ -191,22 +191,22 @@ unescape :: (basic_token: Token, source: string) -> ok:=false, escaped:string=""
         if pos + 1 >= basic.count {return_with_error_line(source, basic_token.loc, "Unterminated escape sequence"); }
 
         if basic[pos + 1] == {
-        case #char "b";  append(*builder, #char "\x08"); pos += 2;
-        case #char "t";  append(*builder, #char "\t");   pos += 2;
-        case #char "n";  append(*builder, #char "\n");   pos += 2;
-        case #char "f";  append(*builder, #char "\x0c"); pos += 2;
-        case #char "r";  append(*builder, #char "\r");   pos += 2;
-        case #char "\""; append(*builder, #char "\"");   pos += 2;
-        case #char "\\"; append(*builder, #char "\\");   pos += 2;
-        case #char "\r"; #through;
-        case #char "\n";
+        case "b";  append(*builder, "\x08"); pos += 2;
+        case "t";  append(*builder, "\t");   pos += 2;
+        case "n";  append(*builder, "\n");   pos += 2;
+        case "f";  append(*builder, "\x0c"); pos += 2;
+        case "r";  append(*builder, "\r");   pos += 2;
+        case "\""; append(*builder, "\"");   pos += 2;
+        case "\\"; append(*builder, "\\");   pos += 2;
+        case "\r"; #through;
+        case "\n";
             pos += 2;
-            while (pos < basic.count) && ( basic[pos] == #char " " || basic[pos] == #char "\t" || basic[pos] == #char "\r" || basic[pos] == #char "\n") {
+            while (pos < basic.count) && ( basic[pos] == " " || basic[pos] == "\t" || basic[pos] == "\r" || basic[pos] == "\n") {
                 pos += 1;
             }
-        case #char "u"; #through;
-        case #char "U";
-            num_digits: s32 = xx ifx basic[pos + 1] == #char "u" then 4 else 8;
+        case "u"; #through;
+        case "U";
+            num_digits: s32 = xx ifx basic[pos + 1] == "u" then 4 else 8;
             pos += 2;
 
             if pos + num_digits > basic.count {return_with_error_line(source, basic_token.loc, "Expected % characters in the unicode escape sequence", num_digits); }
@@ -268,7 +268,7 @@ eat_key :: (scope: *Scope) -> ok:=false, key:Token=.{} {
     }
     // Handling potentially dot separated RAW key
     char_num := cast(s32, inline find_index_from_right(original.str, scope.remaining_key));
-    next:, scope.remaining_key = split_from_left_incl(scope.remaining_key, #char ".");
+    next:, scope.remaining_key = split_from_left_incl(scope.remaining_key, ".");
     if scope.remaining_key.count == 0 { eat_token(scope); }
     if next == "." { return true, Token.{type=Token.Type.DOT, loc=Location.{original.loc.line, char_num}}; }
     else           {
@@ -313,10 +313,10 @@ string_to_int_checked :: (s: string, base := 10, $T := int) -> result: T, succes
 
     sign : T = 1;
     #if #run type_info(T).signed {
-        if s[0] == #char "-" {
+        if s[0] == "-" {
             sign = -1;
             advance(*s, 1);
-        } else if s[0] == #char "+" {
+        } else if s[0] == "+" {
             advance(*s, 1);
         }
     }
@@ -329,9 +329,9 @@ string_to_int_checked :: (s: string, base := 10, $T := int) -> result: T, succes
             c := s[cursor];
 
             value: u8 = ---;
-            if is_digit(c)                               { value = c - #char "0"; }
-            else if (c >= #char "a") && (c <= #char "f") { value = c - #char "a" + 10; }
-            else if (c >= #char "A") && (c <= #char "F") { value = c - #char "A" + 10; }
+            if is_digit(c)                               { value = c - "0"; }
+            else if (c >= "a") && (c <= "f") { value = c - "a" + 10; }
+            else if (c >= "A") && (c <= "F") { value = c - "A" + 10; }
             else { break; }
 
             sum *= cast(T, base);
@@ -345,7 +345,7 @@ string_to_int_checked :: (s: string, base := 10, $T := int) -> result: T, succes
             c := s[cursor];
             if !is_digit(c) break;
 
-            digit := c - #char "0";
+            digit := c - "0";
             if digit >= base break;
 
             sum *= cast(T,  base);
@@ -363,7 +363,7 @@ string_to_int_checked :: (s: string, base := 10, $T := int) -> result: T, succes
 }
 
 is_bare_key :: (str: string) -> bool {
-    for str  if !is_alnum(it) && it != #char "-" return false;
+    for str  if !is_alnum(it) && it != "-" return false;
     return str.count > 0;
 }
 

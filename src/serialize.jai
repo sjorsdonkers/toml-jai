@@ -193,13 +193,13 @@ print_to_builder_escaped :: (builder: *String_Builder, str: string, $is_key: boo
 
     append(builder, "\""); // TODO consider single ' and multiline strings, Note multiline should impact is_inline_table
 	for str if it == {
-        case #char "\x08"; append(builder, "\\b");
-        case #char "\t";   append(builder, "\\t");
-        case #char "\n";   append(builder, "\\n");
-        case #char "\x0c"; append(builder, "\\f");
-        case #char "\r";   append(builder, "\\r");
-        case #char "\"";   append(builder, "\\\"");
-        case #char "\\";   append(builder, "\\\\");
+        case "\x08"; append(builder, "\\b");
+        case "\t";   append(builder, "\\t");
+        case "\n";   append(builder, "\\n");
+        case "\x0c"; append(builder, "\\f");
+        case "\r";   append(builder, "\\r");
+        case "\"";   append(builder, "\\\"");
+        case "\\";   append(builder, "\\\\");
         case;              append(builder, it);
     }
     append(builder, "\"");

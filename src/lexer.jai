@@ -34,25 +34,25 @@ tokenize :: (data: string) -> ok:=false, tokens:[]Token=.[] { // TODO change tok
 
     while has_next(lexer) {
         c := peek_char(lexer);
-        if c == #char " " || c == #char "\t" {
+        if c == " " || c == "\t" {
             eat_char(*lexer);
             continue;
         }
 
-        if c == #char "\n" { eat_newline(*lexer); continue;}
+        if c == "\n" { eat_newline(*lexer); continue;}
         if has_next(lexer, 2) && peek_slice(lexer, 2) == "\r\n" {
             eat_char(*lexer);
             eat_newline(*lexer);
             continue;
         }
 
-        if c == #char "#" { // NOTE: Also eats \r if any
-            while has_next(lexer) && peek_char(lexer) != #char "\n" { eat_char(*lexer); }
+        if c == "#" { // NOTE: Also eats \r if any
+            while has_next(lexer) && peek_char(lexer) != "\n" { eat_char(*lexer); }
             continue;
         }
 
         // Raw
-        is_raw :: (c: u8) -> bool { return is_alnum(c) || c == #char "+" || c == #char "-" || c == #char "." || c == #char ":"; }
+        is_raw :: (c: u8) -> bool { return is_alnum(c) || c == "+" || c == "-" || c == "." || c == ":"; }
         if is_raw(c) {
             start := lexer.pos;
             while has_next(lexer) && is_raw(peek_char(lexer)) { eat_char(*lexer); }
@@ -62,14 +62,14 @@ tokenize :: (data: string) -> ok:=false, tokens:[]Token=.[] { // TODO change tok
         }
 
         // Quoted string
-        if c == #char "'" || c == #char "\"" {
-            tripple_quote := ifx c == #char "'" then "'''" else "\"\"\"";
+        if c == "'" || c == "\"" {
+            tripple_quote := ifx c == "'" then "'''" else "\"\"\"";
             if has_next(lexer, 3) && peek_slice(lexer, 3) == tripple_quote {
                 // Multi-line quoted string
                 eat_char(*lexer, 3);
                 /// Trim newline immediately following ''' if present
                 if has_next(lexer) {
-                    if peek_char(lexer) == #char "\n" { eat_newline(*lexer); }
+                    if peek_char(lexer) == "\n" { eat_newline(*lexer); }
                     if has_next(lexer, 2) && peek_slice(lexer, 2) == "\r\n" {
                         eat_char(*lexer);
                         eat_newline(*lexer);
@@ -79,8 +79,8 @@ tokenize :: (data: string) -> ok:=false, tokens:[]Token=.[] { // TODO change tok
 
                 // Eat string contents till the end
                 while has_next(lexer, 3) && peek_slice(lexer, 3) != tripple_quote {
-                    if c == #char "\"" && has_next(lexer, 2) && peek_slice(lexer, 2) == "\\\"" { eat_char(*lexer, 2); continue; }
-                    if peek_char(lexer) == #char "\n" { eat_newline(*lexer); }
+                    if c == "\"" && has_next(lexer, 2) && peek_slice(lexer, 2) == "\\\"" { eat_char(*lexer, 2); continue; }
+                    if peek_char(lexer) == "\n" { eat_newline(*lexer); }
                     else                              { eat_char(*lexer); }
                 }
                 if !has_next(lexer) { return_with_error_line(lexer.data, lexer.loc, "Unterminated multi-line string."); }
@@ -88,7 +88,7 @@ tokenize :: (data: string) -> ok:=false, tokens:[]Token=.[] { // TODO change tok
                 if has_next(lexer, 4) && peek_char(lexer, 4) == c { eat_char(*lexer); }
                 if has_next(lexer, 4) && peek_char(lexer, 4) == c { eat_char(*lexer); }
 
-                token_type :Token.Type= ifx c == #char "\"" then .BASIC_MULTI else .LITERAL_MULTI;
+                token_type :Token.Type= ifx c == "\"" then .BASIC_MULTI else .LITERAL_MULTI;
                 token := Token.{ type=token_type, str=slice(data, start, lexer.pos - start), loc=Location.{lexer.loc.line, lexer.loc.char - xx (lexer.pos - start)} };
                 array_add(*lexer.tokens, token);
                 eat_char(*lexer, 3);
@@ -99,16 +99,16 @@ tokenize :: (data: string) -> ok:=false, tokens:[]Token=.[] { // TODO change tok
                 start := lexer.pos;
                 // Eat string contents till the end
                 while has_next(lexer) && peek_char(lexer) != c {
-                    if c == #char "\"" && has_next(lexer, 2) {
+                    if c == "\"" && has_next(lexer, 2) {
                         next_two := peek_slice(lexer, 2);
                         if next_two == "\\\""  || next_two == "\\\\" { eat_char(*lexer, 2); continue; }
                     }
-                    if peek_char(lexer) == #char "\n" { return_with_error_line(lexer.data, lexer.loc, "Newline in string. Escape `\\n` or use a multi-line string (tripple quote) instead."); }
+                    if peek_char(lexer) == "\n" { return_with_error_line(lexer.data, lexer.loc, "Newline in string. Escape `\\n` or use a multi-line string (tripple quote) instead."); }
                     eat_char(*lexer);
                 }
                 if !has_next(lexer) { return_with_error_line(lexer.data, lexer.loc, "Unterminated string."); }
 
-                token_type :Token.Type= ifx c == #char "\"" then .BASIC else .LITERAL;
+                token_type :Token.Type= ifx c == "\"" then .BASIC else .LITERAL;
                 token := Token.{ type=token_type, str=slice(data, start, lexer.pos - start), loc=Location.{lexer.loc.line, lexer.loc.char - xx (lexer.pos - start)} };
                 array_add(*lexer.tokens, token);
                 eat_char(*lexer);
@@ -117,8 +117,8 @@ tokenize :: (data: string) -> ok:=false, tokens:[]Token=.[] { // TODO change tok
         }
 
         // Scopes
-        if c == #char "{"
-        || c == #char "[" {
+        if c == "{"
+        || c == "[" {
             scope_index := lexer.tokens.count;
              // .scope is replaced by actual scope on scope closing, scope.count points to the slice token itself for now
             token := Token.{ type=xx c, scope = lexer.tokens, loc=Location.{lexer.loc.line, lexer.loc.char} };
@@ -127,12 +127,12 @@ tokenize :: (data: string) -> ok:=false, tokens:[]Token=.[] { // TODO change tok
             eat_char(*lexer);
             continue;
         }
-        if c == #char "}"
-        || c == #char "]" {
+        if c == "}"
+        || c == "]" {
             if lexer.scope_stack.count == 0 { return_with_error_line(lexer.data, lexer.loc, "Mismatched braces. No scope opened for: %", to_string(*c, 1)); }
 
             scope_token := *lexer.tokens[pop(*lexer.scope_stack)];
-            if !(scope_token.type == #char "{" && c == #char "}") && !(scope_token.type == #char "[" && c == #char "]") {
+            if !(scope_token.type == #char "{" && c == "}") && !(scope_token.type == #char "[" && c == "]") {
                 return_with_error_line(lexer.data, lexer.loc, "Mismatched scope closure. Scope Opened with: % Attempt to close with: %", to_string(*cast(u8, scope_token.type), 1), to_string(*c,1));
             }
 
@@ -143,8 +143,8 @@ tokenize :: (data: string) -> ok:=false, tokens:[]Token=.[] { // TODO change tok
         }
 
         // Others
-        if c == #char ","
-        || c == #char "=" {
+        if c == ","
+        || c == "=" {
             array_add(*lexer.tokens, .{ type=xx c, loc=lexer.loc});
             eat_char(*lexer);
             continue;
@@ -202,8 +202,8 @@ return_with_error_line :: (source: string, loc: Location, format: string, argume
 
     // print ^^ under the char number
     builder: String_Builder;
-    for 1..loc.char-1 { append(*builder, #char " "); }
-    append(*builder, #char "^");
+    for 1..loc.char-1 { append(*builder, " "); }
+    append(*builder, "^");
     log_error(builder_to_string(*builder));
 
     `return;

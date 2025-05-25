@@ -76,7 +76,7 @@ strings :: () {
     // We do not check for invalid UTF-8 characters
 
     // Basic strings may not contain unescaped control characters: U+0000 to U+0008, U+000A to U+001F, U+007F
-    for char: cast(u8, #char "\u0000")..cast(u8, #char "\u001F") {
+    for char: cast(u8, "\u0000")..cast(u8, "\u001F") {
         control:= string.{1, *char};
         if control == "\n" continue; // We do check this
         if control == "\t" continue;
@@ -85,7 +85,7 @@ strings :: () {
     ok = deserialize("\"a\u007F.b\" = 5", Value);                         assert(ok);
 
     // Multi-line basic strings may not contain control characters: U+0000 to U+0008, U+000B, U+000C, U+000E to U+001F, U+007F
-    for char: cast(u8, #char "\u0000")..cast(u8, #char "\u001F") {
+    for char: cast(u8, "\u0000")..cast(u8, "\u001F") {
         control:= string.{1, *char};
         if control == "\n" || control == "\r" || control == "\t" continue;
         ok = deserialize(tprint("5 = \"\"\"a%b\"\"\"", control), Value);  assert(ok);
@@ -93,7 +93,7 @@ strings :: () {
     ok = deserialize("5 = \"\"\"a\u007Fb\"\"\"", Value);                  assert(ok);
 
     // Literal strings may not contain unescaped control characters: U+0000 to U+0008, U+000A to U+001F, U+007F
-    for char: cast(u8, #char "\u0000")..cast(u8, #char "\u001F") {
+    for char: cast(u8, "\u0000")..cast(u8, "\u001F") {
         control:= string.{1, *char};
         if control == "\n" continue; // We do check this
         if control == "\t" continue;
@@ -102,7 +102,7 @@ strings :: () {
     ok = deserialize("5 = 'a\u007Fb'", Value);                  assert(ok);
 
     // Multi-line literal strings may not contain control characters: U+0000 to U+0008, U+000B, U+000C, U+000E to U+001F, U+007F
-    for char: cast(u8, #char "\u0000")..cast(u8, #char "\u001F") {
+    for char: cast(u8, "\u0000")..cast(u8, "\u001F") {
         control:= string.{1, *char};
         if control == "\n" || control == "\r" || control == "\t" continue;
         ok = deserialize(tprint("5 = '''a%b'''", control), Value);  assert(ok);

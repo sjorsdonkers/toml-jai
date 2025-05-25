@@ -271,7 +271,7 @@ error_handling :: () {
         // Log only error messages to the capture
         if info.common_flags & .ERROR {
             append(*wrap.capture, message);
-            if message && message[message.count-1] != #char "\n"  append(*wrap.capture, "\n");
+            if message && message[message.count-1] != "\n"  append(*wrap.capture, "\n");
         }
     }
 
