@@ -28,7 +28,7 @@ Location :: struct {
     line, char: s32; // Line and column number, not index
 }
 
-tokenize :: (data: string) -> ok:=false, tokens:[]Token=.[] { // TODO change tokens to be [..]Token when the compile allows it to be defaulted
+tokenize :: (data: string) -> ok:=false, tokens:[..]Token=[..]Token.{} {
     lexer := Lexer.{data=data}; // Not freeing scope_stack as it will be in a Pool
     array_reserve(*lexer.tokens, data.count / 2); // Rough estimate of token count
 
