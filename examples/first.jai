@@ -1,11 +1,10 @@
 main :: () {
     // TOML data is not expected to multi-GB, so just read the entire file. For easy cleanup of the memory allocated for
     // the returned structs we can push an allocator. The type Toml.Value can be used deserialization target for any TOML data.
-    contents := read_entire_file("data/inline_table.toml");
-    heap := create_heap(context.allocator);
-    defer destroy_heap(heap);
+    contents       := read_entire_file("data/inline_table.toml");
+    heap           := create_heap(context.allocator);                          defer destroy_heap(heap);
     ok, toml_value := Toml.deserialize(contents, Toml.Value,, allocator=heap); assert(ok);
-    ok_toml, toml := Toml.serialize(toml_value,, allocator=heap); assert(ok_toml);
+    ok_toml, toml  := Toml.serialize(toml_value            ,, allocator=heap); assert(ok_toml);
     print("%\n", toml);
 
     // We can also deserialize the TOML data into a struct. The struct must have the same fields as the TOML data.
@@ -44,8 +43,10 @@ DONE
 
     ok=, my_struct := Toml.deserialize(THE_STRING, MyStruct); assert(ok);
     assert("{false, 23.299999, {32, \"Y\", Y}, [{2}, {-3}, {4}], \"Mai\"}" == tprint("%", my_struct), "%", my_struct);
-    ok=, as_value := Toml.serialize(my_struct); assert(ok);
-    print("%\n", as_value);
+    // The data can be serialized to a string builder instead of a string, to reduce copies.
+    builder: String_Builder;
+    ok = Toml.serialize_to_builder(*builder, my_struct); assert(ok);
+    print("%\n", builder_to_string(*builder));
 
     // By default all members are required to be present in the TOML. @TomlOptional or a custom handler can be used to make them optional or ignored.
     optionals();

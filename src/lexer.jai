@@ -117,8 +117,7 @@ tokenize :: (data: string) -> ok:=false, tokens:[..]Token=[..]Token.{} {
         }
 
         // Scopes
-        if c == "{"
-        || c == "[" {
+        if c == "{" || c == "[" {
             scope_index := lexer.tokens.count;
              // .scope is replaced by actual scope on scope closing, scope.count points to the slice token itself for now
             token := Token.{ type=xx c, scope = lexer.tokens, loc=Location.{lexer.loc.line, lexer.loc.char} };
@@ -127,8 +126,7 @@ tokenize :: (data: string) -> ok:=false, tokens:[..]Token=[..]Token.{} {
             eat_char(*lexer);
             continue;
         }
-        if c == "}"
-        || c == "]" {
+        if c == "}" || c == "]" {
             if lexer.scope_stack.count == 0 { return_with_error_line(lexer.data, lexer.loc, "Mismatched braces. No scope opened for: %", to_string(*c, 1)); }
 
             scope_token := *lexer.tokens[pop(*lexer.scope_stack)];
@@ -143,8 +141,7 @@ tokenize :: (data: string) -> ok:=false, tokens:[..]Token=[..]Token.{} {
         }
 
         // Others
-        if c == ","
-        || c == "=" {
+        if c == "," || c == "=" {
             array_add(*lexer.tokens, .{ type=xx c, loc=lexer.loc});
             eat_char(*lexer);
             continue;

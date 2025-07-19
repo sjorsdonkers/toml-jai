@@ -1,9 +1,16 @@
 serialize :: (input: $T) -> ok:=false, toml:string="" {
+    builder: String_Builder;
+    ok := serialize_to_builder(*builder, input); if !ok return;
+    return true, builder_to_string(*builder);
+}
+
+serialize_to_builder :: (builder: *String_Builder, input: $T) -> ok:=false {
     a := scoped_pool();
     ok, value := type_to_value_shared_memory(*input, type_info(T),, a); if !ok return;
-    builder: String_Builder;
-    print_table_to_builder(*builder, value,, a);
-    return true, builder_to_string(*builder);
+
+    if !builder.initialized init_string_builder(builder); // Initialize the builder to make sure it does not use `a`.
+    print_table_to_builder(builder, value,, a);
+    return true;
 }
 
 type_to_value :: (input: $T) -> ok:=false, value:Value=.{} {

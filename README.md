@@ -1,6 +1,6 @@
 # TOML-jai
 
-![](https://img.shields.io/badge/Jai-beta%200.2.014-blue.svg)
+![](https://img.shields.io/badge/Jai-beta%200.2.015-blue.svg)
 
 A module for `TOML v1.0.0` support. It provides functionality to read/write TOML files and convert them directly to/from Jai data structures.
 
@@ -9,7 +9,7 @@ A module for `TOML v1.0.0` support. It provides functionality to read/write TOML
 - Generic data is supported through the [Toml.Value](src/data.jai) struct.
 - Dates/times are supported types provided in [src/datetime.jai](src/datetime.jai) (until Jai has native types, Apollo_time.Calendar_Time is not usable here).
 - Safe sum-types with `@SumType` notes to indicate the struct has a tag enum followed by a matching union.
-- Modifying the default behavior, like renaming, omitting, changing Type representation like Hash_Tables, enum as int, extra validation, or handling complex data like binary encodings are supported through [custom handlers](examples/custom_handlers.jai). 
+- Modifying the default behavior like: renaming, omitting, changing Type representation like Hash_Tables, enum as int, extra validation, or handling complex data like binary encodings are supported through [custom handlers](examples/custom_handlers.jai). 
 
 ## Deserialize
 `ok, my_struct := Toml.deserialize(toml_string, My_Struct);`
@@ -73,7 +73,7 @@ ok, toml := Toml.serialize(
 The module supports both Typed as well as Generic data using Toml.Value. To avoid having to maintain 2 implementations the Typed version is implemented by going through the Generic version. As a result there are some extra data copies/allocations as well as limitations like no support for integers > S64_MAX and slightly reduced accuracy for float due to intermediate conversion through float64.
 
 ### Type reflection
-We only have a run-time reflection based implementation, e.g. pointer and Type_Info based like: `parse :: (slot: *void, info: Type_Info)`. A compile-time reflection based implementation that has the types determined at compile-time like `parse :: (data: *$T)` would have slightly cleaner code and better run-time performance, but it does not support dynamic types like Any. Having multiple implementations, or alternative solutions like requiring the user to poke_name a custom serializer for every possible type contained in the Any are considered undesirable.
+We only have a run-time reflection based implementation, e.g. pointer and Type_Info based like: `parse :: (slot: *void, info: Type_Info)`. A compile-time reflection based implementation, see the [comptime branch](https://github.com/sjorsdonkers/toml-jai/tree/comptime), that has the types determined at compile-time like `parse :: (data: *$T)` would have slightly cleaner code, better run-time performance, and can handle generic custom types (like `Hash_Table`) more conveniently, but it does not support dynamic types like Any. Having multiple implementations, or alternative solutions like requiring the user to poke_name a custom serializer for every possible type contained in the Any are considered undesirable.
 
 ### Customization points
 Custom handlers have several design goals:
