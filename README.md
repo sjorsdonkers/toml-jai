@@ -1,6 +1,6 @@
 # TOML-jai
 
-![](https://img.shields.io/badge/Jai-beta%200.2.015-blue.svg)
+![](https://img.shields.io/badge/Jai-beta%200.2.016-blue.svg)
 
 A module for `TOML v1.0.0` support. It provides functionality to read/write TOML files and convert them directly to/from Jai data structures.
 
@@ -45,6 +45,7 @@ The lifetime of all returned objects ends when the memory of the allocator is re
 
 By default this Toml modules makes several choices like, enums as string, members serialized by their name, no members omitted, etc.
 These choices may be fine for the large majority of use-cases but not all. Custom handlers enable the user to modify the serialization/deserialization of types.
+Custom handlers follow the same design as `Print_Style.struct_printer`, except instead of writing to the builder it returns the Toml.Value to be written.
 
 Note that these custom handler drive "what" is (de)serialized, they do not help with formatting of the toml.
 

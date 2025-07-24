@@ -98,6 +98,8 @@ default_custom_type_to_value :: (slot: *void, info: *Type_Info) -> done:bool, ok
     case type_info(Date);           return true, true, .{type=.DATETIME, datetime=.{type=.LOCAL_DATE,      date=           cast(*Date, slot).*}};
     case type_info(DateTime);       return true, true, .{type=.DATETIME, datetime=.{type=.LOCAL_DATETIME,  datetime=       cast(*DateTime, slot).*}};
     case type_info(DateTimeOffset); return true, true, .{type=.DATETIME, datetime=.{type=.OFFSET_DATETIME, datetime_offset=cast(*DateTimeOffset, slot).*}};
+    case type_info(FormatInt);      return true, true, .{type=.FORMAT_INT,   format_int  =cast(*FormatInt,   slot)};
+    case type_info(FormatFloat);    return true, true, .{type=.FORMAT_FLOAT, format_float=cast(*FormatFloat, slot)};
     }
     if array_find(struct_info.notes, "SumType") { ok, sumtype_value:= sumtype_to_value(slot, struct_info); return true, ok, sumtype_value; }
 
@@ -169,12 +171,7 @@ print_inline_value_to_builder :: (builder: *String_Builder, value: Value) {
     case .BOOL; print_item_to_builder(builder, value.bool_value);
     case .INT;  print_item_to_builder(builder, value.int_value);
     case .FLOAT;
-        is_nan, is_inf:= is_nan_is_inf(value.float_value);
-        if is_nan || is_inf {
-            if (cast(*u64, *value.float_value).* & 0x8000_0000_0000_0000) { append(builder, "-"); }
-            if is_nan { append(builder, "nan"); } else { append(builder, "inf"); }
-            return;
-        }
+        if maybe_print_naninf_to_builder(builder, value.float_value) return;
         print_item_to_builder(builder, value.float_value);
     case .STRING;   print_to_builder_escaped(builder, value.string_value, false);
     case .DATETIME; print_datetime_to_builder(builder, value.datetime);
@@ -192,6 +189,17 @@ print_inline_value_to_builder :: (builder: *String_Builder, value: Value) {
             if it_index + 1 != value.table.count then append(builder, ", ");
         }
         append(builder, "}");
+    case .FORMAT_INT;  print_integer(builder, value.format_int);
+    case .FORMAT_FLOAT;
+        format:= value.format_float.value;
+        assert(variant_base(format.type).type == .FLOAT);
+        f8: float64;
+        if      format.type.runtime_size == 4 { f8 = format.value_pointer.(*float32).*; }
+        else if format.type.runtime_size == 8 { f8 = format.value_pointer.(*float64).*; }
+        else { assert(false, "Unsupported float size %", format.type.runtime_size); }
+
+        if maybe_print_naninf_to_builder(builder, f8) return;
+        print_float(builder, value.format_float.*);
     }
 }
 
@@ -210,6 +218,15 @@ print_to_builder_escaped :: (builder: *String_Builder, str: string, $is_key: boo
         case;              append(builder, it);
     }
     append(builder, "\"");
+}
+
+maybe_print_naninf_to_builder :: (builder: *String_Builder, value: float64) -> nan_or_inf:bool {
+    is_nan, is_inf := is_nan_is_inf(value);
+    if !is_nan && !is_inf  return false;
+    if (cast(*u64, *value).* & 0x8000_0000_0000_0000) { append(builder, "-"); }
+    if is_nan { append(builder, "nan"); } else { append(builder, "inf"); }
+    return true;
+
 }
 
 // true if it would otherwise introduce additional braces or brackets, so no in-line tables or arrays in in-line tables,
@@ -246,6 +263,13 @@ build_dotted_key :: (parent_key: string, key: string) -> string {
     }
     print_to_builder_escaped(*key_builder, key, true);
     return builder_to_string(*key_builder);
+}
+
+variant_base :: (type: *Type_Info) -> *Type_Info {
+    while type.type == .VARIANT {
+        type = type.(*Type_Info_Variant).variant_of;
+    }
+    return type;
 }
 
 #scope_file
