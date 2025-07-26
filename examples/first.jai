@@ -415,7 +415,7 @@ reference_types :: () {
     assert(39 == toml4.andy.value_pointer.(*Value).int_value, "%", toml4);
     // Since it an Any is always of type Toml.Value we can use the value_to_type procedure to recover it as the original type.
     original: u8;
-    ok = Toml.value_to_type(toml4.andy.value_pointer.(*Value), *original, type_info(u8)); assert(ok);
+    ok = Toml.value_to_type(toml4.andy.value_pointer.(*Value), original); assert(ok);
     assert(original == 39);
 
     AnyAndy :: struct {

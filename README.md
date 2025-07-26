@@ -51,9 +51,9 @@ Note that these custom handler drive "what" is (de)serialized, they do not help 
 
 Serialization can be modified by changing the a custom handler procedure in the context.
 ```jai
-enum_to_value :: (slot: *void, info: *Type_Info) -> done:=true, ok:=false, toml:Value=.{} {
-    if info.type != .ENUM return false;
-    enum_value := Reflection.get_enum_value(slot, xx info);
+enum_to_value :: (input: Any) -> done:=true, ok:=false, toml:Value=.{} {
+    if input.type.type != .ENUM return false;
+    enum_value := Reflection.get_enum_value(input.value_pointer, xx input.type);
     ok, value  := Toml.type_to_value(*enum_value, type_info(s64));
     return true, ok, value;
 }

@@ -11,8 +11,8 @@
 // Note that these custom handler drive "what" is (de)serialized, they do not help with formatting of the toml.
 
 // The Toml module adds 2 procedure members to the context:
-// - toml_custom_type_to_value := (slot: *void, info: *Type_Info) -> done:bool, ok:bool, toml:Value;
-// - toml_custom_value_to_type := (toml: Value, slot: *void, info:*Type_Info, parent_name:string, name:string) -> done:bool, ok:bool;
+// - toml_custom_type_to_value := (input: Any) -> done:bool, ok:bool, toml:Value;
+// - toml_custom_value_to_type := (toml: Value, output: Any, parent_name:string, name:string) -> done:bool, ok:bool;
 
 main :: () {
     enum_as_int();
@@ -32,10 +32,10 @@ enum_as_int :: () {
 
     // The user writes a procedure to handle the serialization of the enum
     // from the data stored in slot and returns a Toml Value.
-    custom_enum_to_value :: (slot: *void, info: *Type_Info) -> done:=true, ok:=false, toml:Value=.{} {
-        if info.type != .ENUM return false; // Alternatively we could check specifically for `info != type_info(Paprika)`
-        enum_value := Reflection.get_enum_value(slot, xx info);
-        ok, value  := Toml.type_to_value_shared_memory(*enum_value, type_info(s64));
+    custom_enum_to_value :: (input: Any) -> done:=true, ok:=false, toml:Value=.{} {
+        if input.type.type != .ENUM return false; // Alternatively we could check specifically for `input.type != type_info(Paprika)`
+        enum_value := Reflection.get_enum_value(input.value_pointer, xx input.type);
+        ok, value  := Toml.type_to_value_shared_memory(enum_value);
         return true, ok, value; // By returning done=true we signal that the returned value should be used and to skip default serialization.
     }
 
@@ -50,14 +50,14 @@ enum_as_int :: () {
 
     // For deserialization it works the same way, but in opposite direction.
     // The custom procedure receives a Toml Value and writes into the slot.
-    custom_value_to_enum :: (toml: Value, slot: *void, info: *Type_Info, name:string, parent_name:string) -> done:=true, ok:=false {
-        if info.type != .ENUM return false;
+    custom_value_to_enum :: (toml: Value, output: Any, name:string, parent_name:string) -> done:=true, ok:=false {
+        if output.type.type != .ENUM return false;
         expect(toml.type, .INT, parent_name, name);
-        enum_info :*Type_Info_Enum = xx info;
+        enum_info :*Type_Info_Enum = xx output.type;
 
         found := array_find(enum_info.values, toml.int_value);
         if !found { log_error("Value % is not a variant of enum %", toml.int_value, enum_info.name); return; }
-        Reflection.set_enum_value(slot, enum_info, toml.int_value);
+        Reflection.set_enum_value(output.value_pointer, enum_info, toml.int_value);
         return true, true;
     }
 
@@ -89,16 +89,16 @@ member_modifications :: () {
         array_unordered_remove_by_index(*renamed_info.members, 1); // Omit
         return renamed_info;
     }
-    custom_modified_to_value :: (slot: *void, info: *Type_Info) -> done:=true, ok:=false, toml:Value=.{} {
-        if info != type_info(ThreeNamed) return false; // Use default serialization for everything else by returning done=false.
+    custom_modified_to_value :: (input: Any) -> done:=true, ok:=false, toml:Value=.{} {
+        if input.type != type_info(ThreeNamed) return false; // Use default serialization for everything else by returning done=false.
         modified_info := two_renamed_type_info();
-        ok, value := Toml.type_to_value_shared_memory(slot, *modified_info);
+        ok, value := Toml.type_to_value_shared_memory(Any.{*modified_info, input.value_pointer});
         return true, ok, value;
     }
-    custom_value_to_modified :: (toml: Value, slot: *void, info: *Type_Info, name:string, parent_name:string) -> done:=true, ok:=false {
-        if info != type_info(ThreeNamed) return false;
+    custom_value_to_modified :: (toml: Value, output: Any, name:string, parent_name:string) -> done:=true, ok:=false {
+        if output.type != type_info(ThreeNamed) return false;
         modified_info := two_renamed_type_info();
-        ok := Toml.value_to_type(toml, slot, *modified_info, parent_name, name);
+        ok := Toml.value_to_type(toml, Any.{*modified_info, output.value_pointer}, parent_name, name);
         return true, ok;
     }
 
@@ -161,17 +161,18 @@ arbitrary_binary_encoding :: () {
 Magic_Bytes :: struct {
     bytes : [3]u8;
 };
-custom_magic_to_value :: (slot: *void, info: *Type_Info) -> done:=true, ok:=false, toml:Value=.{} {
-    if info != type_info(Magic_Bytes) return false;
+custom_magic_to_value :: (input: Any) -> done:=true, ok:=false, toml:Value=.{} {
+    if input.type != type_info(Magic_Bytes) return false;
 
+    slot := input.value_pointer;
     ret: Toml.Value; // Defaults inits to Table
     if slot.(*u8).* == {
     case 0;
-        ok, flag    := Toml.type_to_value_shared_memory(*"A", type_info(string)); if !ok return;
-        ok=, signed := Toml.type_to_value_shared_memory(slot+1, type_info(s16)); if !ok return;
+        ok, flag    := Toml.type_to_value_shared_memory("A"); if !ok return;
+        ok=, signed := Toml.type_to_value_shared_memory(Any.{type_info(s16), slot+1}); if !ok return;
         array_add(*ret.table, .{key="flag", value=flag}, .{key="signed", value=signed});
     case 1;
-        ok, array := Toml.type_to_value_shared_memory(slot, type_info([3]u8)); if !ok return;
+        ok, array := Toml.type_to_value_shared_memory(Any.{type_info([3]u8), slot}); if !ok return;
         array_add(*ret.table, .{key="unaltered", value=array});
     case;
         log_error("Invalid Magic_Bytes: %", slot.(*Magic_Bytes).*);
@@ -179,8 +180,9 @@ custom_magic_to_value :: (slot: *void, info: *Type_Info) -> done:=true, ok:=fals
     }
     return true, true, ret;
 }
-custom_value_to_magic :: (toml: Value, slot: *void, info: *Type_Info, name:string, parent_name:string) -> done:=true, ok:=false {
-    if info != type_info(Magic_Bytes) return false;
+custom_value_to_magic :: (toml: Value, output: Any, name:string, parent_name:string) -> done:=true, ok:=false {
+    if output.type != type_info(Magic_Bytes) return false;
+    slot := output.value_pointer;
 
     if toml.type != .TABLE { log_error("Expected table for Magic_Bytes, got %", toml.type); return; }
     if toml.table.count == {
@@ -190,12 +192,12 @@ custom_value_to_magic :: (toml: Value, slot: *void, info: *Type_Info, name:strin
 
 
         Flag :: enum u8 { A :: 0; }
-        ok := Toml.value_to_type(toml.table[0].value, slot, type_info(Flag), name, "flag"); if !ok return;
-        ok = Toml.value_to_type(toml.table[1].value, slot+1, type_info(s16), name, "signed");
+        ok := Toml.value_to_type(toml.table[0].value, Any.{type_info(Flag), slot}, name, "flag"); if !ok return;
+        ok = Toml.value_to_type(toml.table[1].value, Any.{type_info(s16), slot+1}, name, "signed");
         return true, ok;
     case 1;
         if toml.table[0].key != "unaltered" { log_error("Expected key 'unaltered' for Magic_Bytes, got %", toml.table[0].key); return; }
-        ok := Toml.value_to_type(toml.table[0].value, slot, type_info([3]u8), name, "unaltered"); if !ok return;
+        ok := Toml.value_to_type(toml.table[0].value, Any.{type_info([3]u8), slot}, name, "unaltered"); if !ok return;
         if slot.(*Magic_Bytes).bytes[0] != 0x01 {
             log_error("Expected 0x01 for unaltered Magic_Bytes, got %", slot.(*Magic_Bytes).bytes[0]);
             return;
@@ -210,9 +212,9 @@ custom_value_to_magic :: (toml: Value, slot: *void, info: *Type_Info, name:strin
 error_on_superfluous_keys :: () {
     // By default the Toml module ignores superfluous keys in a table.
     // We can use a custom handler to error on superfluous keys.
-    catch_superfluous_keys :: (toml: Value, slot: *void, info: *Type_Info, name:string, parent_name:string) -> done:=true, ok:=false {
-        if info.type != .STRUCT || toml.type != .TABLE return false;
-        struct_info :*Type_Info_Struct = xx info;
+    catch_superfluous_keys :: (toml: Value, output: Any, name:string, parent_name:string) -> done:=true, ok:=false {
+        if output.type.type != .STRUCT || toml.type != .TABLE return false;
+        struct_info :*Type_Info_Struct = xx output.type;
         if array_find(struct_info.notes, "SumType") return false; // SumTypes never allow superfluous fields
 
         for keyvalue: toml.table {
@@ -241,9 +243,9 @@ polymorphic_types_like_hashtable_support :: () {
     // By default the Toml module does not support Hash_Tables.
     // We can use custom handlers to serialize and deserialize them.
     // Hash_Table.Table is a polymorphic struct as such the size of the entries are not known at compile time.
-    custom_hashtable_to_value :: (slot: *void, info: *Type_Info) -> done:=true, ok:=false, toml:Value=.{} {
-        if info.type != .STRUCT then return false;
-        struct_info :*Type_Info_Struct= xx info;
+    custom_hashtable_to_value :: (input: Any) -> done:=true, ok:=false, toml:Value=.{} {
+        if input.type.type != .STRUCT then return false;
+        struct_info :*Type_Info_Struct= xx input.type;
         if struct_info.polymorph_source_struct != type_info(Table(void, void)).polymorph_source_struct then return false;
 
         // Retrieve all relevant Type_Info for the specific Hash_Table.
@@ -254,13 +256,13 @@ polymorphic_types_like_hashtable_support :: () {
 
         // Loop over all entries similar to Hash_Table::for_expansion, but for slot&type_info.
         table: [..]KeyValue;
-        entries := (slot + entries_member.offset_in_bytes).(*[]void);
+        entries := (input.value_pointer + entries_member.offset_in_bytes).(*[]void);
         for 0..entries.count-1 {
             entry_slot := entries.data + it * entry_info.runtime_size;
             if entry_slot.(*u32).* < FIRST_VALID_HASH  continue;
 
-            ok, key_as_value := Toml.type_to_value_shared_memory(entry_slot + key_member.offset_in_bytes,   key_member.type);   if !ok return;
-            ok=, value       := Toml.type_to_value_shared_memory(entry_slot + value_member.offset_in_bytes, value_member.type); if !ok return;
+            ok, key_as_value := Toml.type_to_value_shared_memory(Any.{key_member.type, entry_slot + key_member.offset_in_bytes});   if !ok return;
+            ok=, value       := Toml.type_to_value_shared_memory(Any.{value_member.type, entry_slot + value_member.offset_in_bytes}); if !ok return;
 
             // Serialize the key as a string regardless of what type it is in the Hash_Table.
             builder: String_Builder;
@@ -295,14 +297,14 @@ polymorphic_types_like_hashtable_support :: () {
     // other procedures like hash_function and compare_function which may be user defined in which case we can't.
     // An alternative approach is to reimplement the Toml module to generate all code at compile time instead of the current runtime reflection slot/info interface.
     // For now we just opt to provide a helper procedure to make it easy for a user to add support for each of their Hash_Tables.
-    custom_value_to_hashtable :: (toml: Value, slot: *void, info: *Type_Info, name:string, parent_name:string) -> done:=true, ok:=false {
+    custom_value_to_hashtable :: (toml: Value, output: Any, name:string, parent_name:string) -> done:=true, ok:=false {
         // We have not found a way to make a generic implementation for any Hash_Table, so instead we need to specialize deserialization for each Hash_Table parameterization we want to support.
-        done, ok := value_to_hashtable(Str_To_U8, toml, slot, info, name, parent_name);
+        done, ok := value_to_hashtable(Str_To_U8, toml, output, name, parent_name);
         if done return done, ok;
 
         // Runtime check if we did not forget to add a Hash_Table specialization.
-        if info.type != .STRUCT return false;
-        struct_info :*Type_Info_Struct= xx info;
+        if output.type.type != .STRUCT return false;
+        struct_info :*Type_Info_Struct= xx output.type;
         assert(struct_info.polymorph_source_struct != type_info(Table(void, void)).polymorph_source_struct,
             "Unsupported Hash_Table specialization: %", struct_info.name);
         return false;
@@ -318,18 +320,18 @@ polymorphic_types_like_hashtable_support :: () {
 
 // Helper procedure for deserializing a specific type of Hash_Table (Table_Type).
 // This procedure needs to be called in the custom handler for every type of hash table..
-value_to_hashtable :: ($Table_Type: Type, toml: Value, slot: *void, info: *Type_Info, name:string, parent_name:string) -> done:=true, ok:=false {
-    if info != type_info(Table_Type) return false;
-    struct_info :*Type_Info_Struct= xx info;
-    assert(info.type == .STRUCT);
+value_to_hashtable :: ($Table_Type: Type, toml: Value, output: Any, name:string, parent_name:string) -> done:=true, ok:=false {
+    if output.type != type_info(Table_Type) return false;
+    struct_info :*Type_Info_Struct= xx output.type;
+    assert(output.type.type == .STRUCT);
     assert(struct_info.polymorph_source_struct == type_info(Table(void, void)).polymorph_source_struct);
     expect(toml.type, .TABLE, parent_name, name);
 
-    hash_table := slot.(*Table_Type);
+    hash_table := output.value_pointer.(*Table_Type);
     table_ensure_space(hash_table, toml.table.count);
     for keyvalue: toml.table {
         value: Table_Type.Value_Type;
-        ok := Toml.value_to_type(keyvalue.value, *value, type_info(Table_Type.Value_Type), name, keyvalue.key); if !ok return;
+        ok := Toml.value_to_type(keyvalue.value, Any.{type_info(Table_Type.Value_Type), *value}, name, keyvalue.key); if !ok return;
         table_add(hash_table, keyvalue.key, value); // How to call table_add in the generic case when we only have slot and type_info?
     }
     return true, true;
