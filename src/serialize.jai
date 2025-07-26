@@ -9,7 +9,8 @@ serialize_to_builder :: (builder: *String_Builder, input: Any) -> ok:=false {
     ok, value := type_to_value_shared_memory(input,, a); if !ok return;
 
     if !builder.initialized init_string_builder(builder); // Initialize the builder to make sure it does not use `a`.
-    print_table_to_builder(builder, value,, a);
+    toml_print_style := Print_Style.{default_format_float=context.toml.default_format_float, default_format_int=context.toml.default_format_int};
+    print_table_to_builder(builder, value,, a, print_style=toml_print_style);
     return true;
 }
 
@@ -21,7 +22,7 @@ type_to_value :: (input: Any) -> ok:=false, value:Value=.{} {
 // NOTE: Does not deep copy!
 // Not meant to be called directly by the user, but instead to be used inside custom serializers.
 type_to_value_shared_memory :: (input: Any) -> ok:=false, toml:Value=.{} {
-    done, ok, value := context.toml_custom_type_to_value(input);
+    done, ok, value := context.toml.custom_type_to_value(input);
     if done return ok, value;
 
     slot := input.value_pointer;
@@ -38,7 +39,7 @@ type_to_value_shared_memory :: (input: Any) -> ok:=false, toml:Value=.{} {
     case .BOOL;   return true, .{type=.BOOL, bool_value=cast(*bool, slot).*};
     case .STRING; return true, .{type=.STRING, string_value=cast(*string, slot).*}; // No deep copy!
     case .POINTER;
-        if cast(**void, slot).* == null return true, context.toml_null_value; // User can change default null value as module parameter
+        if cast(**void, slot).* == null return true, context.toml.null_value; // User can change default null value as module parameter
         ok, value := type_to_value_shared_memory(Any.{cast(*Type_Info_Pointer, info).pointer_to, cast(**void, slot).*});
         return ok, value;
     case .VOID;  return true, .{};
@@ -70,7 +71,7 @@ type_to_value_shared_memory :: (input: Any) -> ok:=false, toml:Value=.{} {
         return true, .{type=.ARRAY, array=array};
     case .ANY;
         any_value :*Any_Struct= xx slot;
-        if any_value.value_pointer == null return true, context.toml_null_value; // Similar to null pointer
+        if any_value.value_pointer == null return true, context.toml.null_value; // Similar to null pointer
         ok, value:= type_to_value_shared_memory(Any.{any_value.type, any_value.value_pointer});
         return ok, value;
     case .ENUM;
@@ -125,6 +126,7 @@ sumtype_to_value :: (slot: *void, struct_info: *Type_Info_Struct) -> ok:=false, 
     return true, .{type=.TABLE, table=table};
 }
 
+// NOTE: Uses context.print_style for int/float formatting
 print_table_to_builder :: (builder: *String_Builder, value: Value, parent_key: string = "") {
     assert(value.type == .TABLE, "Only tables can be serialized at the top level, got %", value.type);
     // Key=Value pairs

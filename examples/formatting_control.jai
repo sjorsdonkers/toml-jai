@@ -1,9 +1,9 @@
 main :: () {
-    // NOTE: Using print_style for formatting is temporary and will break in following releases.
-    // Instead we will have our own formatting data in the context.
-
     // For control over formatting there are 2 types, global configuration and per-member configuration.
     // The global configuration is set in the context and applies to all members.
+    // - toml.default_format_int
+    // - toml.default_format_float
+    // FormatTable/Array are not implemented.
     // For per-member configuration Format structs are used like FormatFloat and FormatInt.
     // Format structs are intrusive which is counter to the usual aim of this module, however we have not found a feasible alternative.
     floats();
@@ -24,7 +24,7 @@ floats :: () {
     assert(f1 == "value=0.000998\n", "Got '%'", f1);
 
     // The context's print_style can be set to change the format for all floats
-    ok, f1  = Toml.serialize(F64.{value=val},, print_style=.{default_format_float=.{mode=.SCIENTIFIC, trailing_width=0}}); assert(ok);
+    ok, f1  = Toml.serialize(F64.{value=val},, toml=.{default_format_float=.{mode=.SCIENTIFIC, trailing_width=0}}); assert(ok);
     assert(f1 == "value=1e-03\n", "Got '%'", f1);
 
     // For individual members the FormatFloat type can be used to override the default
@@ -59,7 +59,7 @@ ints ::() {
     assert(i1 == "value=42\n", "Got '%'", i1);
 
     // The context's print_style can be set to change the format for all ints
-    ok, i1  = Toml.serialize(S64.{value=val},, print_style=.{default_format_int=.{base=16}}); assert(ok);
+    ok, i1  = Toml.serialize(S64.{value=val},, toml=.{default_format_int=.{base=16}}); assert(ok);
     assert(i1 == "value=2a\n", "Got '%'", i1);
 
     // For individual members the FormatInt type can be used to override the default

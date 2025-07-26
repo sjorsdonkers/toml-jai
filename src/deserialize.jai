@@ -14,7 +14,7 @@ value_to_type :: (value: Value, $Target: Type) -> ok:=false, value:Target=.{} {
 // Note meant to be called by the user directly, but instead to be used inside custom deserializers
 // slot is already initialized memory
 value_to_type :: (toml: Value, output: Any, name:string="", parent_name:string="") -> ok:=false {
-    done, ok := context.toml_custom_value_to_type(toml, output, name, parent_name);
+    done, ok := context.toml.custom_value_to_type(toml, output, name, parent_name);
     if done return ok;
 
     slot := output.value_pointer;
@@ -37,7 +37,7 @@ value_to_type :: (toml: Value, output: Any, name:string="", parent_name:string="
         expect(toml.type, .STRING, parent_name, name);
         cast(*string, slot).* = copy_string(toml.string_value);
     case .POINTER;
-        if toml == context.toml_null_value return true; // Null pointer
+        if toml == context.toml.null_value return true; // Null pointer
 
         pointer_info :*Type_Info_Pointer= xx info;
         memory := alloc(pointer_info.pointer_to.runtime_size);
@@ -91,7 +91,7 @@ value_to_type :: (toml: Value, output: Any, name:string="", parent_name:string="
             ok := fill_array(toml.array, array.data, element_type, name); if !ok return;
         }
     case .ANY;
-        if toml == context.toml_null_value return true; // Similar to null pointer
+        if toml == context.toml.null_value return true; // Similar to null pointer
 
         any_value :*Any_Struct= xx slot;
         any_value.type = type_info(Value);

@@ -21,7 +21,7 @@ A module for `TOML v1.0.0` support. It provides functionality to read/write TOML
 ## Serialize
 `ok, toml_string := Toml.serialize(my_struct);`
 - Write any (nested) struct or `Toml.Value` to TOML string.
-- Null pointers/null Anys by default are written as `"~null~"`, this can be controlled via the context member `toml_null_value`.
+- Null pointers/null Anys by default are written as `"~null~"`, this can be controlled via the context member `toml.null_value`.
 - Compile-time `constants` & `imports` are skipped.
 - `#place` members (containing pointers) may not be safe! Overlapping members are all serialized.
 
@@ -47,7 +47,7 @@ By default this Toml modules makes several choices like, enums as string, member
 These choices may be fine for the large majority of use-cases but not all. Custom handlers enable the user to modify the serialization/deserialization of types.
 Custom handlers follow the same design as `Print_Style.struct_printer`, except instead of writing to the builder it returns the Toml.Value to be written.
 
-Note that these custom handler drive "what" is (de)serialized, they do not help with formatting of the toml.
+Note that these custom handler drive "what" is (de)serialized, they do not help with formatting of the toml. Formatting can be controlled via `toml.default_format_int` / `toml.default_format_float` in the context.
 
 Serialization can be modified by changing the a custom handler procedure in the context.
 ```jai
@@ -60,7 +60,7 @@ enum_to_value :: (input: Any) -> done:=true, ok:=false, toml:Value=.{} {
 
 ok, toml := Toml.serialize(
     my_struct
-    ,, toml_custom_type_to_value = enum_to_value
+    ,, toml = .{custom_type_to_value=enum_to_value}
 );
 ```
 
@@ -86,7 +86,7 @@ Custom handlers have several design goals:
 
 In addition to handlers we currently also support making struct members optional through a @TomlOptional note. This means there are 2 ways to do the same thing, it also requires the original Type(_Info) to be modified. It is likely this note will be removed when these kinds of operations are better supported through custom handlers.
 
-The context member `toml_null_value` is introduced as a customization point as it would otherwise be relatively complicated to catch all cases where pointers can occur. toml_null_value can be any kind of Toml.Value, by default it is a string of value `"~null~"`. Deserialization of the value `"~null~"` for a `*string` member can be surprising as it would result into a null pointer instead of a string with value `"~null~"`. The `~`s are added to make it a string that is less likely to occur naturally.
+The context member `toml.null_value` is introduced as a customization point as it would otherwise be relatively complicated to catch all cases where pointers can occur. toml.null_value can be any kind of Toml.Value, by default it is a string of value `"~null~"`. Deserialization of the value `"~null~"` for a `*string` member can be surprising as it would result into a null pointer instead of a string with value `"~null~"`. The `~`s are added to make it a string that is less likely to occur naturally.
 Alternative sentinel values like and empty table `{}` which is the equivalent of a struct without members are not chosen as due to `@TomlOptional` it is also equivalent to a struct with all optional members.
 
 ### Lexer

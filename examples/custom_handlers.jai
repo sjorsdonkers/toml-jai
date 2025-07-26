@@ -10,9 +10,9 @@
 //
 // Note that these custom handler drive "what" is (de)serialized, they do not help with formatting of the toml.
 
-// The Toml module adds 2 procedure members to the context:
-// - toml_custom_type_to_value := (input: Any) -> done:bool, ok:bool, toml:Value;
-// - toml_custom_value_to_type := (toml: Value, output: Any, parent_name:string, name:string) -> done:bool, ok:bool;
+// The Toml module adds 2 procedure members to the context.toml:
+// - custom_type_to_value := (input: Any) -> done:bool, ok:bool, toml:Value;
+// - custom_value_to_type := (toml: Value, output: Any, parent_name:string, name:string) -> done:bool, ok:bool;
 
 main :: () {
     enum_as_int();
@@ -43,8 +43,8 @@ enum_as_int :: () {
     // If it is not set the default handler will be used serializing the enum as a string.
     // By setting the custom handler in the context enums are serialized as integers.
     basket := Basket.{paprika=.ORANGE, everything_else=42};
-    ok_default, toml_default := Toml.serialize(basket);                                                    assert(ok_default);
-    ok_custom,  toml_custom  := Toml.serialize(basket,, toml_custom_type_to_value = custom_enum_to_value); assert(ok_custom);
+    ok_default, toml_default := Toml.serialize(basket);                                                         assert(ok_default);
+    ok_custom,  toml_custom  := Toml.serialize(basket,, toml = .{custom_type_to_value = custom_enum_to_value}); assert(ok_custom);
     assert(toml_default == "paprika=\"ORANGE\"\neverything_else=42\n", "%", toml_default);
     assert(toml_custom  == "paprika=1\neverything_else=42\n",          "%", toml_custom );
 
@@ -62,8 +62,8 @@ enum_as_int :: () {
     }
 
     // The user can again opt in to using the custom handler at the call site, by setting it in the context.
-    ok3, basket3 := Toml.deserialize("paprika=\"RED\"\neverything_else=3\n", Basket);                                              assert(ok3);
-    ok4, basket4 := Toml.deserialize("paprika=2\neverything_else=3\n", Basket,, toml_custom_value_to_type = custom_value_to_enum); assert(ok4);
+    ok3, basket3 := Toml.deserialize("paprika=\"RED\"\neverything_else=3\n", Basket);                                                   assert(ok3);
+    ok4, basket4 := Toml.deserialize("paprika=2\neverything_else=3\n", Basket,, toml = .{custom_value_to_type = custom_value_to_enum}); assert(ok4);
     assert(basket3.paprika == .RED && basket3.everything_else == 3, "%", basket3);
     assert(basket4.paprika == .RED && basket4.everything_else == 3, "%", basket3);
 }
@@ -104,15 +104,15 @@ member_modifications :: () {
 
     // When serializing with the custom handler, the members are renamed and the middle member is omitted.
     three_named := ThreeNamed.{a=1, b=2, c=3};
-    ok1, toml1 := Toml.serialize(three_named);                                                        assert(ok1);
-    ok2, toml2 := Toml.serialize(three_named,, toml_custom_type_to_value = custom_modified_to_value); assert(ok2);
+    ok1, toml1 := Toml.serialize(three_named);                                                             assert(ok1);
+    ok2, toml2 := Toml.serialize(three_named,, toml = .{custom_type_to_value = custom_modified_to_value}); assert(ok2);
     assert(toml1 == "a=1\nb=2\nc=3\n", "%", toml1);
     assert(toml2 == "alpha=1\ngamma=3\n", "%", toml2);
 
     // Similarly, when deserializing with the custom handler, the members are renamed and the middle member is omitted.
     // Note that we do not fail on the missing member as it is default initialized (in this case to 0).
-    ok3, three_named3 := Toml.deserialize("a=4\nb=5\nc=6\n", ThreeNamed);                                                           assert(ok3);
-    ok4, three_named4 := Toml.deserialize("alpha=4\ngamma=6\n", ThreeNamed,, toml_custom_value_to_type = custom_value_to_modified); assert(ok4);
+    ok3, three_named3 := Toml.deserialize("a=4\nb=5\nc=6\n", ThreeNamed);                                                                assert(ok3);
+    ok4, three_named4 := Toml.deserialize("alpha=4\ngamma=6\n", ThreeNamed,, toml = .{custom_value_to_type = custom_value_to_modified}); assert(ok4);
     assert(three_named3.a == 4 && three_named3.b == 5 && three_named3.c == 6, "%", three_named3);
     assert(three_named4.a == 4 && three_named4.b == 0 && three_named4.c == 6, "%", three_named4);
 }
@@ -125,7 +125,7 @@ arbitrary_binary_encoding :: () {
 
     // Serialize a binary encoding with custom type_to_value
     new_context := context; // A different way to set the context custom handlers for multiple calls
-    new_context.toml_custom_type_to_value = custom_magic_to_value;
+    new_context.toml = .{custom_type_to_value = custom_magic_to_value};
 
     push_context new_context {
         // Depending on the first byte we serialize the data differently.
@@ -143,7 +143,7 @@ arbitrary_binary_encoding :: () {
     }
 
     // Deserialize to the binary encoding with custom value_to_type
-    new_context.toml_custom_value_to_type = custom_value_to_magic;
+    new_context.toml = .{custom_value_to_type = custom_value_to_magic};
 
     push_context new_context {
         // When deserializing the data is converted back to the binary encoding from different looking Toml data.
@@ -234,7 +234,7 @@ error_on_superfluous_keys :: () {
     // Normally superfluous keys are ignored.
     ok := Toml.deserialize("a=1 \n b=2", OnlyA); assert(ok);
     // With the custom handler we can error on them.
-    ok  = Toml.deserialize("a=1 \n b=2", OnlyA,, toml_custom_value_to_type = catch_superfluous_keys); assert(!ok);
+    ok  = Toml.deserialize("a=1 \n b=2", OnlyA,, toml = .{custom_value_to_type = catch_superfluous_keys}); assert(!ok);
 }
 
 polymorphic_types_like_hashtable_support :: () {
@@ -261,7 +261,7 @@ polymorphic_types_like_hashtable_support :: () {
             entry_slot := entries.data + it * entry_info.runtime_size;
             if entry_slot.(*u32).* < FIRST_VALID_HASH  continue;
 
-            ok, key_as_value := Toml.type_to_value_shared_memory(Any.{key_member.type, entry_slot + key_member.offset_in_bytes});   if !ok return;
+            ok, key_as_value := Toml.type_to_value_shared_memory(Any.{key_member.type, entry_slot + key_member.offset_in_bytes});     if !ok return;
             ok=, value       := Toml.type_to_value_shared_memory(Any.{value_member.type, entry_slot + value_member.offset_in_bytes}); if !ok return;
 
             // Serialize the key as a string regardless of what type it is in the Hash_Table.
@@ -280,14 +280,14 @@ polymorphic_types_like_hashtable_support :: () {
     // Serialize the Hash_Table with the custom handler.
     table_add(*my_hash_table, "one", 1);
     table_add(*my_hash_table, "two", 2);
-    ok, toml := Toml.serialize(my_hash_table,, toml_custom_type_to_value = custom_hashtable_to_value); assert(ok);
+    ok, toml := Toml.serialize(my_hash_table,, toml = .{custom_type_to_value = custom_hashtable_to_value}); assert(ok);
     assert(toml == "one=1\ntwo=2\n" || toml == "two=2\none=1\n", "%", toml);
 
     // The custom handle has a generic implementation so works with any specialization of a Hash_Table.
     // The key does not need to be a string, but it will be serialized as a string.
     float_table: Table(float, *u8);
     table_add(*float_table, 3.3, New(u8)).*.* = 3;
-    ok=, float_toml := Toml.serialize(float_table,, toml_custom_type_to_value = custom_hashtable_to_value); assert(ok);
+    ok=, float_toml := Toml.serialize(float_table,, toml = .{custom_type_to_value = custom_hashtable_to_value}); assert(ok);
     assert(float_toml == "\"3.3\"=3\n", "%", float_toml);
 
     // Deserialization for polymorphic types is likely to be more difficult. In the case of Hash_Table we need to be able to call table_add.
@@ -311,7 +311,7 @@ polymorphic_types_like_hashtable_support :: () {
     }
 
     // Deserialize the Hash_Table with a custom handler.
-    ok, my_hash_table = Toml.deserialize("three=3\nfour=4\n", Str_To_U8,, toml_custom_value_to_type = custom_value_to_hashtable); assert(ok);
+    ok, my_hash_table = Toml.deserialize("three=3\nfour=4\n", Str_To_U8,, toml = .{custom_value_to_type = custom_value_to_hashtable}); assert(ok);
     assert(my_hash_table.count == 2);
     ok=, three:= table_find_new(*my_hash_table, "three"); assert(ok);
     ok=, four:= table_find_new(*my_hash_table, "four"); assert(ok);
