@@ -50,10 +50,10 @@ parse_datetime :: (input: string) -> ok:=false, value:Chrono=.{} {
 
     // Must be datetime [offset]
     if input.count < 19 return;
-    if input[10] != "T" && input[10] != " " return; // NOTE: TOML does not allow lowercase T
+    if input[10] != "T" && input[10] != "t" && input[10] != " " return; // NOTE: TOML does not allow lowercase T
     time_str := slice(input, 11, input.count-11);
 
-    if time_str[time_str.count-1] == "Z" { // NOTE: TOML does not allow lowercase Z
+    if time_str[time_str.count-1] == "Z" || time_str[time_str.count-1] == "z" {
         // Datetime with Zulu time
         success, time = parse_time(slice(time_str, 0, time_str.count-1)); if !success return;
         return true, .{type=.OFFSET_DATETIME, datetime_offset=.{date=date, time=time, offset_hour=0, offset_minute=0}};

@@ -83,7 +83,7 @@ tokenize :: (data: string) -> ok:=false, tokens:[..]Token=[..]Token.{} {
                     if peek_char(lexer) == "\n" { eat_newline(*lexer); }
                     else                              { eat_char(*lexer); }
                 }
-                if !has_next(lexer) { return_with_error_line(lexer.data, lexer.loc, "Unterminated multi-line string."); }
+                if !has_next(lexer, 3) { return_with_error_line(lexer.data, lexer.loc, "Unterminated multi-line string."); }
                 // 1 or 2 quotes at the end are allowed, like """"abra""""" -> "abra""
                 if has_next(lexer, 4) && peek_char(lexer, 4) == c { eat_char(*lexer); }
                 if has_next(lexer, 4) && peek_char(lexer, 4) == c { eat_char(*lexer); }
@@ -148,6 +148,11 @@ tokenize :: (data: string) -> ok:=false, tokens:[..]Token=[..]Token.{} {
         }
 
         return_with_error_line(lexer.data, lexer.loc, "Invalid character %", to_string(*c, 1));
+    }
+
+    if lexer.scope_stack.count > 0 {
+        scope := lexer.tokens[peek(lexer.scope_stack)];
+        return_with_error_line(lexer.data, scope.loc, "Unclosed scope %", to_string(*cast(u8, scope.type), 1));
     }
     return true, lexer.tokens;
 }
