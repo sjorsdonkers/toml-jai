@@ -254,7 +254,7 @@ polymorphic_types_like_hashtable_support :: () {
         key_member     := entry_info.members[1];  assert(key_member.name == "key");
         value_member   := entry_info.members[2];  assert(value_member.name == "value");
 
-        // Loop over all entries similar to Hash_Table::for_expansion, but for slot&type_info.
+        // Loop over all entries similar to Hash_Table::for_expansion, but for input:Any.
         table: [..]KeyValue;
         entries := (input.value_pointer + entries_member.offset_in_bytes).(*[]void);
         for 0..entries.count-1 {
@@ -314,7 +314,7 @@ polymorphic_types_like_hashtable_support :: () {
     ok, my_hash_table = Toml.deserialize("three=3\nfour=4\n", Str_To_U8,, toml = .{custom_value_to_type = custom_value_to_hashtable}); assert(ok);
     assert(my_hash_table.count == 2);
     ok=, three:= table_find_new(*my_hash_table, "three"); assert(ok);
-    ok=, four:= table_find_new(*my_hash_table, "four"); assert(ok);
+    ok=, four := table_find_new(*my_hash_table, "four");  assert(ok);
     assert(three == 3 && four == 4, "%", my_hash_table);
 }
 
@@ -332,7 +332,7 @@ value_to_hashtable :: ($Table_Type: Type, toml: Value, output: Any, name:string,
     for keyvalue: toml.table {
         value: Table_Type.Value_Type;
         ok := Toml.value_to_type(keyvalue.value, Any.{type_info(Table_Type.Value_Type), *value}, name, keyvalue.key); if !ok return;
-        table_add(hash_table, keyvalue.key, value); // How to call table_add in the generic case when we only have slot and type_info?
+        table_add(hash_table, keyvalue.key, value); // How to call table_add in the generic case when we only have an Any?
     }
     return true, true;
 }

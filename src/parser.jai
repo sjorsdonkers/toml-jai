@@ -199,11 +199,17 @@ unescape :: (basic_token: Token, source: string) -> ok:=false, escaped:string=""
         case "\""; append(*builder, "\"");   pos += 2;
         case "\\"; append(*builder, "\\");   pos += 2;
         case "\r"; #through;
+        case "\t"; #through;
+        case " "; #through;
         case "\n";
+            if basic_token.type != Token.Type.BASIC_MULTI return_with_error_line(source, basic_token.loc, "Only multi-line basic strings (\"\"\") may end with escaped whitespace");
             pos += 2;
+            has_endline := basic[pos-1] == "\n";
             while (pos < basic.count) && ( basic[pos] == " " || basic[pos] == "\t" || basic[pos] == "\r" || basic[pos] == "\n") {
+                has_endline |= basic[pos] == "\n";
                 pos += 1;
             }
+            if !has_endline { return_with_error_line(source, basic_token.loc, "Escaped whitespace must be at the end of a line"); }
         case "u"; #through;
         case "U";
             num_digits: s32 = xx ifx basic[pos + 1] == "u" then 4 else 8;
@@ -329,14 +335,14 @@ string_to_int_checked :: (s: string, base := 10, $T := int) -> result: T, succes
             c := s[cursor];
 
             value: u8 = ---;
-            if is_digit(c)                               { value = c - "0"; }
+            if is_digit(c)                   { value = c - "0"; }
             else if (c >= "a") && (c <= "f") { value = c - "a" + 10; }
             else if (c >= "A") && (c <= "F") { value = c - "A" + 10; }
             else { break; }
 
             sum *= cast(T, base);
             sum += sign * cast(T, value);
-            if (sum < 0) ^ (sign < 0) { return 0, false, s; }
+            if sum != 0 && ((sum < 0) ^ (sign < 0)) { return 0, false, s; }
 
             cursor += 1;
         }
@@ -350,7 +356,7 @@ string_to_int_checked :: (s: string, base := 10, $T := int) -> result: T, succes
 
             sum *= cast(T,  base);
             sum += sign*cast(T, digit);
-            if (sum < 0) ^ (sign < 0) { return 0, false, s; }
+            if sum != 0 &&((sum < 0) ^ (sign < 0)) { return 0, false, s; }
 
             cursor += 1;
         }

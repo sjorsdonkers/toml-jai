@@ -12,7 +12,7 @@ value_to_type :: (value: Value, $Target: Type) -> ok:=false, value:Target=.{} {
 }
 
 // Note meant to be called by the user directly, but instead to be used inside custom deserializers
-// slot is already initialized memory
+// output is an already default initialized instance
 value_to_type :: (toml: Value, output: Any, name:string="", parent_name:string="") -> ok:=false {
     done, ok := context.toml.custom_value_to_type(toml, output, name, parent_name);
     if done return ok;
