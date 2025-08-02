@@ -1,6 +1,8 @@
 Toml_Context :: struct {
     // The Value that will be used to represent null values for in the toml.
-    null_value := Value.{type=.STRING, string_value="~null~"};
+    null_value    := Value.{type=.STRING, string_value="~null~"};
+    // The name of the note that is used to indicate optional fields in structs, default: @TomlOptional
+    optional_note := "TomlOptional";
 
     // Procedures to introduce custom (de)serialization logic for specific types.
     // The procedures set here by default handle: Value, Chrono, and SumType.

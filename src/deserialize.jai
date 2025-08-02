@@ -59,7 +59,7 @@ value_to_type :: (toml: Value, output: Any, name:string="", parent_name:string="
                 ok:= value_to_type(it.value, Any.{member.type, slot + member.offset_in_bytes}, member.name, name);  if !ok return;
                 break;
             }
-            if !found && !array_find(member.notes, "TomlOptional") then return_with_error("Missing field %.%", struct_info.name, member.name);
+            if !found && !array_find(member.notes, context.toml.optional_note) then return_with_error("Missing field %.%", struct_info.name, member.name);
         }
     case .ARRAY;
         expect(toml.type, .ARRAY, parent_name, name);

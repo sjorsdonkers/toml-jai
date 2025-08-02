@@ -235,7 +235,6 @@ maybe_print_naninf_to_builder :: (builder: *String_Builder, value: float64) -> n
     if (cast(*u64, *value).* & 0x8000_0000_0000_0000) { append(builder, "-"); }
     if is_nan { append(builder, "nan"); } else { append(builder, "inf"); }
     return true;
-
 }
 
 // true if it would otherwise introduce additional braces or brackets, so no in-line tables or arrays in in-line tables,

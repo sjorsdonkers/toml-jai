@@ -33,8 +33,8 @@ Error message -> interceptable logger
 - To prevent or redirect the TOML module from writing to the error log the user can set a catching or wrapping logger in the context, see examples.
 
 ## Memory management & lifetime
-Set a context.allocator: `Toml.deserialize(toml_string, My_Struct,, scoped_pool());`  
-The lifetime of all returned objects ends when the memory of the allocator is released. In the example case the `scoped_pool` procedure creates a pool allocator that is dropped at the end of the current scope. As such, any allocated objects like strings/arrays/anys/pointers in the returned data may not be used after the scope exit.
+Set a context.allocator: `Toml.deserialize(toml_string, My_Struct,, temp);`  
+Dynamically sized data like arrays and strings are returned on the provided context allocator. As such, the safe lifetime of all returned objects ends when the memory of the allocator is released.
 - Allocation for returned data are in the context allocator. Instead of free_x() or deinit_x() procedures the user is expected to push an allocator such that all data can be dropped together.
 - None of the returned data references allocated data of the input arguments.
 - Temporary storage is only used for error messages as some of the intermediate data may be large. If there is a user-friendly way for the caller to replace the temporary allocator let me know, in which case we can just use temp.
@@ -49,7 +49,7 @@ Custom handlers follow the same design as `Print_Style.struct_printer`, except i
 
 Note that these custom handler drive "what" is (de)serialized, they do not help with formatting of the toml. Formatting can be controlled via `toml.default_format_int` / `toml.default_format_float` in the context, see the [formatting example](examples/formatting_control.jai).
 
-Serialization can be modified by changing the a custom handler procedure in the context.
+Serialization can be modified by changing the custom handler procedure in the context.
 ```jai
 enum_to_value :: (input: Any) -> done:=true, ok:=false, toml:Value=.{} {
     if input.type.type != .ENUM return false;
