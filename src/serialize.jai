@@ -221,7 +221,10 @@ print_to_builder_escaped :: (builder: *String_Builder, str: string, $is_key: boo
         case "\r";   append(builder, "\\r");
         case "\"";   append(builder, "\\\"");
         case "\\";   append(builder, "\\\\");
-        case;              append(builder, it);
+        case;
+            is_control := it <= 0x1F || it == 0x7F;
+            if is_control print_to_builder(builder, "\\u%", FormatInt.{value=it, minimum_digits=4, base=16});
+            else          append(builder, it);
     }
     append(builder, "\"");
 }

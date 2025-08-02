@@ -9,7 +9,7 @@
 // As such the keys and strings in the returned Value may point into the source string
 parse_string_to_value_shared_memory :: (contents: string) -> ok:=false, root_table:Value=.{} {
     ok, tokens := tokenize(contents);  if !ok return; // Not freeing tokens as it will be in a Pool
-    scope  := Scope.{contents, tokens, 0, ""};
+    scope      := Scope.{contents, tokens, 0, ""};
 
     // At top level we can expect ([[keys]], [keys], keys = value)
     root_table: Value;
@@ -19,7 +19,7 @@ parse_string_to_value_shared_memory :: (contents: string) -> ok:=false, root_tab
         if token.type == Token.Type.SCOPE_BRACKET {
             ok=, current_table = parse_header(*root_table, eat_scope(*scope, token)); if !ok return;
         } else {
-            ok=, key_scope := eat_scope_until(*scope, Token.Type.ASSIGN);             if !ok return;
+            ok=, key_scope          := eat_scope_until(*scope, Token.Type.ASSIGN);    if !ok return;
             ok=, leaf_value, is_new := parse_key(current_table, key_scope);           if !ok return;
             if !is_new { return_with_error_line(scope.source, peek(key_scope.tokens).loc, "Key already has a value of type %", leaf_value.type); }
             ok=, leaf_value.* = parse_value(leaf_value, *scope);                      if !ok return;
@@ -200,7 +200,7 @@ unescape :: (basic_token: Token, source: string) -> ok:=false, escaped:string=""
         case "\\"; append(*builder, "\\");   pos += 2;
         case "\r"; #through;
         case "\t"; #through;
-        case " "; #through;
+        case " ";  #through;
         case "\n";
             if basic_token.type != Token.Type.BASIC_MULTI return_with_error_line(source, basic_token.loc, "Only multi-line basic strings (\"\"\") may end with escaped whitespace");
             pos += 2;

@@ -84,35 +84,31 @@ json_escape_string :: (builder: *String_Builder, str: string) {
 }
 
 stdin :: () -> string {
-    buffer: [1024] u8;
+    buffer: [4096] u8;
     input: string;
     input.data = buffer.data;
 
     while true {
         // @Incomplete: Jai doesn't have an abstraction for reading from stdin yet...
+        success := BOOL.TRUE;
         #if OS == .WINDOWS {
             handle := GetStdHandle(STD_INPUT_HANDLE);
             bytes_read: u32;
-            success := ReadFile(handle, buffer.data + input.count, cast(u32) (buffer.count - input.count), *bytes_read, null);
+            success = ReadFile(handle, buffer.data + input.count, cast(u32) (buffer.count - input.count), *bytes_read, null);
         } else {
             bytes_read := read(STDIN_FILENO, buffer.data + input.count, cast(u64) (buffer.count - input.count));
-            if bytes_read < 0 {
-                log_error("Couldn't read from stdin");
-                exit(1);
-            }
+            if bytes_read < 0 { log_error("Couldn't read from stdin"); exit(1); }
         }
 
-        if bytes_read {
-            input.count += bytes_read;
-        }
+        input.count += bytes_read;
         if !success || bytes_read == 0 {
             return copy_string(input);
         }
     }
-    return "nope";
+    return "unreachable";
 }
 
-using Toml :: #import, file "../module.jai";
+using Toml :: #import, file "../../module.jai";
 #import "Basic";
 #import "File";
 #import "String";
