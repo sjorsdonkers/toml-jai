@@ -7,7 +7,7 @@ A module for `TOML v1.0.0` support. It provides functionality to read/write TOML
 - Full TOML v1.0.0 support.
 - All run-time data types are supported as their native type including reference types (`pointer`, `array`, `any`), with the exception of `untagged unions`.
 - Generic data is supported through the [Toml.Value](src/data.jai) struct.
-- Dates/times are supported types provided in [src/datetime.jai](src/datetime.jai) (until Jai has native types, Apollo_time.Calendar_Time is not usable here).
+- Dates/times are supported types provided in [datetime.jai](src/datetime.jai) (until Jai has native types, Apollo_time.Calendar_Time is not usable here).
 - Safe sum-types with `@SumType` notes to indicate the struct has a tag enum followed by a matching union.
 - Modifying the default behavior like: renaming, omitting, changing Type representation like Hash_Tables, enum as int, extra validation, or handling complex data like binary encodings are supported through [custom handlers](examples/custom_handlers.jai). 
 
@@ -66,7 +66,7 @@ ok, toml := Toml.serialize(
 
 ## Testing
 `jai ./tests.jai`  
-- The module is tested by compiling and running the examples. The command above does that for all examples.
+The module is tested by compiling and running the examples. The command above does that for all examples. It will also run the tests from `toml-test` if the executable can be found in the PATH or the [tools/toml-test](tools/toml-test) directory.
 
 ## Implementation
 
