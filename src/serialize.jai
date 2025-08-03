@@ -9,8 +9,7 @@ serialize_to_builder :: (builder: *String_Builder, input: Any) -> ok:=false {
     ok, value := type_to_value_shared_memory(input,, a); if !ok return;
 
     if !builder.initialized init_string_builder(builder); // Initialize the builder to make sure it does not use `a`.
-    toml_print_style := Print_Style.{default_format_float=context.toml.default_format_float, default_format_int=context.toml.default_format_int};
-    print_table_to_builder(builder, value,, a, print_style=toml_print_style);
+    print_table_to_builder(builder, value,, a);
     return true;
 }
 
@@ -126,9 +125,15 @@ sumtype_to_value :: (slot: *void, struct_info: *Type_Info_Struct) -> ok:=false, 
     return true, .{type=.TABLE, table=table};
 }
 
-// NOTE: Uses context.print_style for int/float formatting
-print_table_to_builder :: (builder: *String_Builder, value: Value, parent_key: string = "") {
+// NOTE: Print procedures after this use context.print_style for int/float formatting
+print_table_to_builder :: (builder: *String_Builder, value: Value, parent_key:="", $root:=true) {
     assert(value.type == .TABLE, "Only tables can be serialized at the top level, got %", value.type);
+    #if root {
+        old_style := context.print_style;
+        context.print_style = Print_Style.{default_format_float=context.toml.default_format_float, default_format_int=context.toml.default_format_int};
+        defer context.print_style = old_style;
+    }
+
     // Key=Value pairs
     for value.table  if !is_table_header(it.value) && !is_array_of_tables(it.value) {
         print_keyvalue_to_builder(builder, it);
@@ -144,7 +149,7 @@ print_table_to_builder :: (builder: *String_Builder, value: Value, parent_key: s
             append(builder, dotted_key);
             append(builder, "]\n");
         }
-        print_table_to_builder(builder, it.value, dotted_key);
+        print_table_to_builder(builder, it.value, dotted_key, false);
     }
     // [[Array.Of.Tables.Header]]
     for value.table  if is_array_of_tables(it.value) {
@@ -153,7 +158,7 @@ print_table_to_builder :: (builder: *String_Builder, value: Value, parent_key: s
             append(builder, "[[");
             append(builder, dotted_key);
             append(builder, "]]\n");
-            print_table_to_builder(builder, it, dotted_key);
+            print_table_to_builder(builder, it, dotted_key, false);
         }
     }
 }
