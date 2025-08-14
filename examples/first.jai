@@ -1,11 +1,13 @@
 main :: () {
-    // TOML data is not expected to multi-GB, so just read the entire file. For easy cleanup of the memory allocated for
-    // the returned structs we can push an allocator. The type Toml.Value can be used deserialization target for any TOML data.
-    contents       := read_entire_file("data/inline_table.toml");
-    heap           := create_heap(context.allocator);                          defer destroy_heap(heap);
-    ok, toml_value := Toml.deserialize(contents, Toml.Value,, allocator=heap); assert(ok);
-    ok_toml, toml  := Toml.serialize(toml_value            ,, allocator=heap); assert(ok_toml);
-    print("%\n", toml);
+    // TOML data is not expected to be multi-GBs, so just read the entire file. For easy cleanup of the memory allocated for
+    // the returned structs we push an allocator. The type Toml.Value can be used deserialization target for any TOML data.
+    contents := read_entire_file("data/inline_table.toml");
+    {
+        heap           := create_heap(context.allocator);                          defer destroy_heap(heap);
+        ok, toml_value := Toml.deserialize(contents, Toml.Value,, allocator=heap); assert(ok);
+        ok_toml, toml  := Toml.serialize(toml_value            ,, allocator=heap); assert(ok_toml);
+        print("%\n", toml);
+    } // `destroy_heap` is deferred to the end of the scope here. It will cleanup the memory allocated for `toml_value` and `toml`.
 
     // We can also deserialize the TOML data into a struct. The struct must have the same fields as the TOML data.
     // The TOML can have additional fields that are not present in the struct, in this case the fields will be ignored.
@@ -41,7 +43,7 @@ DONE
         horse :Filename;
     }
 
-    ok=, my_struct := Toml.deserialize(THE_STRING, MyStruct); assert(ok);
+    ok, my_struct := Toml.deserialize(THE_STRING, MyStruct); assert(ok);
     assert("{false, 23.299999, {32, \"Y\", Y}, [{2}, {-3}, {4}], \"Mai\"}" == tprint("%", my_struct), "%", my_struct);
     // The data can be serialized to a string builder instead of a string, to reduce copies.
     builder: String_Builder;

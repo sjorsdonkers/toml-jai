@@ -19,4 +19,4 @@ jai ./encoder.jai
 ./toml-test -encoder ./encoder
 ```
 
-The `run` app is used for the test framework to compile and run both in sequence.
+The `run_toml-tests` app is used for the test framework to compile and run both in sequence.

@@ -176,28 +176,30 @@ parse_literal :: (scope: *Scope) -> ok:=false, literal:Value=.{} {
     }
 }
 
-unescape :: (basic_token: Token, source: string) -> ok:=false, escaped:string="" {
+unescape :: (basic_token: Token, source: string) -> ok:=false, unescaped:string="" #no_abc {
     assert(basic_token.type == Token.Type.BASIC || basic_token.type == Token.Type.BASIC_MULTI);
     basic := basic_token.str;
 
-    builder: String_Builder;
+    buffer := alloc_string(basic.count); // Allocate same size as input since unescaped string is always <= input length
+    buffer.count = 0;                    // Start with empty buffer, we'll grow it as we write, but need #no_abc
     pos := 0;
     while pos < basic.count {
         if basic[pos] != "\\" {
-            append(*builder, basic[pos]);
+            buffer[buffer.count] = basic[pos];
+            buffer.count += 1;
             pos += 1;
             continue;
         }
         if pos + 1 >= basic.count {return_with_error_line(source, basic_token.loc, "Unterminated escape sequence"); }
 
         if basic[pos + 1] == {
-        case "b";  append(*builder, "\x08"); pos += 2;
-        case "t";  append(*builder, "\t");   pos += 2;
-        case "n";  append(*builder, "\n");   pos += 2;
-        case "f";  append(*builder, "\x0c"); pos += 2;
-        case "r";  append(*builder, "\r");   pos += 2;
-        case "\""; append(*builder, "\"");   pos += 2;
-        case "\\"; append(*builder, "\\");   pos += 2;
+        case "b";  buffer[buffer.count] = "\x08"; buffer.count += 1; pos += 2;
+        case "t";  buffer[buffer.count] = "\t";   buffer.count += 1; pos += 2;
+        case "n";  buffer[buffer.count] = "\n";   buffer.count += 1; pos += 2;
+        case "f";  buffer[buffer.count] = "\x0c"; buffer.count += 1; pos += 2;
+        case "r";  buffer[buffer.count] = "\r";   buffer.count += 1; pos += 2;
+        case "\""; buffer[buffer.count] = "\"";   buffer.count += 1; pos += 2;
+        case "\\"; buffer[buffer.count] = "\\";   buffer.count += 1; pos += 2;
         case "\r"; #through;
         case "\t"; #through;
         case " ";  #through;
@@ -220,16 +222,14 @@ unescape :: (basic_token: Token, source: string) -> ok:=false, escaped:string=""
             hex_value, success, remainder := string_to_int_checked(unicode_hex_str, 16, u32);
             if !success || remainder.count != 0 { return_with_error_line(source, basic_token.loc, "not valid unicode"); } // TODO improve loc, including \n
 
-            buf: [4]u8;
-            tmp := string.{4, buf.data};
-            character_utf32_to_utf8(hex_value, *tmp);
-
-            append(*builder, tmp);
+            utf8_slice := string.{4, buffer.data + buffer.count};
+            character_utf32_to_utf8(hex_value, *utf8_slice);
+            buffer.count += utf8_slice.count; // UTF-8 bytes are already in the buffer at the right position
             pos += num_digits;
         case; return_with_error_line(source, basic_token.loc, "Invalid escape sequence."); // TODO improve loc, including \n
         }
     }
-    return true, builder_to_string(*builder);
+    return true, buffer;
 }
 
 Scope :: struct {

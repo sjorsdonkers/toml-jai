@@ -5,9 +5,9 @@
 Chrono :: struct @SumType {
     type: Type;
     union {
-        time: Time;
-        date: Date = ---;
-        datetime: DateTime = ---;
+        time:            Time;
+        date:            Date           = ---;
+        datetime:        DateTime       = ---;
         datetime_offset: DateTimeOffset = ---;
     };
     Type :: enum u8 {
@@ -18,25 +18,25 @@ Chrono :: struct @SumType {
     }
 }
 Time :: struct {
-    hour       : u8;
-    minute     : u8;
-    second     : u8;
+    hour:        u8;
+    minute:      u8;
+    second:      u8;
     millisecond: u16;
 }
 Date :: struct {
-    year : u16;
+    year:  u16;
     month: u8;
-    day  : u8;
+    day:   u8;
 }
 DateTime :: struct {
     using date: Date;
     using time: Time;
 }
 DateTimeOffset :: struct {
-    using date        : Date;
-    using time        : Time;
-    offset_hour       : u8;
-    offset_minute     : u8;
+    using date:         Date;
+    using time:         Time;
+    offset_hour:        u8;
+    offset_minute:      u8;
     offset_is_negative: bool;
 }
 

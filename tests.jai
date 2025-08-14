@@ -6,12 +6,12 @@
     if args print("Running tests with args: %\n", args);
 
     t0 := seconds_since_init();
-    test("./examples", "first", args);
-    test("./examples", "file_examples", args);
-    test("./examples", "validation", args);
-    test("./examples", "custom_handlers", args);
-    test("./examples", "formatting_control", args);
-    test("./tools/toml-test", "run", args);
+    test("./examples",        "first",              args);
+    test("./examples",        "file_examples",      args);
+    test("./examples",        "validation",         args);
+    test("./examples",        "custom_handlers",    args);
+    test("./examples",        "formatting_control", args);
+    test("./tools/toml-test", "run_toml-tests",     args);
     print("Tests ran in % seconds\n", seconds_since_init() - t0);
 
     set_build_options_dc(.{do_output=false});
