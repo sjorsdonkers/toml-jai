@@ -33,7 +33,11 @@ Error message -> interceptable logger
 - To prevent or redirect the TOML module from writing to the error log the user can set a catching or wrapping logger in the context, see examples.
 
 ## Memory management & lifetime
-Set a context.allocator: `Toml.deserialize(toml_string, My_Struct,, temp);`  
+Set a context.allocator:
+```jai
+Toml.deserialize(toml_string, My_Struct,, my_alloc);
+defer release(my_alloc);
+```
 Dynamically sized data like arrays and strings are returned on the provided context allocator. As such, the safe lifetime of all returned objects ends when the memory of the allocator is released.
 - Allocation for returned data are in the context allocator. Instead of free_x() or deinit_x() procedures the user is expected to push an allocator such that all data can be dropped together.
 - None of the returned data references allocated data of the input arguments.
@@ -42,7 +46,6 @@ Dynamically sized data like arrays and strings are returned on the provided cont
 - In most cases this means that only the returned data will be left allocated on the context allocator.
 
 ## Custom handlers
-
 By default this Toml modules makes several choices like, enums as string, members serialized by their name, no members omitted, etc.
 These choices may be fine for the large majority of use-cases but not all. Custom handlers enable the user to modify the serialization/deserialization of types.
 Custom handlers follow the same design as `Print_Style.struct_printer`, except instead of writing to the builder it returns the Toml.Value to be written.
@@ -74,7 +77,7 @@ The module is tested by compiling and running the examples. The command above do
 The module supports both Typed as well as Generic data using Toml.Value. To avoid having to maintain 2 implementations the Typed version is implemented by going through the Generic version. As a result there are some extra data copies/allocations as well as limitations like no support for integers > S64_MAX and slightly reduced accuracy for float due to intermediate conversion through float64.
 
 ### Type reflection
-We only have a run-time reflection based implementation, e.g. pointer and Type_Info based like: `parse :: (slot: *void, info: Type_Info)`. A compile-time reflection based implementation, see the [comptime branch](https://github.com/sjorsdonkers/toml-jai/tree/comptime), that has the types determined at compile-time like `parse :: (data: *$T)` would have slightly cleaner code, better run-time performance, and can handle generic custom types (like `Hash_Table`) more conveniently, but it does not support dynamic types like Any. Having multiple implementations, or alternative solutions like requiring the user to poke_name a custom serializer for every possible type contained in the Any are considered undesirable.
+We only have a run-time reflection based implementation, e.g. Any based like: `value_to_type :: (toml: Value, output: Any)`. A compile-time reflection based implementation, see the [comptime branch](https://github.com/sjorsdonkers/toml-jai/tree/comptime), that has the types determined at compile-time like `value_to_type :: (toml: Value, data: *$T)` would have slightly cleaner code, better run-time performance, and can handle generic custom types (like `Hash_Table`) more conveniently, but it does not support dynamic types like Any, and custom handlers become more complex, with module parameters, code insertion and`#poke_name`. Having multiple implementations is considered undesirable. This should be reevaluated when the `#poke_name` replacement has landed in Jai.
 
 ### Customization points
 Custom handlers have several design goals:

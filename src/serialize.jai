@@ -182,7 +182,7 @@ print_inline_value_to_builder :: (builder: *String_Builder, value: Value) {
     case .BOOL; print_item_to_builder(builder, value.bool_value);
     case .INT;  print_item_to_builder(builder, value.int_value);
     case .FLOAT;
-        if maybe_print_naninf_to_builder(builder, value.float_value) return;
+        if maybe_print_naninf_to_builder(builder, value.float_value, *context.print_style.default_format_float) return;
         print_item_to_builder(builder, value.float_value);
     case .STRING;   print_to_builder_escaped(builder, value.string_value, false);
     case .DATETIME; print_datetime_to_builder(builder, value.datetime);
@@ -209,7 +209,7 @@ print_inline_value_to_builder :: (builder: *String_Builder, value: Value) {
         else if format.type.runtime_size == 8 { f8 = format.value_pointer.(*float64).*; }
         else { assert(false, "Unsupported float size %", format.type.runtime_size); }
 
-        if maybe_print_naninf_to_builder(builder, f8) return;
+        if maybe_print_naninf_to_builder(builder, f8, value.format_float) return;
         print_float(builder, value.format_float.*);
     }
 }
@@ -234,11 +234,15 @@ print_to_builder_escaped :: (builder: *String_Builder, str: string, $is_key: boo
     append(builder, "\"");
 }
 
-maybe_print_naninf_to_builder :: (builder: *String_Builder, value: float64) -> nan_or_inf:bool {
+// Remove when stb_print_float or FormatFloat support configuring the nan/inf_label
+maybe_print_naninf_to_builder :: (builder: *String_Builder, value: float64, format: *FormatFloat) -> nan_or_inf:bool {
     is_nan, is_inf := is_nan_is_inf(value);
     if !is_nan && !is_inf  return false;
-    if (cast(*u64, *value).* & 0x8000_0000_0000_0000) { append(builder, "-"); }
-    if is_nan { append(builder, "nan"); } else { append(builder, "inf"); }
+    format_ := format.*;           // Copy format to avoid leaking data onto the context
+    format_.value = value;
+    ifnan := sprint("%", format_); // Use print to adhere to formatting like width
+    to_lower_in_place(ifnan);      // Print uses Inf and NaN instead of inf and nan
+    append(builder, ifnan);
     return true;
 }
 
