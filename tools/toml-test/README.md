@@ -5,7 +5,7 @@ Currently some `invalid` cases are not passing yet as `toml-jai` does not have a
 
 ## Run
 
-> The `toml-test` executable should be in the PATH or placed in this directory.
+> The `jai` and `toml-test` executables should be in the PATH.
 
 Test with the decoder:
 ```sh

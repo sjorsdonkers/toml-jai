@@ -293,9 +293,9 @@ polymorphic_types_like_hashtable_support :: () {
     // Deserialization for polymorphic types is likely to be more difficult. In the case of Hash_Table we need to be able to call table_add.
     // This is a polymorphic procedure thus we need to know the types at compile time to be able to call it.
     // - We could write a metaprogram that inserts a switch statement holding all possible Hash_Tables used in the application.
-    // - We could provide limited support by reimplementing table_add with a slot/info interface, note however this also requires us to reimplement
+    // - We could provide limited support by reimplementing table_add with a Any interface, note however this also requires us to reimplement
     // other procedures like hash_function and compare_function which may be user defined in which case we can't.
-    // An alternative approach is to reimplement the Toml module to generate all code at compile time instead of the current runtime reflection slot/info interface.
+    // An alternative approach is to reimplement the Toml module to generate all code at compile time instead of the current runtime reflection Any interface.
     // For now we just opt to provide a helper procedure to make it easy for a user to add support for each of their Hash_Tables.
     custom_value_to_hashtable :: (toml: Value, output: Any, name:string, parent_name:string) -> done:=true, ok:=false {
         // We have not found a way to make a generic implementation for any Hash_Table, so instead we need to specialize deserialization for each Hash_Table parameterization we want to support.

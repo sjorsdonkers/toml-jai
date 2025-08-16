@@ -1,5 +1,5 @@
 main :: () {
-    toml_data := stdin();
+    toml_data := stdinput();
 
     ok, parsed_toml := Toml.deserialize(toml_data, Toml.Value);
     if !ok {
@@ -83,19 +83,19 @@ json_escape_string :: (builder: *String_Builder, str: string) {
     append(builder, "\"");
 }
 
-stdin :: () -> string {
+stdinput :: () -> string {
     buffer: [4096] u8;
     input: string;
     input.data = buffer.data;
 
     while true {
         // @Incomplete: Jai doesn't have an abstraction for reading from stdin yet...
-        success := BOOL.TRUE;
         #if OS == .WINDOWS {
             handle := GetStdHandle(STD_INPUT_HANDLE);
             bytes_read: u32;
-            success = ReadFile(handle, buffer.data + input.count, cast(u32) (buffer.count - input.count), *bytes_read, null);
+            success := ReadFile(handle, buffer.data + input.count, cast(u32) (buffer.count - input.count), *bytes_read, null);
         } else {
+            success := true;
             bytes_read := read(STDIN_FILENO, buffer.data + input.count, cast(u64) (buffer.count - input.count));
             if bytes_read < 0 { log_error("Couldn't read from stdin"); exit(1); }
         }

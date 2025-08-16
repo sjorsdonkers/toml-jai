@@ -19,7 +19,7 @@ main :: () {
     // Check if the toml-test can be found
     result := run_command("toml-test", "--version", capture_and_return_output=true);
     if result.type != .EXITED || result.exit_code != 0 {
-        log_error("'toml-test' not found, see https://github.com/toml-lang/toml-test");
+        log_error("'toml-test' not found in PATH, see https://github.com/toml-lang/toml-test");
         exit(2);
     }
 
