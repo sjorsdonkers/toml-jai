@@ -7,7 +7,7 @@ deserialize :: (contents: string, $Target: Type) -> ok:=false, value:Target=.{} 
 value_to_type :: (value: Value, $Target: Type) -> ok:=false, value:Target=.{} {
     info :: type_info(Target);
     target: Target;
-    ok := value_to_type(value, target, info.name); // Would be nice to provide a shared_memory version as well without having to wire a `shared` flag all the way through
+    ok := value_to_type(value, target, info.name); // For zero-copy set a custom_value_to_type that does not copy string/Table
     return ok, target;
 }
 
