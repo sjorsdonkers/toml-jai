@@ -35,7 +35,7 @@ test :: (dir: string, filestem: string, args: string){
     }
 
     t2 := seconds_since_init();
-    process_result, output_string, error_string = Process.run_command(tprint("%/%", dir, filestem), working_directory=dir, capture_and_return_output=true);
+    process_result, output_string, error_string = Process.run_command(tprint("./%", filestem), working_directory=dir, capture_and_return_output=true);
     if process_result.type != .EXITED {
         log_error("Could not run test: %/%", dir,filestem);
         return;

@@ -68,6 +68,8 @@ ok, toml := Toml.serialize(
 ```
 
 ## Testing
+> The `jai` and optionally `toml-test` executables should be in the PATH.
+
 `jai ./tests.jai`  
 The module is tested by compiling and running the examples. The command above does that for all examples. It will also run the tests from `toml-test` if the executable can be found in the PATH or the [tools/toml-test](tools/toml-test) directory.
 
