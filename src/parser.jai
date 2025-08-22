@@ -223,6 +223,7 @@ unescape :: (basic_token: Token, source: string) -> ok:=false, unescaped:string=
 
             utf8_slice := string.{4, buffer.data + buffer.count};
             character_utf32_to_utf8(hex_value, *utf8_slice);
+            #if STRICT if hex_value > 0x0010FFFF || !is_valid_utf8(utf8_slice) { return_with_error_line(source, basic_token.loc, "Invalid UTF-8 sequence in escape sequence."); }
             buffer.count += utf8_slice.count; // UTF-8 bytes are already in the buffer at the right position
             pos += num_digits;
         case; return_with_error_line(source, basic_token.loc, "Invalid escape sequence."); // TODO improve loc, including \n
