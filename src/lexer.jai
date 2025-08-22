@@ -46,8 +46,20 @@ tokenize :: (data: string) -> ok:=false, tokens:[..]Token=[..]Token.{} {
             continue;
         }
 
-        if c == "#" { // NOTE: Also eats \r if any
-            while has_next(lexer) && peek_char(lexer) != "\n" { eat_char(*lexer); }
+        if c == "#" {
+            start_pos := lexer.pos;
+            while has_next(lexer) {
+                comment_char := peek_char(lexer);
+                if comment_char == "\n" break;
+                if comment_char == "\r" if has_next(lexer, 2) && peek_slice(lexer, 2) == "\r\n" break;
+                if (comment_char >= 0x00 && comment_char <= 0x08) ||
+                   (comment_char >= 0x0A && comment_char <= 0x1F) ||
+                   comment_char == 0x7F {
+                    return_with_error_line(lexer.data, lexer.loc, "Illegal control character in comment: 0x%", formatInt(comment_char, 16));
+                }
+                eat_char(*lexer);
+            }
+            if !is_valid_utf8(slice(lexer.data, start_pos, lexer.pos - start_pos)) return_with_error_line(lexer.data, lexer.loc, "Invalid UTF-8 sequence in comment."); // #if STRICT
             continue;
         }
 
@@ -90,6 +102,7 @@ tokenize :: (data: string) -> ok:=false, tokens:[..]Token=[..]Token.{} {
 
                 token_type :Token.Type= ifx c == "\"" then .BASIC_MULTI else .LITERAL_MULTI;
                 token := Token.{ type=token_type, str=slice(data, start, lexer.pos - start), loc=Location.{lexer.loc.line, lexer.loc.char - xx (lexer.pos - start)} };
+                if !is_valid_utf8(token.str) return_with_error_line(lexer.data, lexer.loc, "Invalid UTF-8 sequence in string."); // #if STRICT
                 array_add(*lexer.tokens, token);
                 eat_char(*lexer, 3);
                 continue;
@@ -110,6 +123,7 @@ tokenize :: (data: string) -> ok:=false, tokens:[..]Token=[..]Token.{} {
 
                 token_type :Token.Type= ifx c == "\"" then .BASIC else .LITERAL;
                 token := Token.{ type=token_type, str=slice(data, start, lexer.pos - start), loc=Location.{lexer.loc.line, lexer.loc.char - xx (lexer.pos - start)} };
+                if !is_valid_utf8(token.str) return_with_error_line(lexer.data, lexer.loc, "Invalid UTF-8 sequence in string."); // #if STRICT
                 array_add(*lexer.tokens, token);
                 eat_char(*lexer);
                 continue;
@@ -183,6 +197,39 @@ get_line :: (data: string, line_number: s32) -> line: string, found:bool {
     found: bool;
     for 1..line_number { line, found = consume_next_line(*data); }
     return line, found;
+}
+
+is_valid_utf8 :: (str: string) -> valid:=false { // TODO move to parsing phase
+    idx := 0;
+    while idx < str.count {
+        if str[idx] < 0x80 {           // ASCII           (0xxxxxxx)
+            idx += 1;
+            continue;
+        }
+        if (str[idx] & 0xE0) == 0xC0 { // 2-byte sequence (110xxxxx 10xxxxxx)
+            if idx + 1 >= str.count          return;
+            if (str[idx + 1] & 0xC0) != 0x80 return;
+            idx += 2;
+            continue;
+        }
+        if (str[idx] & 0xF0) == 0xE0 { // 3-byte sequence (1110xxxx 10xxxxxx 10xxxxxx)
+            if idx + 2 >= str.count          return;
+            if (str[idx + 1] & 0xC0) != 0x80 return;
+            if (str[idx + 2] & 0xC0) != 0x80 return;
+            idx += 3;
+            continue;
+        }
+        if (str[idx] & 0xF8) == 0xF0 { // 4-byte sequence (11110xxx 10xxxxxx 10xxxxxx 10xxxxxx)
+            if idx + 3 >= str.count          return;
+            if (str[idx + 1] & 0xC0) != 0x80 return;
+            if (str[idx + 2] & 0xC0) != 0x80 return;
+            if (str[idx + 3] & 0xC0) != 0x80 return;
+            idx += 4;
+            continue;
+        }
+        return;
+    }
+    return true;
 }
 
 #scope_export
