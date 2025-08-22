@@ -89,8 +89,10 @@ tokenize :: (data: string) -> ok:=false, tokens:[..]Token=[..]Token.{} {
                     if c == "\"" && has_next(lexer, 2) && peek_slice(lexer, 2) == "\\\"" { eat_char(*lexer, 2); continue; }
 
                     is_control, is_new_line := is_control_char(lexer); // #if STRICT
-                    if is_new_line eat_newline(*lexer);
-                    else if is_control return_with_error_line(lexer.data, lexer.loc, "Illegal control character in string: 0x%", formatInt(peek_char(lexer), 16));
+                    if is_new_line {
+                        if peek_char(lexer) == "\r" { eat_char(*lexer); }
+                        eat_newline(*lexer);
+                    } else if is_control return_with_error_line(lexer.data, lexer.loc, "Illegal control character in string: 0x%", formatInt(peek_char(lexer), 16));
                     else eat_char(*lexer);
                 }
                 if !has_next(lexer, 3) { return_with_error_line(lexer.data, lexer.loc, "Unterminated multi-line string."); }
