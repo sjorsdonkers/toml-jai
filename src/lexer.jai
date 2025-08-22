@@ -49,14 +49,9 @@ tokenize :: (data: string) -> ok:=false, tokens:[..]Token=[..]Token.{} {
         if c == "#" {
             start_pos := lexer.pos;
             while has_next(lexer) {
-                comment_char := peek_char(lexer);
-                if comment_char == "\n" break;
-                if comment_char == "\r" if has_next(lexer, 2) && peek_slice(lexer, 2) == "\r\n" break;
-                if (comment_char >= 0x00 && comment_char <= 0x08) ||
-                   (comment_char >= 0x0A && comment_char <= 0x1F) ||
-                   comment_char == 0x7F {
-                    return_with_error_line(lexer.data, lexer.loc, "Illegal control character in comment: 0x%", formatInt(comment_char, 16));
-                }
+                is_control, is_new_line := is_control_char(lexer); // #if STRICT
+                if is_new_line break;
+                if is_control return_with_error_line(lexer.data, lexer.loc, "Illegal control character in comment: 0x%", formatInt(peek_char(lexer), 16));
                 eat_char(*lexer);
             }
             if !is_valid_utf8(slice(lexer.data, start_pos, lexer.pos - start_pos)) return_with_error_line(lexer.data, lexer.loc, "Invalid UTF-8 sequence in comment."); // #if STRICT
@@ -92,8 +87,11 @@ tokenize :: (data: string) -> ok:=false, tokens:[..]Token=[..]Token.{} {
                 // Eat string contents till the end
                 while has_next(lexer, 3) && peek_slice(lexer, 3) != tripple_quote {
                     if c == "\"" && has_next(lexer, 2) && peek_slice(lexer, 2) == "\\\"" { eat_char(*lexer, 2); continue; }
-                    if peek_char(lexer) == "\n" { eat_newline(*lexer); }
-                    else                              { eat_char(*lexer); }
+
+                    is_control, is_new_line := is_control_char(lexer); // #if STRICT
+                    if is_new_line eat_newline(*lexer);
+                    else if is_control return_with_error_line(lexer.data, lexer.loc, "Illegal control character in string: 0x%", formatInt(peek_char(lexer), 16));
+                    else eat_char(*lexer);
                 }
                 if !has_next(lexer, 3) { return_with_error_line(lexer.data, lexer.loc, "Unterminated multi-line string."); }
                 // 1 or 2 quotes at the end are allowed, like """"abra""""" -> "abra""
@@ -116,7 +114,10 @@ tokenize :: (data: string) -> ok:=false, tokens:[..]Token=[..]Token.{} {
                         next_two := peek_slice(lexer, 2);
                         if next_two == "\\\""  || next_two == "\\\\" { eat_char(*lexer, 2); continue; }
                     }
-                    if peek_char(lexer) == "\n" { return_with_error_line(lexer.data, lexer.loc, "Newline in string. Escape `\\n` or use a multi-line string (tripple quote) instead."); }
+
+                    is_control, is_new_line := is_control_char(lexer); // #if STRICT
+                    if is_new_line return_with_error_line(lexer.data, lexer.loc, "Newline in string. Escape `\\n` or use a multi-line string (triple quote) instead.");
+                    if is_control return_with_error_line(lexer.data, lexer.loc, "Illegal control character in string: 0x%", formatInt(peek_char(lexer), 16));
                     eat_char(*lexer);
                 }
                 if !has_next(lexer) { return_with_error_line(lexer.data, lexer.loc, "Unterminated string."); }
@@ -230,6 +231,13 @@ is_valid_utf8 :: (str: string) -> valid:=false { // TODO move to parsing phase
         return;
     }
     return true;
+}
+is_control_char :: (lexer: Lexer) -> is_control:bool, is_new_line:bool {
+    string_char := peek_char(lexer); // Requires has_next to have been checked
+    if string_char == "\n"                                                                                                 return true, true;
+    if string_char == "\r" && has_next(lexer, 2) && peek_slice(lexer, 2) == "\r\n"                                         return true, true;
+    if (string_char >= 0x00 && string_char <= 0x08) || (string_char >= 0x0B && string_char <= 0x1F) || string_char == 0x7F return true, false;
+    return false, false;
 }
 
 #scope_export
