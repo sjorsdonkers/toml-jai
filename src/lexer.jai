@@ -203,26 +203,26 @@ get_line :: (data: string, line_number: s32) -> line: string, found:bool {
 }
 
 is_valid_utf8 :: (str: string) -> valid:=false { // TODO move to parsing phase
-    is_continuation :: inline (char: u8) -> bool { return (char & 0xC0) == 0x80; }
+    is_10xxxxxx :: inline (char: u8) -> bool { return (char & 0b1100_0000) == 0b1000_0000; }
     idx := 0;
     while idx < str.count {
-        if str[idx] < 0x80 {        // ASCII           (0xxxxxxx)
+        if str[idx] < 0b1000_0000 {        // 1-byte ASCII    (0xxxxxxx)
             idx += 1;
-        } else if str[idx] < 0xE0 { // 2-byte sequence (110xxxxx 10xxxxxx)
-            if idx + 1 >= str.count || !is_continuation(str[idx + 1]) return;
-            if str[idx] < 0xC2 return; // Overlong encoding (codepoint ≤ 0x7F)
+        } else if str[idx] < 0b1110_0000 { // 2-byte sequence (110xxxxx 10xxxxxx)
+            if idx + 1 >= str.count || !is_10xxxxxx(str[idx + 1]) return;
+            if str[idx] < 0xC2 return; // Overlong encoding (codepoint ≤ 0x007F)
             idx += 2;
-        } else if str[idx] < 0xF0 { // 3-byte sequence (1110xxxx 10xxxxxx 10xxxxxx)
-            if idx + 2 >= str.count || !is_continuation(str[idx + 1]) || !is_continuation(str[idx + 2]) return;
+        } else if str[idx] < 0b1111_0000 { // 3-byte sequence (1110xxxx 10xxxxxx 10xxxxxx)
+            if idx + 2 >= str.count || !is_10xxxxxx(str[idx + 1]) || !is_10xxxxxx(str[idx + 2]) return;
             if str[idx] == 0xE0 && str[idx + 1] < 0xA0 return; // Overlong encoding  (codepoint ≤ 0x07FF)
             if str[idx] == 0xED && str[idx + 1] > 0x9F return; // Surrogate codepoints (0xD800 to 0xDFFF)
             idx += 3;
-        } else if str[idx] < 0xF5 { // 4-byte sequence (11110xxx 10xxxxxx 10xxxxxx 10xxxxxx)
-            if idx + 3 >= str.count || !is_continuation(str[idx + 1]) || !is_continuation(str[idx + 2]) || !is_continuation(str[idx + 3]) return;
+        } else if str[idx] < 0b1111_0101 { // 4-byte sequence (11110xxx 10xxxxxx 10xxxxxx 10xxxxxx)
+            if idx + 3 >= str.count || !is_10xxxxxx(str[idx + 1]) || !is_10xxxxxx(str[idx + 2]) || !is_10xxxxxx(str[idx + 3]) return;
             if str[idx] == 0xF0 && str[idx + 1] < 0x90 return; // Overlong encoding (codepoint ≤ 0xFFFF)
             if str[idx] == 0xF4 && str[idx + 1] > 0x8F return; // Above 0x10FFFF
             idx += 4;
-        } else return; // Invalid lead byte (0xF5-0xFF)
+        } else return; // Invalid lead byte (0b1111_0101 to 0b1111_1111)
     }
     return true;
 }
