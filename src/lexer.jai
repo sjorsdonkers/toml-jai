@@ -204,30 +204,23 @@ get_line :: (data: string, line_number: s32) -> line: string, found:bool {
 
 is_valid_utf8 :: (str: string) -> valid:=false { // TODO move to parsing phase
     is_continuation :: inline (char: u8) -> bool { return (char & 0xC0) == 0x80; }
-
     idx := 0;
     while idx < str.count {
-        if str[idx] < 0x80 { // ASCII (0xxxxxxx)
+        if str[idx] < 0x80 {        // ASCII           (0xxxxxxx)
             idx += 1;
         } else if str[idx] < 0xE0 { // 2-byte sequence (110xxxxx 10xxxxxx)
             if idx + 1 >= str.count || !is_continuation(str[idx + 1]) return;
-
-            codepoint := (cast(u32, str[idx] & 0x1F) << 6) | cast(u32, str[idx + 1] & 0x3F);
-            if codepoint < 0x80 return; // Overlong encoding
+            if str[idx] < 0xC2 return; // Overlong encoding (codepoint ≤ 0x7F)
             idx += 2;
         } else if str[idx] < 0xF0 { // 3-byte sequence (1110xxxx 10xxxxxx 10xxxxxx)
             if idx + 2 >= str.count || !is_continuation(str[idx + 1]) || !is_continuation(str[idx + 2]) return;
-
-            if str[idx] == 0xED && str[idx + 1] > 0x9F return; // Surrogate detection: start at U+D800 = 0xED 0xA0 0x80
-
-            codepoint := (cast(u32, str[idx] & 0x0F) << 12) | (cast(u32, str[idx + 1] & 0x3F) << 6) | cast(u32, str[idx + 2] & 0x3F);
-            if codepoint < 0x800 return; // Overlong encoding
+            if str[idx] == 0xE0 && str[idx + 1] < 0xA0 return; // Overlong encoding  (codepoint ≤ 0x07FF)
+            if str[idx] == 0xED && str[idx + 1] > 0x9F return; // Surrogate codepoints (0xD800 to 0xDFFF)
             idx += 3;
         } else if str[idx] < 0xF5 { // 4-byte sequence (11110xxx 10xxxxxx 10xxxxxx 10xxxxxx)
             if idx + 3 >= str.count || !is_continuation(str[idx + 1]) || !is_continuation(str[idx + 2]) || !is_continuation(str[idx + 3]) return;
-
-            if str[idx] == 0xF0 && str[idx + 1] < 0x90 return; // Below U+10000 (overlong encoding)
-            if str[idx] == 0xF4 && str[idx + 1] > 0x8F return; // Above U+10FFFF
+            if str[idx] == 0xF0 && str[idx + 1] < 0x90 return; // Overlong encoding (codepoint ≤ 0xFFFF)
+            if str[idx] == 0xF4 && str[idx + 1] > 0x8F return; // Above 0x10FFFF
             idx += 4;
         } else return; // Invalid lead byte (0xF5-0xFF)
     }
