@@ -129,29 +129,61 @@ parse_literal :: (scope: *Scope) -> ok:=false, literal:Value=.{} {
         if token.str == "false" { return true, .{type=.BOOL, bool_value=false}; }
 
         // Parse integer
-        clean_str := replace(token.str, "_", ""); // TODO make number specific to check before and after _ is digit / hex etc
+        us_split := split(token.str, "_");
+        clean_str := join(..us_split);
+
+        parse_int_with_base :: (us_split: []string, clean_str: string, base: u8) -> ok:=false, value:=-1 {
+            #if STRICT {
+                if us_split[0].count < 3      return;
+                for us_split if it.count == 0 return;
+            }
+            without_base := slice(clean_str, 2, clean_str.count - 2);
+            value, success, remainder := string_to_int_checked(without_base, base, s64);
+            return success && remainder.count == 0, value;
+        }
+
         if begins_with(token.str, "0x") {
-            advance(*clean_str, 2);
-            hex_value, success, remainder := string_to_int_checked(clean_str, 16, s64);
-            if success && remainder.count == 0 { return true, .{type=.INT, int_value=hex_value}; }
+            success, value := parse_int_with_base(us_split, clean_str, 16); if !success then return_with_error_line(scope.source, token.loc, "Invalid hex literal %", token.str);
+            return true, .{type=.INT, int_value=value};
         } else if begins_with(token.str, "0b") {
-            advance(*clean_str, 2);
-            bin_value, success, remainder := string_to_int_checked(clean_str, 2, s64);
-            if success && remainder.count == 0 { return true, .{type=.INT, int_value=bin_value}; }
+            success, value := parse_int_with_base(us_split, clean_str, 2);  if !success then return_with_error_line(scope.source, token.loc, "Invalid binary literal %", token.str);
+            return true, .{type=.INT, int_value=value};
         } else if begins_with(token.str, "0o") {
-            advance(*clean_str, 2);
-            oct_value, success, remainder := string_to_int_checked(clean_str, 8, s64);
-            if success && remainder.count == 0 { return true, .{type=.INT, int_value=oct_value}; }
+            success, value := parse_int_with_base(us_split, clean_str, 8);  if !success then return_with_error_line(scope.source, token.loc, "Invalid octal literal %", token.str);
+            return true, .{type=.INT, int_value=value};
         } else {
             int_value, success, remainder := string_to_int_checked(clean_str, 10, s64);
-            // TODO detect leading zeros error, note 00 can be the start of a time
-            if success && remainder.count == 0 { return true, .{type=.INT, int_value=int_value}; }
+            if success && remainder.count == 0 {
+                #if STRICT {
+                    for us_split if it.count == 0 then return_with_error_line(scope.source, token.loc, "Invalid placement of _ in integer literal %", token.str);
+                    start_digit := ifx (clean_str[0] == "+" || clean_str[0] =="-") then 1 else 0;
+                    if clean_str[start_digit] == "0" && clean_str.count - start_digit > 1 then return_with_error_line(scope.source, token.loc, "Leading zeros are not allowed in integer literal %", token.str);
+                }
+                return true, .{type=.INT, int_value=int_value};
+            }
         }
 
         // Parse float
         float_value, success, remainder := string_to_float64(clean_str);
-        // TODO detect illegal floats: .7  7.  3.e+20 ... leading zeros
-        if success && remainder.count == 0 { return true, .{type=.FLOAT, float_value=float_value}; }
+        if success && remainder.count == 0 {
+            #if STRICT {
+                is_dot_or_e :: inline (c: u8) -> bool { return c == "." || c == "e" || c == "E"; }
+
+                start_digit := ifx (clean_str[0] == "+" || clean_str[0] =="-") then 1 else 0;
+                first, second := clean_str[start_digit], clean_str[start_digit + 1]; // We know this is in range otherwise it would be an int
+                if is_dot_or_e(first)                   then return_with_error_line(scope.source, token.loc, "Float literals may not start with a dot: %", token.str);
+                if first == "0" && !is_dot_or_e(second) then return_with_error_line(scope.source, token.loc, "Leading zeros are not allowed in float literal %", token.str);
+
+                for us_split {
+                    if it.count == 0                                     then return_with_error_line(scope.source, token.loc, "Invalid placement of _ in float literal %", token.str);
+                    if is_dot_or_e(it[0]) || is_dot_or_e(it[it.count-1]) then return_with_error_line(scope.source, token.loc, "Invalid placement of ./e in float literal %", token.str);
+                }
+                for idx: start_digit..clean_str.count-2 {
+                    if clean_str[idx] == "." && (clean_str[idx + 1] == "e" || clean_str[idx + 1] == "E") then return_with_error_line(scope.source, token.loc, "Invalid .e in float literal %", token.str);
+                }
+            }
+            return true, .{type=.FLOAT, float_value=float_value};
+        }
         if token.str == "inf" || token.str == "+inf" { return true, .{type=.FLOAT, float_value=FLOAT64_INFINITY}; }
         if token.str == "-inf"                       { return true, .{type=.FLOAT, float_value=-FLOAT64_INFINITY}; }
         if token.str == "nan" || token.str == "+nan" { return true, .{type=.FLOAT, float_value=FLOAT64_NAN}; }
