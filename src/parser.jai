@@ -1,6 +1,6 @@
 // Does not support:
 // - Rejecting values that append to previous inline ones
-// - Full toml validation like newlines in an inline table or numbers with leading zeros or _s
+// - Full toml validation like newlines in an inline table
 
 #scope_module
 
@@ -125,7 +125,7 @@ parse_literal :: (scope: *Scope) -> ok:=false, literal:Value=.{} {
         return true, .{type=.STRING, string_value=unescaped};
     case .RAW;
         // Parse boolean
-        if token.str == "true" { return true, .{type=.BOOL, bool_value=true}; }
+        if token.str == "true"  { return true, .{type=.BOOL, bool_value=true}; }
         if token.str == "false" { return true, .{type=.BOOL, bool_value=false}; }
 
         // Parse integer

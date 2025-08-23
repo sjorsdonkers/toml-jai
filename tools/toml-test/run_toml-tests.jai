@@ -23,7 +23,7 @@ main :: () {
         exit(2);
     }
 
-    result=, stdout, stderr := run_command("toml-test", "./decoder", "-run", "valid/*", capture_and_return_output=true);
+    result=, stdout, stderr := run_command("toml-test", "./decoder", "-skip", "invalid/array/*,invalid/datetime/*,invalid/inline-table/*,invalid/key/*,invalid/local*,invalid/spec/*,invalid/table/*", capture_and_return_output=true);
     log("\n%", stdout);
     if stderr log_error(stderr);
     if result.type != .EXITED || result.exit_code != 0 exit(1);
