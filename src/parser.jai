@@ -1,6 +1,5 @@
 // Does not support:
 // - Rejecting values that append to previous inline ones
-// - Full toml validation like newlines in an inline table
 
 #scope_module
 
@@ -15,26 +14,33 @@ parse_string_to_value_shared_memory :: (contents: string) -> ok:=false, root_tab
     current_table := *root_table;
     while has_next(scope) {
         token := peek_token(scope);
-        #if STRICT if token.type == .NEWLINE {
-            eat_expected(*scope, .NEWLINE); if !ok return;
-            continue;
-        }
+        #if STRICT if token.type == .NEWLINE { eat_token(*scope); continue; }
 
-        if token.type == Token.Type.SCOPE_BRACKET {               // [table] header
-            header_scope := eat_scope(*scope, token);
+        if token.type == {
+        case .SCOPE_BRACKET;        // [table] header
+            header_scope                := eat_scope(*scope, token);
             ok=, current_table=, is_new := parse_key(*root_table, header_scope); if !ok return;
-            if !is_new && current_table.type != .TABLE {
-                return_with_error_line(header_scope.source, peek(header_scope.tokens).loc, "Cannot use key as Table header as it already has a value: %", current_table.type);
+            if !is_new {
+                if current_table.type != .TABLE { return_with_error_line(header_scope.source, peek(header_scope.tokens).loc, "Cannot use key as Table header as it already has a value: %", current_table.type); }
+                else #if STRICT {
+                    // It is OK to modify an existing table if it was a super dotted table and thus not yet defined as
+                    // - inline-table -> how to tell?, it may have been empty
+                    // - table header
+                    // - - it may already have sub-tables
+                    // - - it may already have aots
+                    for current_table.table { // @speed, may avoid loop if we know the table is locked
+                        if it.type != .TABLE && it.type != .ARRAY { return_with_error_line(header_scope.source, peek(header_scope.tokens).loc, "Cannot use key as Table header as it already has a value: %", current_table.type); } // TODO may need to check if it was an aot
+                    }
+                    if current_table.table.count == 0 { return_with_error_line(header_scope.source, peek(header_scope.tokens).loc, "Cannot use key as Table header as it already has a value: %", current_table.type); }
+                }
             }
-        } else if token.type == Token.Type.SCOPE_DOUBLE_BRACKET { // [[array of tables]] header
-            header_scope := eat_scope(*scope, token);
+        case .SCOPE_DOUBLE_BRACKET; // [[array of tables]] header
+            header_scope                := eat_scope(*scope, token);
             ok=, current_table=, is_new := parse_key(*root_table, header_scope); if !ok return;
-            if current_table.type != .ARRAY {
-                if !is_new { return_with_error_line(header_scope.source, peek(header_scope.tokens).loc, "Cannot use key as Array of Tables as it already has a value: %", current_table.type); }
-                current_table.* = .{type=.ARRAY, array=resizable(Value.[])};
-            }
+            if is_new then { current_table.* = .{type=.ARRAY, array=resizable(Value.[])}; }
+            else if (current_table.type != .ARRAY || current_table.table.count == 0) { return_with_error_line(header_scope.source, peek(header_scope.tokens).loc, "Cannot use key as Array of Tables as it already has a value: %", current_table.type); }
             current_table = array_add(*current_table.array);
-        } else {                                                  // key = value
+        case;                       // key = value
             ok=, key_scope          := eat_scope_until(*scope, Token.Type.ASSIGN);    if !ok return;
             ok=, leaf_value, is_new := parse_key(current_table, key_scope);           if !ok return;
             if !is_new { return_with_error_line(scope.source, peek(key_scope.tokens).loc, "Key already has a value of type %", leaf_value.type); }
