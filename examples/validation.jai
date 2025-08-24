@@ -115,17 +115,11 @@ end_lines :: () {
     // Between dotted keys
     ok:= deserialize("a\n.\nb = 5", Value); assert(ok);
     // In inline-tables
-    ok = deserialize("a = {b \n = \n 5 \n , \n c=3}", Value); assert(ok);
+    ok = deserialize("a = {b \n = \n 5 \n , \n c=3}", Value); assert(!ok); // STRICT
     // Surrounding assignments
     ok = deserialize("a \n = \n 5", Value); assert(ok);
     // Within headers
-    ok = deserialize("[[\na\n]] \n [\nb \n .c \n] \n c=6", Value); assert(ok);
-
-    // We allow new lines to be omitted in places where they are required
-    // After headers
-    ok = deserialize("[[a]][b]c=6[[a]]b={c=6}", Value); assert(ok);
-    // After key-value pairs
-    ok = deserialize("a=5 b=7", Value); assert(ok);
+    ok = deserialize("[[\na\n]] \n [\nb \n .c \n] \n c=6", Value); assert(!ok); // STRICT
 }
 
 main :: () {

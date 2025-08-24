@@ -15,9 +15,21 @@ parse_string_to_value_shared_memory :: (contents: string) -> ok:=false, root_tab
     current_table := *root_table;
     while has_next(scope) {
         token := peek_token(scope);
-        if token.type == Token.Type.SCOPE_BRACKET {
-            ok=, current_table = parse_header(*root_table, eat_scope(*scope, token)); if !ok return;
-        } else {
+        if token.type == Token.Type.SCOPE_BRACKET {               // [table] header
+            header_scope := eat_scope(*scope, token);
+            ok=, current_table=, is_new := parse_key(*root_table, header_scope); if !ok return;
+            if !is_new && current_table.type != .TABLE {
+                return_with_error_line(header_scope.source, peek(header_scope.tokens).loc, "Cannot use key as Table header as it already has a value: %", current_table.type);
+            }
+        } else if token.type == Token.Type.SCOPE_DOUBLE_BRACKET { // [[array of tables]] header
+            header_scope := eat_scope(*scope, token);
+            ok=, current_table=, is_new := parse_key(*root_table, header_scope); if !ok return;
+            if current_table.type != .ARRAY {
+                if !is_new { return_with_error_line(header_scope.source, peek(header_scope.tokens).loc, "Cannot use key as Array of Tables as it already has a value: %", current_table.type); }
+                current_table.* = .{type=.ARRAY, array=resizable(Value.[])};
+            }
+            current_table = array_add(*current_table.array);
+        } else {                                                  // key = value
             ok=, key_scope          := eat_scope_until(*scope, Token.Type.ASSIGN);    if !ok return;
             ok=, leaf_value, is_new := parse_key(current_table, key_scope);           if !ok return;
             if !is_new { return_with_error_line(scope.source, peek(key_scope.tokens).loc, "Key already has a value of type %", leaf_value.type); }
@@ -25,31 +37,6 @@ parse_string_to_value_shared_memory :: (contents: string) -> ok:=false, root_tab
         }
     }
     return true, root_table;
-}
-
-parse_header :: (root_table: *Value, scope: Scope) -> ok:=false, value:*Value=null {
-    if !has_next(scope) || peek_token(scope).type != Token.Type.SCOPE_BRACKET{
-        // Parse [table] header
-        ok, current_table, is_new := parse_key(root_table, scope); if !ok return;
-        if !is_new && current_table.type != .TABLE {
-            return_with_error_line(scope.source, peek(scope.tokens).loc, "Cannot use key as Table header as it already has a value: %", current_table.type);
-        }
-        return true, current_table;
-    } else {
-        // Parse [[array of tables]] header
-        aot_scope := eat_scope(*scope, eat_token(*scope)); // Eat the inner brackets
-        if scope.tokens.count > aot_scope.tokens.count + 1 { // No tokens between the closing brackets `]]` allowed
-            error_token:= scope.tokens[1 + aot_scope.tokens.count];
-            return_with_error_line(scope.source, error_token.loc, "Unexpected % in Array of Tables header", error_token.type);
-        }
-
-        ok, current_table, is_new := parse_key(root_table, aot_scope); if !ok return;
-        if current_table.type != .ARRAY {
-            if !is_new { return_with_error_line(aot_scope.source, peek(aot_scope.tokens).loc, "Cannot use key as Array of Tables as it already has a value: %", current_table.type); }
-            current_table.* = .{type=.ARRAY, array=resizable(Value.[])};
-        }
-        return true, array_add(*current_table.array);
-    }
 }
 
 // Parse: key. key.'key'."etc"
@@ -320,7 +307,7 @@ eat_expected_key :: (scope: *Scope, expected: Token.Type) -> ok:=false, key:Toke
     return true, token;
 }
 eat_scope :: (scope: *Scope, edible: Token) -> Scope {
-    assert(edible.type == .SCOPE_BRACE || edible.type == .SCOPE_BRACKET);
+    assert(edible.type == .SCOPE_BRACE || edible.type == .SCOPE_BRACKET || edible.type == .SCOPE_DOUBLE_BRACKET);
     scope.pos += edible.scope.count + 1;
     return Scope.{scope.source, edible.scope, 0, ""};
 }
