@@ -15,6 +15,11 @@ parse_string_to_value_shared_memory :: (contents: string) -> ok:=false, root_tab
     current_table := *root_table;
     while has_next(scope) {
         token := peek_token(scope);
+        #if STRICT if token.type == .NEWLINE {
+            eat_expected(*scope, .NEWLINE); if !ok return;
+            continue;
+        }
+
         if token.type == Token.Type.SCOPE_BRACKET {               // [table] header
             header_scope := eat_scope(*scope, token);
             ok=, current_table=, is_new := parse_key(*root_table, header_scope); if !ok return;
@@ -35,6 +40,7 @@ parse_string_to_value_shared_memory :: (contents: string) -> ok:=false, root_tab
             if !is_new { return_with_error_line(scope.source, peek(key_scope.tokens).loc, "Key already has a value of type %", leaf_value.type); }
             ok=, leaf_value.* = parse_value(leaf_value, *scope);                      if !ok return;
         }
+        #if STRICT if has_next(scope) { eat_expected(*scope, .NEWLINE); if !ok return; }
     }
     return true, root_table;
 }

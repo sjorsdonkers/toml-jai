@@ -18,9 +18,9 @@ reassignment :: () {
     //
 
     // According to TOML spec reopening a table is not allowed
-    ok = deserialize("[a]\n b=3 \n [a] c=4", Value); assert(ok);
+    ok = deserialize("[a]\n b=3 \n [a] c=4", Value); assert(!ok); // STRICT
     // According to TOML spec reopening an inline array is not allowed
-    ok = deserialize("a=[3,4] \n [[a]] b=4", Value); assert(ok);
+    ok = deserialize("a=[3,4] \n [[a]] b=4", Value); assert(!ok); // STRICT
 }
 
 keys :: () {
@@ -113,11 +113,11 @@ end_lines :: () {
 
     // Almost anywhere where whitespace is allowed we also allow newlines
     // Between dotted keys
-    ok:= deserialize("a\n.\nb = 5", Value); assert(ok);
+    ok:= deserialize("a\n.\nb = 5", Value); assert(!ok); // STRICT
     // In inline-tables
     ok = deserialize("a = {b \n = \n 5 \n , \n c=3}", Value); assert(!ok); // STRICT
     // Surrounding assignments
-    ok = deserialize("a \n = \n 5", Value); assert(ok);
+    ok = deserialize("a \n = \n 5", Value); assert(!ok); // STRICT
     // Within headers
     ok = deserialize("[[\na\n]] \n [\nb \n .c \n] \n c=6", Value); assert(!ok); // STRICT
 }

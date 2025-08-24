@@ -5,17 +5,18 @@
 
 Token :: struct {
     Type :: enum u8 {
-        RAW                  :: 0;         // str
-        LITERAL              :: 1;         // str
-        LITERAL_MULTI        :: 2;         // str   // Not using LITERAL as multi-line string cannot be keys
-        BASIC                :: 3;         // str   // Not using LITERAL as BASIC still needs to be unescaped
-        BASIC_MULTI          :: 4;         // str   // Not using BASIC as multi-line string cannot be keys
-        COMMA                :: #char ","; // -
-        DOT                  :: #char "."; // -     // Not produced by lexer itself
-        ASSIGN               :: #char "="; // -
-        SCOPE_BRACKET        :: #char "["; // scope
-        SCOPE_BRACE          :: #char "{"; // scope
-        SCOPE_DOUBLE_BRACKET :: 5;         // scope // Only for headers, not nested arrays
+        RAW                  :: 0;          // str
+        LITERAL              :: 1;          // str
+        LITERAL_MULTI        :: 2;          // str   // Not using LITERAL as multi-line string cannot be keys
+        BASIC                :: 3;          // str   // Not using LITERAL as BASIC still needs to be unescaped
+        BASIC_MULTI          :: 4;          // str   // Not using BASIC as multi-line string cannot be keys
+        NEWLINE              :: #char "\n"; // -     // Only used for STRICT checks, outside of scopes
+        COMMA                :: #char ",";  // -
+        DOT                  :: #char ".";  // -     // Not produced by lexer itself
+        ASSIGN               :: #char "=";  // -
+        SCOPE_BRACKET        :: #char "[";  // scope
+        SCOPE_BRACE          :: #char "{";  // scope
+        SCOPE_DOUBLE_BRACKET :: 5;          // scope // Only for headers, not nested arrays
     }
     type: Type;
     union {
@@ -41,9 +42,13 @@ tokenize :: (data: string) -> ok:=false, tokens:[..]Token=[..]Token.{} {
         }
 
         if c == "\n" || has_next(lexer, 2) && peek_slice(lexer, 2) == "\r\n"{
-            #if STRICT if lexer.scope_stack.count > 0 {
-                scope := lexer.tokens[peek(lexer.scope_stack)];
-                if scope.type == #char "{" || (lexer.at_root && scope.type == #char "[") || scope.type == .SCOPE_DOUBLE_BRACKET { return_with_error_line(lexer.data, lexer.loc, "Newline in header or inline-table"); }
+            #if STRICT {
+                if lexer.scope_stack.count == 0 {
+                    array_add(*lexer.tokens, .{ type=.NEWLINE, loc=lexer.loc });
+                } else {
+                    scope := lexer.tokens[peek(lexer.scope_stack)];
+                    if scope.type == #char "{" || (lexer.at_root && scope.type == #char "[") || scope.type == .SCOPE_DOUBLE_BRACKET { return_with_error_line(lexer.data, lexer.loc, "Newline in header or inline-table"); }
+                }
             }
             if lexer.scope_stack.count == 0 lexer.at_root = true;
             if c == "\r" then eat_char(*lexer);
@@ -59,7 +64,7 @@ tokenize :: (data: string) -> ok:=false, tokens:[..]Token=[..]Token.{} {
         }
 
         if c == "#" {
-            start_pos := lexer.pos;
+            #if STRICT start_pos := lexer.pos;
             while has_next(lexer) {
                 is_control, is_new_line := is_control_char(lexer);
                 if is_new_line break;
