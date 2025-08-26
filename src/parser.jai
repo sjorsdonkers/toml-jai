@@ -1,6 +1,3 @@
-// Does not support:
-// - Rejecting values that append to previous inline ones
-
 #scope_module
 
 // Note this parser is zero-copy except for basic strings as they need to be unescaped
@@ -18,33 +15,25 @@ parse_string_to_value_shared_memory :: (contents: string) -> ok:=false, root_tab
 
         if token.type == {
         case .SCOPE_BRACKET;        // [table] header
-            header_scope                := eat_scope(*scope, token);
-            ok=, current_table=, is_new := parse_key(*root_table, header_scope); if !ok return;
-            if !is_new {
-                if current_table.type != .TABLE { return_with_error_line(header_scope.source, peek(header_scope.tokens).loc, "Cannot use key as Table header as it already has a value: %", current_table.type); }
-                else #if STRICT {
-                    // It is OK to modify an existing table if it was a super dotted table and thus not yet defined as
-                    // - inline-table -> how to tell?, it may have been empty
-                    // - table header
-                    // - - it may already have sub-tables
-                    // - - it may already have aots
-                    for current_table.table { // @speed, may avoid loop if we know the table is locked
-                        if it.type != .TABLE && it.type != .ARRAY { return_with_error_line(header_scope.source, peek(header_scope.tokens).loc, "Cannot use key as Table header as it already has a value: %", current_table.type); } // TODO may need to check if it was an aot
-                    }
-                    if current_table.table.count == 0 { return_with_error_line(header_scope.source, peek(header_scope.tokens).loc, "Cannot use key as Table header as it already has a value: %", current_table.type); }
-                }
-            }
+            current_table.header_defined = true; // Finalize the previous Table, to prevent re-definition
+            header_scope     := eat_scope(*scope, token);
+            ok, current_table = parse_key(*root_table, header_scope, true); if !ok return;
+            if current_table.dot_defined    then return_with_error_line(scope.source, peek(scope.tokens).loc, "Cannot redefine Table defined via dotted key");
+            if current_table.header_defined then return_with_error_line(scope.source, peek(scope.tokens).loc, "Cannot redefine a [Table] / [[Array of Tables]]");
         case .SCOPE_DOUBLE_BRACKET; // [[array of tables]] header
+            current_table.header_defined = true; // Finalize the previous Table, to prevent re-definition
             header_scope                := eat_scope(*scope, token);
-            ok=, current_table=, is_new := parse_key(*root_table, header_scope); if !ok return;
+            ok=, current_table=, is_new := parse_key(*root_table, header_scope, true); if !ok return;
             if is_new then { current_table.* = .{type=.ARRAY, array=resizable(Value.[])}; }
             else if (current_table.type != .ARRAY || current_table.table.count == 0) { return_with_error_line(header_scope.source, peek(header_scope.tokens).loc, "Cannot use key as Array of Tables as it already has a value: %", current_table.type); }
+            current_table.header_defined = true; // Finalize the Array, to prevent re-definition
             current_table = array_add(*current_table.array);
         case;                       // key = value
-            ok=, key_scope          := eat_scope_until(*scope, Token.Type.ASSIGN);    if !ok return;
-            ok=, leaf_value, is_new := parse_key(current_table, key_scope);           if !ok return;
-            if !is_new { return_with_error_line(scope.source, peek(key_scope.tokens).loc, "Key already has a value of type %", leaf_value.type); }
-            ok=, leaf_value.* = parse_value(leaf_value, *scope);                      if !ok return;
+            ok=, key_scope                         := eat_scope_until(*scope, Token.Type.ASSIGN); if !ok return;
+            ok=, leaf_value, is_new, in_header_def := parse_key(current_table, key_scope, false); if !ok return;
+            if !is_new       then return_with_error_line(scope.source, peek(key_scope.tokens).loc, "Key already has a value of type %", leaf_value.type);
+            if in_header_def then return_with_error_line(scope.source, peek(key_scope.tokens).loc, "Cannot modify a defined Table or Array of Tables");
+            ok=, leaf_value.* = parse_value(leaf_value, *scope);                               if !ok return;
         }
         #if STRICT if has_next(scope) { eat_expected(*scope, .NEWLINE); if !ok return; }
     }
@@ -52,7 +41,7 @@ parse_string_to_value_shared_memory :: (contents: string) -> ok:=false, root_tab
 }
 
 // Parse: key. key.'key'."etc"
-parse_key :: (parent: *Value, scope: Scope) -> ok:=false, leaf:*Value=null, leaf_is_new:bool=false {
+parse_key :: (parent: *Value, scope: Scope, is_header: bool) -> ok:=false, leaf:*Value=null, leaf_is_new:bool=false, in_header_def:=false {
     if !has_next(scope) { return_with_error("Unexpected end of scope while parsing key"); }
     if parent.type != .TABLE { return_with_error("Cannot use key as table as it already has a value: %", parent.type); }
 
@@ -62,29 +51,37 @@ parse_key :: (parent: *Value, scope: Scope) -> ok:=false, leaf:*Value=null, leaf
         array_add(array, KeyValue.{key=key, value=.{}});
         return true, *peek_pointer(array.*).value;
     }
-    ok, token := eat_expected_key(*scope, .LITERAL); if !ok return;
+    ok, token                     := eat_expected_key(*scope, .LITERAL); if !ok return;
     current_is_new, current_value := find_or_insert_new(*parent.table, token.str);
+    if current_value.value_defined { return_with_error_line(scope.source, token.loc, "Cannot modify a frozen Value"); } // TODO add token.str
+    in_header_def := current_value.header_defined;
 
     // Check for dotted keys
     if has_next(scope) {
+        // Dotted keys create and define a table for each key part before the last one, redefining such tables using a [table] header is not allowed.
+        if !is_header { current_value.dot_defined = true; }
         ok = eat_expected_key(*scope, .DOT); if !ok return;
         // If this is an Array of Tables header then we are going to add into its last table
-        if current_value.type == .ARRAY then { current_value = peek_pointer(current_value.array); }
-        ok=, current_value, current_is_new = parse_key(current_value, scope); if !ok return;
+        if current_value.type == .ARRAY { current_value = peek_pointer(current_value.array); }
+        ok=, current_value=, current_is_new=, child_in_header := parse_key(current_value, scope, is_header); if !ok return;
+        in_header_def |= child_in_header;
     }
-    return true, current_value, current_is_new;
+    return true, current_value, current_is_new, in_header_def;
 }
 
 // * current_table is null for values in arrays
 parse_value :: (current_table: *Value, scope: *Scope) -> ok:=false, value:Value=.{} {
     if !has_next(scope) { return_with_error("Unexpected end of file while parsing value"); }
 
+    value: Value;
     token := peek_token(scope);
     if token.type == {
-    case .SCOPE_BRACE;   ok, value := parse_inline_table(current_table, eat_scope(scope, token)); return ok, value;
-    case .SCOPE_BRACKET; ok, value := parse_array(eat_scope(scope, token));                       return ok, value;
-    case;                ok, value := parse_literal(scope);                                       return ok, value;
+    case .SCOPE_BRACE;   ok:, value = parse_inline_table(current_table, eat_scope(scope, token)); if !ok return;
+    case .SCOPE_BRACKET; ok:, value = parse_array(eat_scope(scope, token));                       if !ok return;
+    case;                ok:, value = parse_literal(scope);                                       if !ok return;
     }
+    value.value_defined = true;
+    return true, value;
 }
 
 parse_inline_table :: (current_table: *Value, scope: Scope) -> ok:=false, table:Value=.{} {
@@ -95,7 +92,7 @@ parse_inline_table :: (current_table: *Value, scope: Scope) -> ok:=false, table:
     if current_table == null { current_table = *table_root; }
     while has_next(scope) {
         ok, key_scope := eat_scope_until(*scope, Token.Type.ASSIGN);    if !ok return;
-        ok=, leaf_value, is_new := parse_key(current_table, key_scope); if !ok return;
+        ok=, leaf_value, is_new := parse_key(current_table, key_scope, false); if !ok return;
         if !is_new { return_with_error_line(scope.source, peek(key_scope.tokens).loc, "Key already has a value of type %", leaf_value.type); }
         ok=, leaf_value.* = parse_value(leaf_value, *scope);            if !ok return;
         if has_next(scope, 2) { eat_expected(*scope, Token.Type.COMMA); } // Inline tables are not allowed to have trailing commas

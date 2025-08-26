@@ -1,5 +1,9 @@
-Value :: struct @SumType {
+Value :: struct {
     type :Type= .TABLE;
+    // TODO hide these members in padding. TBD do we want to use these for serialization?
+    value_defined  := false; // inline-table {}, array [] or literal
+    header_defined := false; // [table] or [[array of tables]]
+    dot_defined    := false; // If it appeared in a dotted key chain of a key = value pair
     union {
         bool_value   : bool         = ---;
         int_value    : s64          = ---;

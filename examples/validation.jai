@@ -127,6 +127,7 @@ main :: () {
     keys();
     strings();
     end_lines();
+    assert(type_info(Value).runtime_size == 48, "%", type_info(Value).runtime_size);
 }
 
 #import, file "../module.jai";
