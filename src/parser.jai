@@ -15,25 +15,25 @@ parse_string_to_value_shared_memory :: (contents: string) -> ok:=false, root_tab
 
         if token.type == {
         case .SCOPE_BRACKET;        // [table] header
-            current_table.header_defined = true; // Finalize the previous Table, to prevent re-definition
+            define(current_table, .HEADER); // Finalize the previous Table, to prevent re-definition
             header_scope     := eat_scope(*scope, token);
             ok, current_table = parse_key(*root_table, header_scope, true); if !ok return;
-            if current_table.dot_defined    then return_with_error_line(scope.source, peek(scope.tokens).loc, "Cannot redefine Table defined via dotted key");
-            if current_table.header_defined then return_with_error_line(scope.source, peek(scope.tokens).loc, "Cannot redefine a [Table] / [[Array of Tables]]");
+            if is_defined(current_table, .DOTTED_KEY) then return_with_error_line(scope.source, peek(scope.tokens).loc, "Cannot redefine Table defined via dotted key");
+            if is_defined(current_table, .HEADER)     then return_with_error_line(scope.source, peek(scope.tokens).loc, "Cannot redefine a [Table] / [[Array of Tables]]");
         case .SCOPE_DOUBLE_BRACKET; // [[array of tables]] header
-            current_table.header_defined = true; // Finalize the previous Table, to prevent re-definition
+            define(current_table, .HEADER); // Finalize the previous Table, to prevent re-definition
             header_scope                := eat_scope(*scope, token);
             ok=, current_table=, is_new := parse_key(*root_table, header_scope, true); if !ok return;
             if is_new then { current_table.* = .{type=.ARRAY, array=resizable(Value.[])}; }
             else if (current_table.type != .ARRAY || current_table.table.count == 0) { return_with_error_line(header_scope.source, peek(header_scope.tokens).loc, "Cannot use key as Array of Tables as it already has a value: %", current_table.type); }
-            current_table.header_defined = true; // Finalize the Array, to prevent re-definition
+            define(current_table, .HEADER); // Finalize the Array, to prevent re-definition
             current_table = array_add(*current_table.array);
         case;                       // key = value
             ok=, key_scope                         := eat_scope_until(*scope, Token.Type.ASSIGN); if !ok return;
             ok=, leaf_value, is_new, in_header_def := parse_key(current_table, key_scope, false); if !ok return;
             if !is_new       then return_with_error_line(scope.source, peek(key_scope.tokens).loc, "Key already has a value of type %", leaf_value.type);
             if in_header_def then return_with_error_line(scope.source, peek(key_scope.tokens).loc, "Cannot modify a defined Table or Array of Tables");
-            ok=, leaf_value.* = parse_value(leaf_value, *scope);                               if !ok return;
+            ok=, leaf_value.* = parse_value(leaf_value, *scope);                                  if !ok return;
         }
         #if STRICT if has_next(scope) { eat_expected(*scope, .NEWLINE); if !ok return; }
     }
@@ -53,13 +53,13 @@ parse_key :: (parent: *Value, scope: Scope, is_header: bool) -> ok:=false, leaf:
     }
     ok, token                     := eat_expected_key(*scope, .LITERAL); if !ok return;
     current_is_new, current_value := find_or_insert_new(*parent.table, token.str);
-    if current_value.value_defined { return_with_error_line(scope.source, token.loc, "Cannot modify a frozen Value"); } // TODO add token.str
-    in_header_def := current_value.header_defined;
+    if is_defined(current_value, .VALUE) { return_with_error_line(scope.source, token.loc, "Cannot modify a frozen Value"); } // TODO add token.str
+    in_header_def := is_defined(current_value, .HEADER);
 
     // Check for dotted keys
     if has_next(scope) {
         // Dotted keys create and define a table for each key part before the last one, redefining such tables using a [table] header is not allowed.
-        if !is_header { current_value.dot_defined = true; }
+        if !is_header { define(current_value, .DOTTED_KEY); }
         ok = eat_expected_key(*scope, .DOT); if !ok return;
         // If this is an Array of Tables header then we are going to add into its last table
         if current_value.type == .ARRAY { current_value = peek_pointer(current_value.array); }
@@ -80,7 +80,7 @@ parse_value :: (current_table: *Value, scope: *Scope) -> ok:=false, value:Value=
     case .SCOPE_BRACKET; ok:, value = parse_array(eat_scope(scope, token));                       if !ok return;
     case;                ok:, value = parse_literal(scope);                                       if !ok return;
     }
-    value.value_defined = true;
+    define(*value, .VALUE);
     return true, value;
 }
 
@@ -399,6 +399,23 @@ string_to_int_checked :: (s: string, base := 10, $T := int) -> result: T, succes
 is_bare_key :: (str: string) -> bool {
     for str  if !is_alnum(it) && it != "-" return false;
     return str.count > 0;
+}
+
+// For validation purposes we use padding space in Value to store some metadata
+// We do not want to expose these to users. This requires Values to be 0 initialized, not ---.
+DefineMethod :: enum u8 {
+    VALUE      :: 1; // inline-table {}, array [] or literal
+    HEADER     :: 2; // [table] or [[array of tables]]
+    DOTTED_KEY :: 3; // If it appeared in a dotted key chain of a key = value pair
+}
+// Make sure we have free space in Value's padding bytes
+#assert(type_info(Value).members[0].type.runtime_size <= 1);
+#assert(type_info(Value).members[1].offset_in_bytes    > 3);
+define :: inline (value: *Value, $method: DefineMethod) -> void {
+    (cast(*bool, value) + cast(u8, method)).* = true;
+}
+is_defined :: inline (value: *Value, $method: DefineMethod) -> bool {
+    return (cast(*bool, value) + cast(u8, method)).*;
 }
 
 #scope_file
