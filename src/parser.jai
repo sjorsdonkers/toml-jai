@@ -1,8 +1,7 @@
-#scope_module
-
 // Note this parser is zero-copy except for basic strings as they need to be unescaped
 // As such the keys and strings in the returned Value may point into the source string
-parse_string_to_value_shared_memory :: (contents: string) -> ok:=false, root_table:Value=.{} {
+// Additionally this procedure does not deallocate any temporary memory
+string_to_value_shared_memory :: (contents: string) -> ok:=false, root_table:Value=.{} {
     ok, tokens := tokenize(contents);  if !ok return; // Not freeing tokens as it will be in a Pool
     scope      := Scope.{contents, tokens, 0, ""};
 
@@ -29,7 +28,7 @@ parse_string_to_value_shared_memory :: (contents: string) -> ok:=false, root_tab
             define(current_table, .HEADER); // Finalize the Array, to prevent re-definition
             current_table = array_add(*current_table.array);
         case;                       // key = value
-            ok=, key_scope                         := eat_scope_until(*scope, Token.Type.ASSIGN); if !ok return;
+            ok=, key_scope                         := eat_scope_until_assign(*scope);             if !ok return;
             ok=, leaf_value, is_new, in_header_def := parse_key(current_table, key_scope, false); if !ok return;
             if !is_new       then return_with_error_line(scope.source, peek(key_scope.tokens).loc, "Key already has a value of type %", leaf_value.type);
             if in_header_def then return_with_error_line(scope.source, peek(key_scope.tokens).loc, "Cannot modify a defined Table or Array of Tables");
@@ -39,6 +38,8 @@ parse_string_to_value_shared_memory :: (contents: string) -> ok:=false, root_tab
     }
     return true, root_table;
 }
+
+#scope_module
 
 // Parse: key. key.'key'."etc"
 parse_key :: (parent: *Value, scope: Scope, is_header: bool) -> ok:=false, leaf:*Value=null, leaf_is_new:bool=false, in_header_def:=false {
@@ -53,7 +54,7 @@ parse_key :: (parent: *Value, scope: Scope, is_header: bool) -> ok:=false, leaf:
     }
     ok, token                     := eat_expected_key(*scope, .LITERAL); if !ok return;
     current_is_new, current_value := find_or_insert_new(*parent.table, token.str);
-    if is_defined(current_value, .VALUE) { return_with_error_line(scope.source, token.loc, "Cannot modify a frozen Value"); } // TODO add token.str
+    if is_defined(current_value, .VALUE) { return_with_error_line(scope.source, token.loc, "Cannot modify a defined Value: %", token.str); }
     in_header_def := is_defined(current_value, .HEADER);
 
     // Check for dotted keys
@@ -91,7 +92,7 @@ parse_inline_table :: (current_table: *Value, scope: Scope) -> ok:=false, table:
     table_root: Value; // Needed for tables in arrays that have no parent
     if current_table == null { current_table = *table_root; }
     while has_next(scope) {
-        ok, key_scope := eat_scope_until(*scope, Token.Type.ASSIGN);    if !ok return;
+        ok, key_scope := eat_scope_until_assign(*scope);                       if !ok return;
         ok=, leaf_value, is_new := parse_key(current_table, key_scope, false); if !ok return;
         if !is_new { return_with_error_line(scope.source, peek(key_scope.tokens).loc, "Key already has a value of type %", leaf_value.type); }
         ok=, leaf_value.* = parse_value(leaf_value, *scope);            if !ok return;
@@ -321,14 +322,14 @@ eat_scope :: (scope: *Scope, edible: Token) -> Scope {
     return Scope.{scope.source, edible.scope, 0, ""};
 }
 // * sub_scope does not contain the scope_end token
-eat_scope_until :: (scope: *Scope, scope_end: Token.Type) -> ok:=false, sub_scope:Scope=.{} {
+eat_scope_until_assign :: (scope: *Scope) -> ok:=false, sub_scope:Scope=.{} {
     start_pos := scope.pos;
     while has_next(scope) {
-        if eat_token(scope).type == scope_end {
+        if eat_token(scope).type == .ASSIGN {
             return true, Scope.{scope.source, array_view(scope.tokens, start_pos, scope.pos - start_pos - 1), 0, ""};
         }
     }
-    return_with_error_line(scope.source, scope.tokens[start_pos].loc, "Unexpected end of scope. Expected %", scope_end);
+    return_with_error_line(scope.source, scope.tokens[start_pos].loc, "Unexpected end of scope. Expected =");
 }
 
 // .   -> `.`  ``   //     -> ``   ``    // a.b -> `a`  `.b`
@@ -405,13 +406,13 @@ is_bare_key :: (str: string) -> bool {
 // We do not want to expose these to users. This requires Values to be 0 initialized, not ---.
 DefineMethod :: enum u8 {
     VALUE      :: 1; // inline-table {}, array [] or literal
-    HEADER     :: 2; // [table] or [[array of tables]]
+    HEADER     :: 2; // [table], [[array of tables]] or the root table
     DOTTED_KEY :: 3; // If it appeared in a dotted key chain of a key = value pair
 }
 // Make sure we have free space in Value's padding bytes
 #assert(type_info(Value).members[0].type.runtime_size <= 1);
 #assert(type_info(Value).members[1].offset_in_bytes    > 3);
-define :: inline (value: *Value, $method: DefineMethod) -> void {
+define :: inline (value: *Value, $method: DefineMethod) {
     (cast(*bool, value) + cast(u8, method)).* = true;
 }
 is_defined :: inline (value: *Value, $method: DefineMethod) -> bool {

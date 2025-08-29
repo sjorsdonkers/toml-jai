@@ -1,20 +1,21 @@
 main :: () {
+    push_allocator(temp);
+
     json_data := stdinput();
     parser := JSON_Parser.{data = json_data};
-
     ok, toml_value := parse_json_to_toml(*parser);
     if !ok {
         print("Failed to parse JSON data\n", to_standard_error=true);
         exit(1);
     }
 
-    ok=, toml_string := Toml.serialize(toml_value,, toml=.{default_format_float=.{mode=.SCIENTIFIC, trailing_width=15}});
+    builder: String_Builder;
+    ok = Toml.serialize_to_builder(*builder, toml_value,, toml=.{default_format_float=.{mode=.SCIENTIFIC, trailing_width=15}});
     if !ok {
         print("Failed to serialize TOML\n", to_standard_error=true);
         exit(1);
     }
-
-    print(toml_string);
+    write_builder(*builder, false);
 }
 
 JSON_Parser :: struct {

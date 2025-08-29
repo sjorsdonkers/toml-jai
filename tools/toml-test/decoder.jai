@@ -1,7 +1,8 @@
 main :: () {
-    toml_data := stdinput();
+    push_allocator(temp);
 
-    ok, parsed_toml := Toml.deserialize(toml_data, Toml.Value);
+    toml_data := stdinput();
+    ok, parsed_toml := Toml.string_to_value_shared_memory(toml_data);
     if !ok {
         print("Failed to parse TOML data\n", to_standard_error=true);
         exit(1);
@@ -9,7 +10,7 @@ main :: () {
 
     builder: String_Builder;
     value_to_json(*builder, parsed_toml);
-    print(builder_to_string(*builder));
+    write_builder(*builder, false);
 }
 
 value_to_json :: (builder: *String_Builder, value: Toml.Value) {

@@ -1,5 +1,5 @@
 deserialize :: (contents: string, $Target: Type) -> ok:=false, value:Target=.{} {
-    ok , value  := parse_string_to_value_shared_memory(contents,, scoped_pool()); if !ok return;
+    ok , value  := string_to_value_shared_memory(contents,, scoped_pool()); if !ok return;
     ok=, target := value_to_type(value, Target);
     return ok, target;
 }
