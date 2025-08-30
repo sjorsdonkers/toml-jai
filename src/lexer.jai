@@ -221,7 +221,6 @@ eat_newline :: inline (lexer: *Lexer) {
 }
 
 get_line :: (data: string, line_number: s32) -> line: string, found:bool {
-    #import "Text_File_Handler";
     line: string;
     found: bool;
     for 1..line_number { line, found = consume_next_line(*data); }
@@ -285,6 +284,3 @@ return_with_error_line :: (source: string, loc: Location, format: string, argume
 
     `return;
 }
-
-#scope_file
-#import "Basic";

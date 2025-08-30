@@ -20,5 +20,18 @@ Toml_Context :: struct {
 #add_context toml: Toml_Context;
 
 #load "src/data.jai";
+#load "src/datetime.jai";
 #load "src/serialize.jai";
 #load "src/deserialize.jai";
+#load "src/parser.jai";
+#load "src/lexer.jai";
+
+#scope_module
+#import "Basic";
+#import "File";
+#import "String";
+#import "Math";
+#import "Unicode";
+#import "Flat_Pool";
+#import "Text_File_Handler";
+Reflection :: #import "Reflection";

@@ -126,8 +126,3 @@ operator == :: (left: DateTime, right: DateTime) -> bool {
 operator == :: (left: DateTimeOffset, right: DateTimeOffset) -> bool { // Note exact match
     return left.date == right.date && left.time == right.time && left.offset_hour == right.offset_hour && left.offset_minute == right.offset_minute && left.offset_is_negative == right.offset_is_negative;
 }
-
-#load "datetime.jai";
-
-#scope_file
-#import "Basic";

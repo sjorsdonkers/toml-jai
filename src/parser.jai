@@ -418,11 +418,3 @@ define :: inline (value: *Value, $method: DefineMethod) {
 is_defined :: inline (value: *Value, $method: DefineMethod) -> bool {
     return (cast(*bool, value) + cast(u8, method)).*;
 }
-
-#scope_file
-#load "lexer.jai";
-#import "Basic";
-#import "File";
-#import "String";
-#import "Math";
-#import "Unicode";

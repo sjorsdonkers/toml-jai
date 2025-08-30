@@ -23,6 +23,7 @@ The `run_toml-tests` app is used for the test framework to compile and run both 
 
 Run perf:
 ```sh
+toml-test -cat 10 > 10kb.toml
 jai ./perf.jai
 ./perf 10kb.toml
 ```

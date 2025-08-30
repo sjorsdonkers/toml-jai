@@ -290,8 +290,3 @@ variant_base :: (type: *Type_Info) -> *Type_Info {
     }
     return type;
 }
-
-#scope_file
-#import "Basic";
-#import "Math";
-Reflection :: #import "Reflection";

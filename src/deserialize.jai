@@ -253,8 +253,3 @@ scoped_pool :: () -> Allocator #expand {
     `defer fini(*pool);
     return a;
 }
-
-#scope_file
-#load "parser.jai";
-Reflection :: #import "Reflection";
-#import "Flat_Pool";
