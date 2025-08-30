@@ -12,14 +12,14 @@ A module for `TOML v1.0.0` support. It provides functionality to read/write TOML
 - Modifying the default behavior like: renaming, omitting, changing Type representation like Hash_Tables, enum as int, extra validation, or handling complex data like binary encodings are supported through [custom handlers](examples/custom_handlers.jai). 
 
 ## Deserialize
-`ok, my_struct := Toml.deserialize(toml_string, My_Struct);`
+`ok, my_struct := Toml.string_to_type(toml_string, My_Struct);`
 - Read TOML directly into any (nested) struct or generic `Toml.Value`.
 - Any field not in the TOML fails unless annotated with `@TomlOptional`. Any superfluous fields in the TOML are ignored.
 - Compile-time constants are ignored and not compared.
 - By default, the parser fully validates whether the input is [TOML spec](https://toml.io/en/v1.0.0) compliant (`STRICT==true`). If you know the input is valid, `STRICT` can be set to `false` for performance or convenience. This will accept the input as long as the parser understands it even if it is not compliant. The amount of leniency may change in the future. See the [validation example](examples/validation.jai) for more details.
 
 ## Serialize
-`ok, toml_string := Toml.serialize(my_struct);`
+`ok, toml_string := Toml.type_to_string(my_struct);`
 - Write any (nested) struct or `Toml.Value` to TOML string.
 - Null pointers/null Anys by default are written as `"~null~"`, this can be controlled via the context member `toml.null_value`.
 - Compile-time `constants` & `imports` are skipped.
@@ -35,7 +35,7 @@ Error message -> interceptable logger
 ## Memory management & lifetime
 Set a context.allocator:
 ```jai
-Toml.deserialize(toml_string, My_Struct,, my_alloc);
+Toml.string_to_type(toml_string, My_Struct,, my_alloc);
 defer release(my_alloc);
 ```
 Dynamically sized data like arrays and strings are returned on the provided context allocator. As such, the safe lifetime of all returned objects ends when the memory of the allocator is released.
@@ -61,7 +61,7 @@ enum_to_value :: (input: Any) -> done:=true, ok:=false, toml:Value=.{} {
     return true, ok, value;
 }
 
-ok, toml := Toml.serialize(
+ok, toml := Toml.type_to_string(
     my_struct
     ,, toml = .{custom_type_to_value=enum_to_value}
 );

@@ -10,7 +10,7 @@ main :: () {
     }
 
     builder: String_Builder;
-    ok = Toml.serialize_to_builder(*builder, toml_value,, toml=.{default_format_float=.{mode=.SCIENTIFIC, trailing_width=15}});
+    ok = Toml.type_to_builder(*builder, toml_value,, toml=.{default_format_float=.{mode=.SCIENTIFIC, trailing_width=15}});
     if !ok {
         print("Failed to serialize TOML\n", to_standard_error=true);
         exit(1);

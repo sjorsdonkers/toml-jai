@@ -1,4 +1,5 @@
-deserialize :: (contents: string, $Target: Type) -> ok:=false, value:Target=.{} {
+deserialize :: inline (contents: string, $Target: Type) -> ok:=false, value:Target=.{} #deprecated "Renamed string_to_type" { ok, value := string_to_type(contents, Target); return ok, value; }
+string_to_type :: (contents: string, $Target: Type) -> ok:=false, value:Target=.{} {
     ok , value  := string_to_value_shared_memory(contents,, scoped_pool()); if !ok return;
     ok=, target := value_to_type(value, Target);
     return ok, target;

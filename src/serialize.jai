@@ -1,15 +1,17 @@
-serialize :: (input: Any) -> ok:=false, toml:string="" {
+serialize :: inline (input: Any) -> ok:=false, toml:string="" #deprecated "Renamed type_to_string" { ok, toml := type_to_string(input); return ok, toml; }
+type_to_string :: (input: Any) -> ok:=false, toml:string="" {
     builder: String_Builder;
-    ok := serialize_to_builder(*builder, input); if !ok return;
+    ok := type_to_builder(*builder, input); if !ok return;
     return true, builder_to_string(*builder);
 }
 
-serialize_to_builder :: (builder: *String_Builder, input: Any) -> ok:=false {
+serialize_to_builder :: inline (builder: *String_Builder, input: Any) -> ok:=false #deprecated "Renamed type_to_builder" { ok := type_to_builder(builder, input); return ok; }
+type_to_builder :: (builder: *String_Builder, input: Any) -> ok:=false {
     a := scoped_pool();
     ok, value := type_to_value_shared_memory(input,, a); if !ok return;
 
     if !builder.initialized init_string_builder(builder); // Initialize the builder to make sure it does not use `a`.
-    print_table_to_builder(builder, value,, a);
+    table_to_builder(builder, value,, a);
     return true;
 }
 
@@ -126,7 +128,7 @@ sumtype_to_value :: (slot: *void, struct_info: *Type_Info_Struct) -> ok:=false, 
 }
 
 // NOTE: Print procedures after this use context.print_style for int/float formatting
-print_table_to_builder :: (builder: *String_Builder, value: Value, parent_key:="", $root:=true) {
+table_to_builder :: (builder: *String_Builder, value: Value, parent_key:="", $root:=true) {
     assert(value.type == .TABLE, "Only tables can be serialized at the top level, got %", value.type);
     #if root {
         old_style := context.print_style;
@@ -136,7 +138,7 @@ print_table_to_builder :: (builder: *String_Builder, value: Value, parent_key:="
 
     // Key=Value pairs
     for value.table  if !is_table_header(it.value) && !is_array_of_tables(it.value) {
-        print_keyvalue_to_builder(builder, it);
+        keyvalue_to_builder(builder, it);
         append(builder, "\n");
     }
     // [Table.Header]
@@ -149,7 +151,7 @@ print_table_to_builder :: (builder: *String_Builder, value: Value, parent_key:="
             append(builder, dotted_key);
             append(builder, "]\n");
         }
-        print_table_to_builder(builder, it.value, dotted_key, false);
+        table_to_builder(builder, it.value, dotted_key, false);
     }
     // [[Array.Of.Tables.Header]]
     for value.table  if is_array_of_tables(it.value) {
@@ -158,45 +160,45 @@ print_table_to_builder :: (builder: *String_Builder, value: Value, parent_key:="
             append(builder, "[[");
             append(builder, dotted_key);
             append(builder, "]]\n");
-            print_table_to_builder(builder, it, dotted_key, false);
+            table_to_builder(builder, it, dotted_key, false);
         }
     }
 }
 
-print_keyvalue_to_builder :: (builder: *String_Builder, key_value: KeyValue) {
+keyvalue_to_builder :: (builder: *String_Builder, key_value: KeyValue) {
     // Recursively print a dotted key
-    print_to_builder_escaped(builder, key_value.key, true);
+    escaped_to_builder(builder, key_value.key, true);
     if key_value.type == .TABLE && key_value.table.count == 1 {
         append(builder, ".");
-        print_keyvalue_to_builder(builder, key_value.table[0]);
+        keyvalue_to_builder(builder, key_value.table[0]);
         return;
     } // If this is a table with multiple values we print it as an inline table.
 
     // We print the value inside this procedure as only the very last value needs to be printed
     append(builder, "=");
-    print_inline_value_to_builder(builder, key_value.value);
+    inline_value_to_builder(builder, key_value.value);
 }
 
-print_inline_value_to_builder :: (builder: *String_Builder, value: Value) {
+inline_value_to_builder :: (builder: *String_Builder, value: Value) {
     if #complete value.type == {
     case .BOOL; print_item_to_builder(builder, value.bool_value);
     case .INT;  print_item_to_builder(builder, value.int_value);
     case .FLOAT;
-        if maybe_print_naninf_to_builder(builder, value.float_value, *context.print_style.default_format_float) return;
+        if naninf_to_builder_maybe(builder, value.float_value, *context.print_style.default_format_float) return;
         print_item_to_builder(builder, value.float_value);
-    case .STRING;   print_to_builder_escaped(builder, value.string_value, false);
+    case .STRING;   escaped_to_builder(builder, value.string_value, false);
     case .DATETIME; print_datetime_to_builder(builder, value.datetime);
     case .ARRAY;
         append(builder, "[");
         for value.array {
-            print_inline_value_to_builder(builder, it);
+            inline_value_to_builder(builder, it);
             if it_index + 1 != value.array.count then append(builder, ", ");
         }
         append(builder, "]");
     case .TABLE;
         append(builder, "{");
         for value.table {
-            print_keyvalue_to_builder(builder, it);
+            keyvalue_to_builder(builder, it);
             if it_index + 1 != value.table.count then append(builder, ", ");
         }
         append(builder, "}");
@@ -209,12 +211,12 @@ print_inline_value_to_builder :: (builder: *String_Builder, value: Value) {
         else if format.type.runtime_size == 8 { f8 = format.value_pointer.(*float64).*; }
         else { assert(false, "Unsupported float size %", format.type.runtime_size); }
 
-        if maybe_print_naninf_to_builder(builder, f8, value.format_float) return;
+        if naninf_to_builder_maybe(builder, f8, value.format_float) return;
         print_float(builder, value.format_float.*);
     }
 }
 
-print_to_builder_escaped :: (builder: *String_Builder, str: string, $is_key: bool) {
+escaped_to_builder :: (builder: *String_Builder, str: string, $is_key: bool) {
     #if is_key { if is_bare_key(str) { append(builder, str); return; } }
 
     append(builder, "\""); // TODO consider single ' and multiline strings, Note multiline should impact is_inline_table
@@ -235,7 +237,7 @@ print_to_builder_escaped :: (builder: *String_Builder, str: string, $is_key: boo
 }
 
 // Remove when stb_print_float or FormatFloat support configuring the nan/inf_label
-maybe_print_naninf_to_builder :: (builder: *String_Builder, value: float64, format: *FormatFloat) -> nan_or_inf:bool {
+naninf_to_builder_maybe :: (builder: *String_Builder, value: float64, format: *FormatFloat) -> nan_or_inf:bool {
     is_nan, is_inf := is_nan_is_inf(value);
     if !is_nan && !is_inf  return false;
     format_ := format.*;           // Copy format to avoid leaking data onto the context
@@ -278,7 +280,7 @@ build_dotted_key :: (parent_key: string, key: string) -> string {
         append(*key_builder, parent_key);
         append(*key_builder, ".");
     }
-    print_to_builder_escaped(*key_builder, key, true);
+    escaped_to_builder(*key_builder, key, true);
     return builder_to_string(*key_builder);
 }
 

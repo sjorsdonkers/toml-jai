@@ -15,12 +15,12 @@ main :: () {
 
 read_parse_print :: (filepath: string) {
     contents := read_entire_file(filepath);
-    ok, toml := Toml.deserialize(contents, Toml.Value); assert(ok);
+    ok, toml := Toml.string_to_type(contents, Toml.Value); assert(ok);
     print("File: %\n", filepath);
-    ok=, ser := Toml.serialize(toml); assert(ok);
+    ok=, ser := Toml.type_to_string(toml); assert(ok);
     print("Toml:\n%", ser);
-    ok=, toml2 := Toml.deserialize(ser, Toml.Value); assert(ok);
-    ok=, ser2  := Toml.serialize(toml2); assert(ok);
+    ok=, toml2 := Toml.string_to_type(ser, Toml.Value); assert(ok);
+    ok=, ser2  := Toml.type_to_string(toml2); assert(ok);
     // print("Toml2:\n%", ser2);
 
     assert(ser == ser2);
