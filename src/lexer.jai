@@ -34,6 +34,10 @@ tokenize :: (data: string) -> ok:=false, tokens:[..]Token=[..]Token.{} {
     lexer := Lexer.{data=data}; // Not freeing scope_stack as it will be in a Pool
     array_reserve(*lexer.tokens, data.count / 2); // Rough estimate of token count
 
+    // Skip BOM
+    if has_next(lexer, 3) && peek_slice(lexer, 3) == "\xEF\xBB\xBF" { eat_char(*lexer, 3); }
+    else if has_next(lexer, 2) && peek_slice(lexer, 2) == "\xFF\xFE" { return_with_error_line(lexer.data, lexer.loc, "UTF-16 BOM, TOML must be UTF-8"); }
+
     while has_next(lexer) {
         c := peek_char(lexer);
         if c == " " || c == "\t" {
