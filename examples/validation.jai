@@ -72,7 +72,7 @@ strings :: () {
     print("%\n%\n",rn.table[0].string_value, n.table[0].string_value);
     assert(rn != n);
 
-    // We check for invalid control / UTF-8 characters when STRICT == true
+    // We check for invalid control / UTF-8 characters
 
     // Basic strings may not contain unescaped control characters: U+0000 to U+0008, U+000A to U+001F, U+007F
     for char: cast(u8, "\u0000")..cast(u8, "\u001F") {
@@ -110,15 +110,14 @@ strings :: () {
 }
 
 end_lines :: () {
-    // Almost anywhere where whitespace is allowed we also allow newlines when STRICT == false
     // Between dotted keys
-    ok:= Toml.string_to_type("a\n.\nb = 5", Value); assert(!ok); // STRICT
+    ok:= Toml.string_to_type("a\n.\nb = 5", Value); assert(!ok);
     // In inline-tables
-    ok = Toml.string_to_type("a = {b \n = \n 5 \n , \n c=3}", Value); assert(!ok); // STRICT
+    ok = Toml.string_to_type("a = {b \n = \n 5 \n , \n c=3}", Value); assert(!ok);
     // Surrounding assignments
-    ok = Toml.string_to_type("a \n = \n 5", Value); assert(!ok); // STRICT
+    ok = Toml.string_to_type("a \n = \n 5", Value); assert(!ok);
     // Within headers
-    ok = Toml.string_to_type("[[\na\n]] \n [\nb \n .c \n] \n c=6", Value); assert(!ok); // STRICT
+    ok = Toml.string_to_type("[[\na\n]] \n [\nb \n .c \n] \n c=6", Value); assert(!ok);
 }
 
 using Toml :: #import, file "../module.jai";

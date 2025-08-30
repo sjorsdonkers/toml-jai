@@ -10,7 +10,7 @@ Token :: struct {
         LITERAL_MULTI        :: 2;          // str   // Not using LITERAL as multi-line string cannot be keys
         BASIC                :: 3;          // str   // Not using LITERAL as BASIC still needs to be unescaped
         BASIC_MULTI          :: 4;          // str   // Not using BASIC as multi-line string cannot be keys
-        NEWLINE              :: #char "\n"; // -     // Only used for STRICT checks, outside of scopes
+        NEWLINE              :: #char "\n"; // -     // Only used for checks of invalid newlines outside of scopes
         COMMA                :: #char ",";  // -
         DOT                  :: #char ".";  // -     // Not produced by lexer itself
         ASSIGN               :: #char "=";  // -
@@ -46,15 +46,13 @@ tokenize :: (data: string) -> ok:=false, tokens:[..]Token=[..]Token.{} {
         }
 
         if c == "\n" || has_next(lexer, 2) && peek_slice(lexer, 2) == "\r\n"{
-            #if STRICT {
-                if lexer.scope_stack.count == 0 {
-                    array_add(*lexer.tokens, .{ type=.NEWLINE, loc=lexer.loc });
-                } else {
-                    scope := lexer.tokens[peek(lexer.scope_stack)];
-                    if scope.type == #char "{" || (lexer.at_root && scope.type == #char "[") || scope.type == .SCOPE_DOUBLE_BRACKET { return_with_error_line(lexer.data, lexer.loc, "Newline in header or inline-table"); }
-                }
+            if lexer.scope_stack.count == 0 {
+                array_add(*lexer.tokens, .{ type=.NEWLINE, loc=lexer.loc });
+            } else {
+                scope := lexer.tokens[peek(lexer.scope_stack)];
+                if scope.type == #char "{" || (lexer.at_root && scope.type == #char "[") || scope.type == .SCOPE_DOUBLE_BRACKET { return_with_error_line(lexer.data, lexer.loc, "Newline in header or inline-table"); }
             }
-            if lexer.scope_stack.count == 0 lexer.at_root = true;
+            if lexer.scope_stack.count == 0 { lexer.at_root = true; }
             if c == "\r" then eat_char(*lexer);
             eat_newline(*lexer);
             continue;
@@ -68,14 +66,14 @@ tokenize :: (data: string) -> ok:=false, tokens:[..]Token=[..]Token.{} {
         }
 
         if c == "#" {
-            #if STRICT start_pos := lexer.pos;
+            start_pos := lexer.pos;
             while has_next(lexer) {
                 is_control, is_new_line := is_control_char(lexer);
                 if is_new_line break;
-                #if STRICT if is_control return_with_error_line(lexer.data, lexer.loc, "Illegal control character in comment: 0x%", formatInt(peek_char(lexer), 16));
+                if is_control return_with_error_line(lexer.data, lexer.loc, "Illegal control character in comment: 0x%", formatInt(peek_char(lexer), 16));
                 eat_char(*lexer);
             }
-            #if STRICT if !is_valid_utf8(slice(lexer.data, start_pos, lexer.pos - start_pos)) return_with_error_line(lexer.data, lexer.loc, "Invalid UTF-8 sequence in comment.");
+            if !is_valid_utf8(slice(lexer.data, start_pos, lexer.pos - start_pos)) return_with_error_line(lexer.data, lexer.loc, "Invalid UTF-8 sequence in comment.");
             continue;
         }
 
@@ -114,7 +112,7 @@ tokenize :: (data: string) -> ok:=false, tokens:[..]Token=[..]Token.{} {
                         if peek_char(lexer) == "\r" { eat_char(*lexer); }
                         eat_newline(*lexer);
                     } else {
-                        #if STRICT if is_control return_with_error_line(lexer.data, lexer.loc, "Illegal control character in string: 0x%", formatInt(peek_char(lexer), 16));
+                        if is_control return_with_error_line(lexer.data, lexer.loc, "Illegal control character in string: 0x%", formatInt(peek_char(lexer), 16));
                         eat_char(*lexer);
                     }
                 }
@@ -125,7 +123,7 @@ tokenize :: (data: string) -> ok:=false, tokens:[..]Token=[..]Token.{} {
 
                 token_type :Token.Type= ifx c == "\"" then .BASIC_MULTI else .LITERAL_MULTI;
                 token := Token.{ type=token_type, str=slice(data, start, lexer.pos - start), loc=Location.{lexer.loc.line, lexer.loc.char - xx (lexer.pos - start)} };
-                #if STRICT if !is_valid_utf8(token.str) return_with_error_line(lexer.data, lexer.loc, "Invalid UTF-8 sequence in string.");
+                if !is_valid_utf8(token.str) return_with_error_line(lexer.data, lexer.loc, "Invalid UTF-8 sequence in string.");
                 array_add(*lexer.tokens, token);
                 eat_char(*lexer, 3);
                 continue;
@@ -142,14 +140,14 @@ tokenize :: (data: string) -> ok:=false, tokens:[..]Token=[..]Token.{} {
 
                     is_control, is_new_line := is_control_char(lexer);
                     if is_new_line return_with_error_line(lexer.data, lexer.loc, "Newline in string. Escape `\\n` or use a multi-line string (triple quote) instead.");
-                    #if STRICT if is_control return_with_error_line(lexer.data, lexer.loc, "Illegal control character in string: 0x%", formatInt(peek_char(lexer), 16));
+                    if is_control return_with_error_line(lexer.data, lexer.loc, "Illegal control character in string: 0x%", formatInt(peek_char(lexer), 16));
                     eat_char(*lexer);
                 }
                 if !has_next(lexer) { return_with_error_line(lexer.data, lexer.loc, "Unterminated string."); }
 
                 token_type :Token.Type= ifx c == "\"" then .BASIC else .LITERAL;
                 token := Token.{ type=token_type, str=slice(data, start, lexer.pos - start), loc=Location.{lexer.loc.line, lexer.loc.char - xx (lexer.pos - start)} };
-                #if STRICT if !is_valid_utf8(token.str) return_with_error_line(lexer.data, lexer.loc, "Invalid UTF-8 sequence in string.");
+                if !is_valid_utf8(token.str) return_with_error_line(lexer.data, lexer.loc, "Invalid UTF-8 sequence in string.");
                 array_add(*lexer.tokens, token);
                 eat_char(*lexer);
                 continue;

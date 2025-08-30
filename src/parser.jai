@@ -10,7 +10,7 @@ string_to_value_shared_memory :: (contents: string) -> ok:=false, root_table:Val
     current_table := *root_table;
     while has_next(scope) {
         token := peek_token(scope);
-        #if STRICT if token.type == .NEWLINE { eat_token(*scope); continue; }
+        if token.type == .NEWLINE { eat_token(*scope); continue; }
 
         if token.type == {
         case .SCOPE_BRACKET;        // [table] header
@@ -34,7 +34,7 @@ string_to_value_shared_memory :: (contents: string) -> ok:=false, root_table:Val
             if in_header_def then return_with_error_line(scope.source, peek(key_scope.tokens).loc, "Cannot modify a defined Table or Array of Tables");
             ok=, leaf_value.* = parse_value(leaf_value, *scope);                                  if !ok return;
         }
-        #if STRICT if has_next(scope) { eat_expected(*scope, .NEWLINE); if !ok return; }
+        if has_next(scope) { eat_expected(*scope, .NEWLINE); if !ok return; }
     }
     return true, root_table;
 }
@@ -130,10 +130,9 @@ parse_literal :: (scope: *Scope) -> ok:=false, literal:Value=.{} {
         clean_str := join(..us_split);
 
         parse_int_with_base :: (us_split: []string, clean_str: string, base: u8) -> ok:=false, value:=-1 {
-            #if STRICT {
-                if us_split[0].count < 3      return;
-                for us_split if it.count == 0 return;
-            }
+            if us_split[0].count < 3      return;
+            for us_split if it.count == 0 return;
+
             without_base := slice(clean_str, 2, clean_str.count - 2);
             value, success, remainder := string_to_int_checked(without_base, base, s64);
             return success && remainder.count == 0, value;
@@ -151,11 +150,9 @@ parse_literal :: (scope: *Scope) -> ok:=false, literal:Value=.{} {
         } else {
             int_value, success, remainder := string_to_int_checked(clean_str, 10, s64);
             if success && remainder.count == 0 {
-                #if STRICT {
-                    for us_split if it.count == 0 then return_with_error_line(scope.source, token.loc, "Invalid placement of _ in integer literal %", token.str);
-                    start_digit := ifx (clean_str[0] == "+" || clean_str[0] =="-") then 1 else 0;
-                    if clean_str[start_digit] == "0" && clean_str.count - start_digit > 1 then return_with_error_line(scope.source, token.loc, "Leading zeros are not allowed in integer literal %", token.str);
-                }
+                for us_split if it.count == 0 then return_with_error_line(scope.source, token.loc, "Invalid placement of _ in integer literal %", token.str);
+                start_digit := ifx (clean_str[0] == "+" || clean_str[0] =="-") then 1 else 0;
+                if clean_str[start_digit] == "0" && clean_str.count - start_digit > 1 then return_with_error_line(scope.source, token.loc, "Leading zeros are not allowed in integer literal %", token.str);
                 return true, .{type=.INT, int_value=int_value};
             }
         }
@@ -163,21 +160,19 @@ parse_literal :: (scope: *Scope) -> ok:=false, literal:Value=.{} {
         // Parse float
         float_value, success, remainder := string_to_float64(clean_str);
         if success && remainder.count == 0 {
-            #if STRICT {
-                is_dot_or_e :: inline (c: u8) -> bool { return c == "." || c == "e" || c == "E"; }
+            is_dot_or_e :: inline (c: u8) -> bool { return c == "." || c == "e" || c == "E"; }
 
-                start_digit := ifx (clean_str[0] == "+" || clean_str[0] =="-") then 1 else 0;
-                first, second := clean_str[start_digit], clean_str[start_digit + 1]; // We know this is in range otherwise it would be an int
-                if is_dot_or_e(first)                   then return_with_error_line(scope.source, token.loc, "Float literals may not start with a dot: %", token.str);
-                if first == "0" && !is_dot_or_e(second) then return_with_error_line(scope.source, token.loc, "Leading zeros are not allowed in float literal %", token.str);
+            start_digit := ifx (clean_str[0] == "+" || clean_str[0] =="-") then 1 else 0;
+            first, second := clean_str[start_digit], clean_str[start_digit + 1]; // We know this is in range otherwise it would be an int
+            if is_dot_or_e(first)                   then return_with_error_line(scope.source, token.loc, "Float literals may not start with a dot: %", token.str);
+            if first == "0" && !is_dot_or_e(second) then return_with_error_line(scope.source, token.loc, "Leading zeros are not allowed in float literal %", token.str);
 
-                for us_split {
-                    if it.count == 0                                     then return_with_error_line(scope.source, token.loc, "Invalid placement of _ in float literal %", token.str);
-                    if is_dot_or_e(it[0]) || is_dot_or_e(it[it.count-1]) then return_with_error_line(scope.source, token.loc, "Invalid placement of ./e in float literal %", token.str);
-                }
-                for idx: start_digit..clean_str.count-2 {
-                    if clean_str[idx] == "." && (clean_str[idx + 1] == "e" || clean_str[idx + 1] == "E") then return_with_error_line(scope.source, token.loc, "Invalid .e in float literal %", token.str);
-                }
+            for us_split {
+                if it.count == 0                                     then return_with_error_line(scope.source, token.loc, "Invalid placement of _ in float literal %", token.str);
+                if is_dot_or_e(it[0]) || is_dot_or_e(it[it.count-1]) then return_with_error_line(scope.source, token.loc, "Invalid placement of ./e in float literal %", token.str);
+            }
+            for idx: start_digit..clean_str.count-2 {
+                if clean_str[idx] == "." && (clean_str[idx + 1] == "e" || clean_str[idx + 1] == "E") then return_with_error_line(scope.source, token.loc, "Invalid .e in float literal %", token.str);
             }
             return true, .{type=.FLOAT, float_value=float_value};
         }
@@ -252,7 +247,7 @@ unescape :: (basic_token: Token, source: string) -> ok:=false, unescaped:string=
 
             utf8_slice := string.{4, buffer.data + buffer.count};
             character_utf32_to_utf8(hex_value, *utf8_slice);
-            #if STRICT if hex_value > 0x0010FFFF || !is_valid_utf8(utf8_slice) { return_with_error_line(source, basic_token.loc, "Invalid UTF-8 sequence in escape sequence."); }
+            if hex_value > 0x0010FFFF || !is_valid_utf8(utf8_slice) { return_with_error_line(source, basic_token.loc, "Invalid UTF-8 sequence in escape sequence."); }
             buffer.count += utf8_slice.count; // UTF-8 bytes are already in the buffer at the right position
             pos += num_digits;
         case; return_with_error_line(source, basic_token.loc, "Invalid escape sequence."); // TODO improve loc, including \n

@@ -65,10 +65,9 @@ parse_datetime :: (input: string) -> ok:=false, value:Chrono=.{} {
         offset_hour := slice_to_int(time_str, time_str.count-5, 2, u8);
         if time_str[time_str.count-3] != ":" return;
         offset_minute := slice_to_int(time_str, time_str.count-2, 2, u8);
-        #if STRICT {
-            if offset_hour   > 23 { return_with_error("Invalid hour in timezone offset: %", offset_hour); }
-            if offset_minute > 59 { return_with_error("Invalid minute in timezone offset: %", offset_minute); }
-        }
+
+        if offset_hour   > 23 { return_with_error("Invalid hour in timezone offset: %", offset_hour); }
+        if offset_minute > 59 { return_with_error("Invalid minute in timezone offset: %", offset_minute); }
         return true, .{type=.OFFSET_DATETIME, datetime_offset=.{date=date, time=time, offset_hour=offset_hour, offset_minute=offset_minute, offset_is_negative=offset_is_negative}};
     } else {
         // Datetime without timezone
@@ -93,12 +92,10 @@ parse_time :: (input: string) -> ok:=false, value:Time=.{} {
             ignored     := slice_to_int(input, 9 + ms_digit_count, input.count - 9 - ms_digit_count, u64);
         }
     }
-    #if STRICT {
-        if hour   > 23 { return_with_error("Invalid hour in time: %", hour); }
-        if minute > 59 { return_with_error("Invalid minute in time: %", minute); }
-        if second > 60 { return_with_error("Invalid second in time: %", second); }
-        if millisecond > 999 { return_with_error("Invalid millisecond in time: %", millisecond); }
-    }
+    if hour   > 23 { return_with_error("Invalid hour in time: %", hour); }
+    if minute > 59 { return_with_error("Invalid minute in time: %", minute); }
+    if second > 60 { return_with_error("Invalid second in time: %", second); }
+    if millisecond > 999 { return_with_error("Invalid millisecond in time: %", millisecond); }
     return true, Time.{hour=hour, minute=minute, second=second, millisecond=millisecond};
 }
 
@@ -109,16 +106,15 @@ parse_date :: (input: string) -> ok:=false, value:Date=.{} {
     year  := slice_to_int(input, 0, 4, u16);
     month := slice_to_int(input, 5, 2, u8);
     day   := slice_to_int(input, 8, 2, u8);
-    #if STRICT {
-        if month < 1 || month > 12 { return_with_error("Invalid month in date: %", month); }
-        is_leap_year := (year % 4 == 0) && ((year % 100 != 0) || (year % 400 == 0));
-        max_day :u8= 31;
-        if month == {
-            case 2; ifx is_leap_year then max_day = 29 else max_day = 28;
-            case 4; #through; case 6; #through; case 9; #through; case 11; max_day = 30;
-        }
-        if day < 1 || day > max_day { return_with_error("Invalid day in date: %. Expected between 01 and %", day, max_day); }
+
+    if month < 1 || month > 12 { return_with_error("Invalid month in date: %", month); }
+    is_leap_year := (year % 4 == 0) && ((year % 100 != 0) || (year % 400 == 0));
+    max_day :u8= 31;
+    if month == {
+        case 2; ifx is_leap_year then max_day = 29 else max_day = 28;
+        case 4; #through; case 6; #through; case 9; #through; case 11; max_day = 30;
     }
+    if day < 1 || day > max_day { return_with_error("Invalid day in date: %. Expected between 01 and %", day, max_day); }
     return true, Date.{year=year, month=month, day=day};
 }
 

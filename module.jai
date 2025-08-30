@@ -1,6 +1,3 @@
-// STRICT enables additional checks like invalid utf8, control chars or leading 0s, misplaced _s, whitespace, ..
-#module_parameters(STRICT := true);
-
 Toml_Context :: struct {
     // The Value used to represent null values in the toml.
     null_value    := Value.{type=.STRING, string_value="~null~"};
