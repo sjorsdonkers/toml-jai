@@ -1,6 +1,7 @@
 deserialize :: inline (contents: string, $Target: Type) -> ok:=false, value:Target=.{} #deprecated "Renamed string_to_type" { ok, value := string_to_type(contents, Target); return ok, value; }
 string_to_type :: (contents: string, $Target: Type) -> ok:=false, value:Target=.{} {
-    ok , value  := string_to_value_shared_memory(contents,, scoped_pool()); if !ok return;
+    ok, value := string_to_value_shared_memory(contents,, scoped_pool()); if !ok return;
+    defer context.toml.index_maps = [..]Table(string, s64).{}; // Reset the index as the memory is on the pool
     ok=, target := value_to_type(value, Target);
     return ok, target;
 }
@@ -54,13 +55,12 @@ value_to_type :: (toml: Value, output: Any, name:string="", parent_name:string="
 
         for member: struct_info.members {
             if member.flags & (.CONSTANT |.IMPORTED) continue;
-            found := false;
-            for toml.table if it.key == member.name {
-                found = true;
-                ok:= value_to_type(it.value, Any.{member.type, slot + member.offset_in_bytes}, member.name, name);  if !ok return;
-                break;
+            found, value_ptr := table_find_value_by_key(*toml, member.name);
+            if found {
+                ok:= value_to_type(value_ptr.*, Any.{member.type, slot + member.offset_in_bytes}, member.name, name);  if !ok return;
+            } else if !array_find(member.notes, context.toml.optional_note) {
+                return_with_error("Missing field %.%", struct_info.name, member.name);
             }
-            if !found && !array_find(member.notes, context.toml.optional_note) then return_with_error("Missing field %.%", struct_info.name, member.name);
         }
     case .ARRAY;
         expect(toml.type, .ARRAY, parent_name, name);

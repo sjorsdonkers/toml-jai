@@ -1,5 +1,4 @@
-Value :: struct @SumType {
-    type :Type= .TABLE;
+Value :: struct {
     union {
         bool_value   : bool         = ---;
         int_value    : s64          = ---;
@@ -11,6 +10,7 @@ Value :: struct @SumType {
         format_int   : *FormatInt   = ---; // Only for serialization, * to reduce size
         format_float : *FormatFloat = ---; // Only for serialization, * to reduce size
     };
+    type :Type= .TABLE;
     Type :: enum u8 {
         BOOL;
         INT;
@@ -22,6 +22,7 @@ Value :: struct @SumType {
         FORMAT_INT;   // Only for serialization
         FORMAT_FLOAT; // Only for serialization
     }
+    parsing_meta :[7]u8 = .[0, 0, 0, 0xFF, 0xFF, 0xFF, 0xFF]; // INTERNAL
 }
 KeyValue :: struct {
     key        :  string;
@@ -36,7 +37,7 @@ copy :: (value: Value) -> Value {
     case .DATETIME; return value;
     case .STRING;   return Value.{type=.STRING, string_value=copy_string(value.string_value)};
     case .ARRAY;
-        output:= Value.{type=.ARRAY, array=resizable(Value.[])};
+        output:= Value.{type=.ARRAY, array=[..]Value.{}};
         array_reserve(*output.array, value.array.count);
         output.array.count = value.array.count;
         for 0..value.array.count-1 { output.array[it] = copy(value.array[it]); }

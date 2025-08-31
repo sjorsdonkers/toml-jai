@@ -1,6 +1,7 @@
 // Note this parser is zero-copy except for basic strings as they need to be unescaped
 // As such the keys and strings in the returned Value may point into the source string
 // Additionally this procedure does not deallocate any temporary memory
+// Sets context.toml.index_maps
 string_to_value_shared_memory :: (contents: string) -> ok:=false, root_table:Value=.{} {
     ok, tokens := tokenize(contents);  if !ok return; // Not freeing tokens as it will be in a Pool
     scope      := Scope.{contents, tokens, 0, ""};
@@ -8,6 +9,7 @@ string_to_value_shared_memory :: (contents: string) -> ok:=false, root_table:Val
     // At top level we can expect ([[keys]], [keys], keys = value)
     root_table: Value;
     current_table := *root_table;
+    context.toml.index_maps = [..]Table(string, s64).{};
     while has_next(scope) {
         token := peek_token(scope);
         if token.type == .NEWLINE { eat_token(*scope); continue; }
@@ -23,7 +25,7 @@ string_to_value_shared_memory :: (contents: string) -> ok:=false, root_table:Val
             define(current_table, .HEADER); // Finalize the previous Table, to prevent re-definition
             header_scope                := eat_scope(*scope, token);
             ok=, current_table=, is_new := parse_key(*root_table, header_scope, true); if !ok return;
-            if is_new then { current_table.* = .{type=.ARRAY, array=resizable(Value.[])}; }
+            if is_new then { current_table.* = .{type=.ARRAY, array=[..]Value.{}}; }
             else if (current_table.type != .ARRAY || current_table.table.count == 0) { return_with_error_line(header_scope.source, peek(header_scope.tokens).loc, "Cannot use key as Array of Tables as it already has a value: %", current_table.type); }
             define(current_table, .HEADER); // Finalize the Array, to prevent re-definition
             current_table = array_add(*current_table.array);
@@ -46,14 +48,8 @@ parse_key :: (parent: *Value, scope: Scope, is_header: bool) -> ok:=false, leaf:
     if !has_next(scope) { return_with_error("Unexpected end of scope while parsing key"); }
     if parent.type != .TABLE { return_with_error("Cannot use key as table as it already has a value: %", parent.type); }
 
-    // Get or insert key
-    find_or_insert_new :: (array: *[..]KeyValue, key: string) -> is_new:bool, *Value {
-        for array.* if it.key == key { return false, *it.value; }
-        array_add(array, KeyValue.{key=key, value=.{}});
-        return true, *peek_pointer(array.*).value;
-    }
     ok, token                     := eat_expected_key(*scope, .LITERAL); if !ok return;
-    current_is_new, current_value := find_or_insert_new(*parent.table, token.str);
+    current_is_new, current_value := find_or_insert_key(parent, token.str);
     if is_defined(current_value, .VALUE) { return_with_error_line(scope.source, token.loc, "Cannot modify a defined Value: %", token.str); }
     in_header_def := is_defined(current_value, .HEADER);
 
@@ -74,15 +70,15 @@ parse_key :: (parent: *Value, scope: Scope, is_header: bool) -> ok:=false, leaf:
 parse_value :: (current_table: *Value, scope: *Scope) -> ok:=false, value:Value=.{} {
     if !has_next(scope) { return_with_error("Unexpected end of file while parsing value"); }
 
-    value: Value;
+    ok: bool; value: Value;
     token := peek_token(scope);
     if token.type == {
-    case .SCOPE_BRACE;   ok:, value = parse_inline_table(current_table, eat_scope(scope, token)); if !ok return;
-    case .SCOPE_BRACKET; ok:, value = parse_array(eat_scope(scope, token));                       if !ok return;
-    case;                ok:, value = parse_literal(scope);                                       if !ok return;
+    case .SCOPE_BRACE;   ok, value = parse_inline_table(current_table, eat_scope(scope, token));
+    case .SCOPE_BRACKET; ok, value = parse_array(eat_scope(scope, token));
+    case;                ok, value = parse_literal(scope);
     }
     define(*value, .VALUE);
-    return true, value;
+    return ok, value;
 }
 
 parse_inline_table :: (current_table: *Value, scope: Scope) -> ok:=false, table:Value=.{} {
@@ -92,10 +88,10 @@ parse_inline_table :: (current_table: *Value, scope: Scope) -> ok:=false, table:
     table_root: Value; // Needed for tables in arrays that have no parent
     if current_table == null { current_table = *table_root; }
     while has_next(scope) {
-        ok, key_scope := eat_scope_until_assign(*scope);                       if !ok return;
+        ok, key_scope           := eat_scope_until_assign(*scope);             if !ok return;
         ok=, leaf_value, is_new := parse_key(current_table, key_scope, false); if !ok return;
         if !is_new { return_with_error_line(scope.source, peek(key_scope.tokens).loc, "Key already has a value of type %", leaf_value.type); }
-        ok=, leaf_value.* = parse_value(leaf_value, *scope);            if !ok return;
+        ok=, leaf_value.*        = parse_value(leaf_value, *scope);            if !ok return;
         if has_next(scope, 2) { eat_expected(*scope, Token.Type.COMMA); } // Inline tables are not allowed to have trailing commas
     }
     return true, current_table.*;
@@ -301,7 +297,7 @@ eat_key :: (scope: *Scope) -> ok:=false, key:Token=.{} {
     next:, scope.remaining_key = split_from_left_incl(scope.remaining_key, ".");
     if scope.remaining_key.count == 0 { eat_token(scope); }
     if next == "." { return true, Token.{type=Token.Type.DOT, loc=Location.{original.loc.line, char_num}}; }
-    else           {
+    else {
         if !is_bare_key(next) { return_with_error_line(scope.source, .{original.loc.line, char_num}, "Invalid key % Bare keys may contain only A-Za-z0-9_- otherwise use quotes", next); }
         return true, Token.{type=Token.Type.LITERAL, str=next, loc=Location.{original.loc.line, char_num}};
     }
@@ -398,18 +394,60 @@ is_bare_key :: (str: string) -> bool {
 }
 
 // For validation purposes we use padding space in Value to store some metadata
-// We do not want to expose these to users. This requires Values to be 0 initialized, not ---.
+// We do not want to expose these to users.
 DefineMethod :: enum u8 {
-    VALUE      :: 1; // inline-table {}, array [] or literal
-    HEADER     :: 2; // [table], [[array of tables]] or the root table
-    DOTTED_KEY :: 3; // If it appeared in a dotted key chain of a key = value pair
+    VALUE      :: 0; // inline-table {}, array [] or literal
+    HEADER     :: 1; // [table], [[array of tables]] or the root table
+    DOTTED_KEY :: 2; // If it appeared in a dotted key chain of a key = value pair
 }
-// Make sure we have free space in Value's padding bytes
-#assert(type_info(Value).members[0].type.runtime_size <= 1);
-#assert(type_info(Value).members[1].offset_in_bytes    > 3);
 define :: inline (value: *Value, $method: DefineMethod) {
-    (cast(*bool, value) + cast(u8, method)).* = true;
+    value.parsing_meta[xx method] = xx true;
 }
 is_defined :: inline (value: *Value, $method: DefineMethod) -> bool {
-    return (cast(*bool, value) + cast(u8, method)).*;
+    return xx value.parsing_meta[xx method];
+}
+// Index into context.toml.index_maps array, default -1 means no index map
+index_map_id :: inline (value: *Value) -> s32 {
+    return cast(*s32, *value.parsing_meta[3]).*;
+}
+index_map_id :: inline (value: *Value, new_id: s32) {
+    cast(*s32, *value.parsing_meta[3]).* = new_id;
+}
+
+// Get or insert key with index map
+find_or_insert_key :: (table: *Value, key: string) -> is_new:bool, table:*Value {
+    assert(table.type == .TABLE);
+
+    if table.table.count < context.toml.index_threshold {
+        for table.table if it.key == key { return false, *it.value; } // Linear search for small tables
+        array_add(*table.table, KeyValue.{key=key, value=.{}});       // Add new key value
+        return true, *peek_pointer(table.table).value;                // Return the value that was added to the end
+    } else if table.table.count == context.toml.index_threshold { // Creates an index map for a table when it reaches the threshold
+        new_index_map: Table(string, s64);
+        for table.table { table_add(*new_index_map, it.key, it_index); } // Populate the hash table with existing keys
+        index_map_id(table, xx context.toml.index_maps.count);           // Set the ID into the index map id
+        array_add(*context.toml.index_maps, new_index_map);               // Add the new index map to the context
+    }
+
+    assert(index_map_id(table) >= 0);
+    index_map         := *context.toml.index_maps[index_map_id(table)];
+    key_index, is_new := find_or_add(index_map, key);
+    if !is_new { return false, *table.table[key_index.*].value; } // Return the found existing value
+
+    key_index.* = table.table.count;                        // The new index of the key into the table
+    array_add(*table.table, KeyValue.{key=key, value=.{}}); // Add new key value
+    return true, *peek_pointer(table.table).value;          // Return the value that was added to the end
+}
+
+// Uses index when available, if index_map_id is set entry must exist in index_maps
+table_find_value_by_key :: (table: *Value, key: string) -> found:=false, table:*Value=null {
+    assert(table.type == .TABLE);
+    if context.toml.index_maps.count == 0 || index_map_id(table) < 0 { // Linear search for small tables
+        for table.table if it.key == key { return true, *it.value; }
+    } else {                                                        // Use hash lookup for large tables
+        index_map    := *context.toml.index_maps[index_map_id(table)];
+        found, index := table_find_new(index_map, key);
+        if found { return true, *table.table[index].value; }
+    }
+    return false;
 }

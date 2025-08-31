@@ -16,7 +16,7 @@ A module for `TOML v1.0.0` support. It provides functionality to read/write TOML
 - Read TOML directly into any (nested) struct or generic `Toml.Value`.
 - Any field not in the TOML fails unless annotated with `@TomlOptional`. Any superfluous fields in the TOML are ignored.
 - Compile-time constants are ignored and not compared.
-- The parser fully validates whether the input is [TOML spec](https://toml.io/en/v1.0.0) compliant.
+- The parser assures the input is fully [TOML spec](https://toml.io/en/v1.0.0) compliant.
 
 ## Serialize
 `ok, toml_string := Toml.type_to_string(my_struct);`
