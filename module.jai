@@ -15,7 +15,7 @@ Toml_Context :: struct {
 
     // Index maps for fast table lookups when table has more keys than the threshold
     index_threshold := 16;                // Minimum number of keys in a table to start using a hashmap for lookups
-    index_maps: [..] Table(string, s64);  // Array of hashmaps, each maps key string to index in table.table array
+    index_maps: [..] Table(string, s64) ; // INTERNAL Array of hashmaps, each maps key string to index in table.table array
 };
 
 #add_context toml: Toml_Context;
