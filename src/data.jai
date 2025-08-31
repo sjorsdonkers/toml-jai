@@ -1,5 +1,6 @@
-Value :: struct @SumType {
+Value :: struct {
     type :Type= .TABLE;
+    index_map_id: s32 = -1;  // Index into context.toml.index_maps array, -1 means no index map
     union {
         bool_value   : bool         = ---;
         int_value    : s64          = ---;
@@ -28,27 +29,41 @@ KeyValue :: struct {
     using value:  Value;
 }
 
+// Uses index when available, if index_map_id is set entry must exist in index_maps
+table_find_value_by_key :: (table: *Value, key: string, index_maps: []Table(string, s64)) -> found:=false, table:*Value=null {
+    assert(table.type == .TABLE);
+    if table.index_map_id < 0 { // Linear search for small tables
+        for table.table if it.key == key { return true, *it.value; }
+    } else {                    // Use hash lookup for large tables
+        index_map    := *index_maps[table.index_map_id];
+        found, index := table_find_new(index_map, key);
+        if found { return true, *table.table[index].value; }
+    }
+    return false;               // Not found
+}
+
 copy :: (value: Value) -> Value {
     if #complete value.type == {
     case .BOOL;  #through;
     case .INT;   #through;
     case .FLOAT; #through;
     case .DATETIME; return value;
-    case .STRING;   return Value.{type=.STRING, string_value=copy_string(value.string_value)};
+    case .STRING;   return Value.{type=.STRING, string_value=copy_string(value.string_value), index_map_id=value.index_map_id};
     case .ARRAY;
-        output:= Value.{type=.ARRAY, array=resizable(Value.[])};
+        output:= Value.{type=.ARRAY, array=[..]Value.{}, index_map_id=value.index_map_id};
         array_reserve(*output.array, value.array.count);
         output.array.count = value.array.count;
         for 0..value.array.count-1 { output.array[it] = copy(value.array[it]); }
         return output;
     case .TABLE;
         output: Value;
+        output.index_map_id = value.index_map_id;
         array_reserve(*output.table, value.table.count);
         output.table.count = value.table.count;
         for 0..value.table.count-1 { output.table[it] = copy(value.table[it]); }
         return output;
-    case .FORMAT_INT;   return Value.{type=.FORMAT_INT,   format_int  =copy(value.format_int  )};
-    case .FORMAT_FLOAT; return Value.{type=.FORMAT_FLOAT, format_float=copy(value.format_float)};
+    case .FORMAT_INT;   return Value.{type=.FORMAT_INT,   format_int  =copy(value.format_int  ), index_map_id=value.index_map_id};
+    case .FORMAT_FLOAT; return Value.{type=.FORMAT_FLOAT, format_float=copy(value.format_float), index_map_id=value.index_map_id};
     }
 }
 copy :: (keyvalue: KeyValue) -> KeyValue {

@@ -12,6 +12,10 @@ Toml_Context :: struct {
     // The default formatting for int and float values, per-member formatting can override these.
     default_format_int:   FormatInt;
     default_format_float: FormatFloat;
+
+    // Index maps for fast table lookups when table has more keys than the threshold
+    index_threshold := 16;                // Minimum number of keys in a table to start using a hashmap for lookups
+    index_maps: [..] Table(string, s64);  // Array of hashmaps, each maps key string to index in table.table array
 };
 
 #add_context toml: Toml_Context;
@@ -31,4 +35,5 @@ Toml_Context :: struct {
 #import "Unicode";
 #import "Flat_Pool";
 #import "Text_File_Handler";
+#import "Hash_Table";
 Reflection :: #import "Reflection";
