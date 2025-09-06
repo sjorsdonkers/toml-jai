@@ -283,12 +283,16 @@ polymorphic_types_like_hashtable_support :: () {
     ok, toml := Toml.type_to_string(my_hash_table,, toml = .{custom_type_to_value = custom_hashtable_to_value}); assert(ok);
     assert(toml == "one=1\ntwo=2\n" || toml == "two=2\none=1\n", "%", toml);
 
+    // Table with complex key
+    The_Key :: struct { id: u32; }
+    The_Key_Table :: Table(The_Key, u8, k => k.id, (k1, k2) => k1.id == k2.id);
+
     // The custom handle has a generic implementation so works with any specialization of a Hash_Table.
     // The key does not need to be a string, but it will be serialized as a string.
-    float_table: Table(float, *u8);
-    table_add(*float_table, 3.3, New(u8)).*.* = 3;
-    ok=, float_toml := Toml.type_to_string(float_table,, toml = .{custom_type_to_value = custom_hashtable_to_value}); assert(ok);
-    assert(float_toml == "\"3.3\"=3\n", "%", float_toml);
+    s_table: The_Key_Table;
+    table_add(*s_table, .{id=2}, 8);
+    ok=, s_toml := Toml.type_to_string(s_table,, toml = .{custom_type_to_value = custom_hashtable_to_value}); assert(ok);
+    assert(s_toml == "\"{id=2}\"=8\n", "%", s_toml);
 
     // Deserialization for polymorphic types is likely to be more difficult. In the case of Hash_Table we need to be able to call table_add.
     // This is a polymorphic procedure thus we need to know the types at compile time to be able to call it.
@@ -299,8 +303,10 @@ polymorphic_types_like_hashtable_support :: () {
     // For now we just opt to provide a helper procedure to make it easy for a user to add support for each of their Hash_Tables.
     custom_value_to_hashtable :: (toml: Value, output: Any, name:string, parent_name:string) -> done:=true, ok:=false {
         // We have not found a way to make a generic implementation for any Hash_Table, so instead we need to specialize deserialization for each Hash_Table parameterization we want to support.
-        done, ok := value_to_hashtable(Str_To_U8, toml, output, name, parent_name);
-        if done return done, ok;
+        return_value_to_hashtable(Str_To_U8);
+        return_value_to_hashtable(The_Key_Table);
+        // return_value_to_hashtable(Table(float32, *u8));
+        // return_value_to_hashtable(Table(u64, string));
 
         // Runtime check if we did not forget to add a Hash_Table specialization.
         if output.type.type != .STRUCT return false;
@@ -316,25 +322,41 @@ polymorphic_types_like_hashtable_support :: () {
     ok=, three:= table_find_new(*my_hash_table, "three"); assert(ok);
     ok=, four := table_find_new(*my_hash_table, "four");  assert(ok);
     assert(three == 3 && four == 4, "%", my_hash_table);
+
+    // We can also deserialize Table's with complex types like The_Key_Table with user structs as keys
+    ok=, my_struct_table := Toml.string_to_type("\"{id = 7}\"=3\n\"{id = 6}\"=4\n", The_Key_Table,, toml = .{custom_value_to_type = custom_value_to_hashtable}); assert(ok);
+    assert(my_struct_table.count == 2);
+    ok=, key1 := table_find_new(*my_struct_table, .{id=7}); assert(ok);
+    ok=, key2 := table_find_new(*my_struct_table, .{id=6}); assert(ok);
+    assert(key1 == 3 && key2 == 4, "%", my_struct_table);
 }
 
 // Helper procedure for deserializing a specific type of Hash_Table (Table_Type).
 // This procedure needs to be called in the custom handler for every type of hash table..
-value_to_hashtable :: ($Table_Type: Type, toml: Value, output: Any, name:string, parent_name:string) -> done:=true, ok:=false {
-    if output.type != type_info(Table_Type) return false;
-    struct_info :*Type_Info_Struct= xx output.type;
-    assert(output.type.type == .STRUCT);
+// Takes toml, output, name, parent_name for calling scope. Returns done, ok.
+return_value_to_hashtable :: ($Table_Type: Type) #expand {
+    if `output.type != type_info(Table_Type) return; // Not the type we are looking for
+    struct_info :*Type_Info_Struct= xx `output.type;
+    assert(`output.type.type == .STRUCT);
     assert(struct_info.polymorph_source_struct == type_info(Table(void, void)).polymorph_source_struct);
-    expect(toml.type, .TABLE, parent_name, name);
+    expect(`toml.type, .TABLE, `parent_name, `name);
 
-    hash_table := output.value_pointer.(*Table_Type);
-    table_ensure_space(hash_table, toml.table.count);
-    for keyvalue: toml.table {
+    hash_table := `output.value_pointer.(*Table_Type);
+    table_ensure_space(hash_table, `toml.table.count);
+    for keyvalue: `toml.table {
+        key: Table_Type.Key_Type;
+        #if type_info(Table_Type.Key_Type).type == .STRING { key = keyvalue.key; }
+        else {
+            builder: String_Builder;                             // Pre-append to: `key = keyvalue.key`
+            print_to_builder(*builder, "key = %", keyvalue.key); // @speed could make a fast path for other literals. TODO May need to escape
+            ok1, outer := Toml.string_to_type(builder_to_string(*builder), struct {key: Table_Type.Key_Type;}); if !ok1 `return true, false;
+            key = outer.key;
+        }
         value: Table_Type.Value_Type;
-        ok := Toml.value_to_type(keyvalue.value, Any.{type_info(Table_Type.Value_Type), *value}, name, keyvalue.key); if !ok return;
-        table_add(hash_table, keyvalue.key, value); // How to call table_add in the generic case when we only have an Any?
+        ok := Toml.value_to_type(keyvalue.value, Any.{type_info(Table_Type.Value_Type), *value}, `name, keyvalue.key); if !ok `return true, false;
+        table_add(hash_table, key, value); // How to call table_add in the generic case when we only have an Any?
     }
-    return true, true;
+    `return true, true;
 }
 
 using Toml :: #import, file "../module.jai";

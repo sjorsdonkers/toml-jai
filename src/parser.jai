@@ -422,11 +422,11 @@ find_or_insert_key :: (table: *Value, key: string) -> is_new:bool, table:*Value 
         for table.table if it.key == key { return false, *it.value; } // Linear search for small tables
         array_add(*table.table, KeyValue.{key=key, value=.{}});       // Add new key value
         return true, *peek_pointer(table.table).value;                // Return the value that was added to the end
-    } else if table.table.count == context.toml.index_threshold { // Creates an index map for a table when it reaches the threshold
-        new_index_map: Table(string, s64);
+    } else if table.table.count == context.toml.index_threshold {
+        new_index_map: Table(string, s64);                               // Create an index map for a table when it reaches the threshold
         for table.table { table_add(*new_index_map, it.key, it_index); } // Populate the hash table with existing keys
         index_map_id(table, xx context.toml.index_maps.count);           // Set the ID into the index map id
-        array_add(*context.toml.index_maps, new_index_map);               // Add the new index map to the context
+        array_add(*context.toml.index_maps, new_index_map);              // Add the new index map to the context
     }
 
     assert(index_map_id(table) >= 0);
@@ -444,7 +444,7 @@ table_find_value_by_key :: (table: *Value, key: string) -> found:=false, table:*
     assert(table.type == .TABLE);
     if context.toml.index_maps.count == 0 || index_map_id(table) < 0 { // Linear search for small tables
         for table.table if it.key == key { return true, *it.value; }
-    } else {                                                        // Use hash lookup for large tables
+    } else {                                                           // Use hash lookup for large tables
         index_map    := *context.toml.index_maps[index_map_id(table)];
         found, index := table_find_new(index_map, key);
         if found { return true, *table.table[index].value; }

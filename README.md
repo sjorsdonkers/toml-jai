@@ -30,7 +30,7 @@ Success -> bool
 Error message -> interceptable logger
 - Asserts are used to confirm correct implementation of the module. A triggered assert indicates a bug.
 - Input data errors are flagged by the return boolean indicating the success of the operation. If a procedure indicates failure the reason will be found in the error log.
-- To prevent or redirect the TOML module from writing to the error log the user can set a catching or wrapping logger in the context, see examples.
+- To prevent the TOML module from writing to the error log or to redirect it the user can set a catching or wrapping logger in the context, see examples.
 
 ## Memory management & lifetime
 Set a context.allocator:
