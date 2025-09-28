@@ -172,10 +172,10 @@ parse_literal :: (scope: *Scope) -> ok:=false, literal:Value=.{} {
             }
             return true, .{type=.FLOAT, float_value=float_value};
         }
-        if token.str == "inf" || token.str == "+inf" { return true, .{type=.FLOAT, float_value=FLOAT64_INFINITY}; }
-        if token.str == "-inf"                       { return true, .{type=.FLOAT, float_value=-FLOAT64_INFINITY}; }
-        if token.str == "nan" || token.str == "+nan" { return true, .{type=.FLOAT, float_value=FLOAT64_NAN}; }
-        if token.str == "-nan"                       { return true, .{type=.FLOAT, float_value=-FLOAT64_NAN}; }
+        if token.str == "inf" || token.str == "+inf" { return true, .{type=.FLOAT, float_value=Math.FLOAT64_INFINITY}; }
+        if token.str == "-inf"                       { return true, .{type=.FLOAT, float_value=-Math.FLOAT64_INFINITY}; }
+        if token.str == "nan" || token.str == "+nan" { return true, .{type=.FLOAT, float_value=Math.FLOAT64_NAN}; }
+        if token.str == "-nan"                       { return true, .{type=.FLOAT, float_value=-Math.FLOAT64_NAN}; }
 
         // If date, check if next token is time separated by single space: 1979-05-27 07:32:00Z
         date_input := token.str;
@@ -242,7 +242,7 @@ unescape :: (basic_token: Token, source: string) -> ok:=false, unescaped:string=
             if !success || remainder.count != 0 { return_with_error_line(source, basic_token.loc, "not valid unicode"); } // TODO improve loc, including \n
 
             utf8_slice := string.{4, buffer.data + buffer.count};
-            character_utf32_to_utf8(hex_value, *utf8_slice);
+            Unicode.character_utf32_to_utf8(hex_value, *utf8_slice);
             if hex_value > 0x0010FFFF || !is_valid_utf8(utf8_slice) { return_with_error_line(source, basic_token.loc, "Invalid UTF-8 sequence in escape sequence."); }
             buffer.count += utf8_slice.count; // UTF-8 bytes are already in the buffer at the right position
             pos += num_digits;

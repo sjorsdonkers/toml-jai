@@ -1,7 +1,8 @@
+#add_context toml: Toml_Context;
 Toml_Context :: struct {
     // The Value used to represent null values in the toml.
     null_value    := Value.{type=.STRING, string_value="~null~"};
-    // The note used to indicate optional fields in structs, default: @TomlOptional
+    // The note used to indicate optional fields in structs
     optional_note := "TomlOptional";
 
     // Procedures to introduce custom (de)serialization logic for specific types.
@@ -18,8 +19,6 @@ Toml_Context :: struct {
     index_maps: [..] Table(string, s64) ; // INTERNAL Array of hashmaps, each maps key string to index in table.table array
 };
 
-#add_context toml: Toml_Context;
-
 #load "src/data.jai";
 #load "src/datetime.jai";
 #load "src/serialize.jai";
@@ -27,12 +26,11 @@ Toml_Context :: struct {
 #load "src/parser.jai";
 #load "src/lexer.jai";
 
-#scope_module
+#scope_module // Scope is needed to avoid exposing named imports
 #import "Basic";
-#import "File";
-#import "String";
-#import "Math";
-#import "Unicode";
-#import "Text_File_Handler";
 #import "Hash_Table";
-Reflection :: #import "Reflection";
+#import "String";
+Math              :: #import "Math";
+Reflection        :: #import "Reflection";
+Text_File_Handler :: #import "Text_File_Handler";
+Unicode           :: #import "Unicode";

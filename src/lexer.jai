@@ -221,7 +221,7 @@ eat_newline :: inline (lexer: *Lexer) {
 get_line :: (data: string, line_number: s32) -> line: string, found:bool {
     line: string;
     found: bool;
-    for 1..line_number { line, found = consume_next_line(*data); }
+    for 1..line_number { line, found = Text_File_Handler.consume_next_line(*data); }
     return line, found;
 }
 

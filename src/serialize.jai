@@ -238,7 +238,7 @@ escaped_to_builder :: (builder: *String_Builder, str: string, $is_key: bool) {
 
 // Remove when stb_print_float or FormatFloat support configuring the nan/inf_label
 naninf_to_builder_maybe :: (builder: *String_Builder, value: float64, format: *FormatFloat) -> nan_or_inf:bool {
-    is_nan, is_inf := is_nan_is_inf(value);
+    is_nan, is_inf := Math.is_nan_is_inf(value);
     if !is_nan && !is_inf  return false;
     format_ := format.*;           // Copy format to avoid leaking data onto the context
     format_.value = value;
