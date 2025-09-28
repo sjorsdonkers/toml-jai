@@ -1,15 +1,16 @@
 deserialize :: inline (contents: string, $Target: Type) -> ok:=false, value:Target=.{} #deprecated "Renamed string_to_type" { ok, value := string_to_type(contents, Target); return ok, value; }
 string_to_type :: (contents: string, $Target: Type) -> ok:=false, value:Target=.{} {
-    ok, value := string_to_value_shared_memory(contents,, scoped_pool()); if !ok return;
+    auto_release_temp_maybe();
+    ok, value := string_to_value_shared_memory(contents,, temp); if !ok return;
     defer context.toml.index_maps = [..]Table(string, s64).{}; // Reset the index as the memory is on the pool
     ok=, target := value_to_type(value, Target);
     return ok, target;
 }
 
-value_to_type :: (value: Value, $Target: Type) -> ok:=false, value:Target=.{} {
+value_to_type :: (value: Value, $Target: Type) -> ok:=false, value:Target {
     info :: type_info(Target);
     target: Target;
-    ok := value_to_type(value, target, info.name); // For zero-copy set a custom_value_to_type that does not copy string/Table
+    ok := value_to_type(value, target, info.name); // For zero-copy set a custom_value_to_type that does not copy string/Table. Make sure the Value is not deleted, before the Target is used!
     return ok, target;
 }
 
@@ -247,9 +248,8 @@ range_check_and_store :: (value: s64, info: *Type_Info_Integer, pointer: *void) 
     return true, low, high;
 }
 
-scoped_pool :: () -> Allocator #expand {
-    pool: Flat_Pool;
-    a := Allocator.{flat_pool_allocator_proc, *pool};
-    `defer fini(*pool);
-    return a;
+auto_release_temp_maybe :: (loc := #caller_location) #expand {
+    is_temp := context.allocator.proc == temporary_allocator_proc;
+    __mark := get_temporary_storage_mark();
+    `defer if !is_temp set_temporary_storage_mark(__mark, loc);
 }

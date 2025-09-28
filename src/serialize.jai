@@ -7,11 +7,11 @@ type_to_string :: (input: Any) -> ok:=false, toml:string="" {
 
 serialize_to_builder :: inline (builder: *String_Builder, input: Any) -> ok:=false #deprecated "Renamed type_to_builder" { return type_to_builder(builder, input); }
 type_to_builder :: (builder: *String_Builder, input: Any) -> ok:=false {
-    a := scoped_pool();
-    ok, value := type_to_value_shared_memory(input,, a); if !ok return;
+    auto_release_temp_maybe();
+    ok, value := type_to_value_shared_memory(input,, temp); if !ok return;
 
-    if !builder.initialized init_string_builder(builder); // Initialize the builder to make sure it does not use `a`.
-    table_to_builder(builder, value,, a);
+    if !builder.initialized init_string_builder(builder); // Initialize the builder to make sure it does not use `temp`.
+    table_to_builder(builder, value,, temp);
     return true;
 }
 

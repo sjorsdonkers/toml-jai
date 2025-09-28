@@ -40,9 +40,8 @@ defer release(my_alloc);
 ```
 Dynamically sized data like arrays and strings are returned on the provided context allocator. As such, the safe lifetime of all returned objects ends when the memory of the allocator is released.
 - Allocation for returned data are in the context allocator. Instead of free_x() or deinit_x() procedures the user is expected to push an allocator such that all data can be dropped together.
-- None of the returned data references allocated data of the input arguments.
-- Temporary storage is only used for error messages as some of the intermediate data may be large. If there is a user-friendly way for the caller to replace the temporary allocator let me know, in which case we can just use temp.
-- Most temporarily allocated memory in the module is freed in one go by releasing a pool allocator.
+- None of the returned data references allocated data of the input arguments (except `*_shared_memory` procedures).
+- The `temp` allocator is used for intermediate data and error messages, `temp` is released back to the storage mark it started at (unless the `context.allocator` was set to `temp`).
 - In most cases this means that only the returned data will be left allocated on the context allocator.
 
 ## Custom handlers
