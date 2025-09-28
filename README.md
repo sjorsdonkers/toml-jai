@@ -12,14 +12,18 @@ A module for `TOML v1.0.0` support. It provides functionality to read/write TOML
 - Modifying the default behavior like: renaming, omitting, changing Type representation like Hash_Tables, enum as int, extra validation, or handling complex data like binary encodings are supported through [custom handlers](examples/custom_handlers.jai). 
 
 ## Deserialize
-`ok, my_struct := Toml.string_to_type(toml_string, My_Struct);`
+```jai
+ok, my_struct := Toml.string_to_type(toml_string, My_Struct);
+```
 - Read TOML directly into any (nested) struct or generic `Toml.Value`.
 - Any field not in the TOML fails unless annotated with `@TomlOptional`. Any superfluous fields in the TOML are ignored.
 - Compile-time constants are ignored and not compared.
 - The parser assures the input is fully [TOML spec](https://toml.io/en/v1.0.0) compliant.
 
 ## Serialize
-`ok, toml_string := Toml.type_to_string(my_struct);`
+```jai
+ok, toml_string := Toml.type_to_string(my_struct);
+```
 - Write any (nested) struct or `Toml.Value` to TOML string.
 - Null pointers/null Anys by default are written as `"~null~"`, this can be controlled via the context member `toml.null_value`.
 - Compile-time `constants` & `imports` are skipped.
@@ -30,7 +34,7 @@ Success -> bool
 Error message -> interceptable logger
 - Asserts are used to confirm correct implementation of the module. A triggered assert indicates a bug.
 - Input data errors are flagged by the return boolean indicating the success of the operation. If a procedure indicates failure the reason will be found in the error log.
-- To prevent the TOML module from writing to the error log or to redirect it the user can set a catching or wrapping logger in the context, see examples.
+- To prevent the TOML module from writing to the error log or to redirect it, the user can set a catching or wrapping logger in the context, see [examples](examples\first.jai).
 
 ## Memory management & lifetime
 Set a context.allocator:
@@ -69,7 +73,9 @@ ok, toml := Toml.type_to_string(
 ## Testing
 > The `jai` and optionally `toml-test` executables should be in the PATH.
 
-`jai ./tests.jai`  
+```sh
+jai ./tests.jai
+```
 The module is tested by compiling and running the examples. The command above does that for all examples. It will also run the tests from `toml-test` if the executable can be found in the PATH or the [tools/toml-test](tools/toml-test) directory.
 
 ## Implementation
@@ -78,20 +84,20 @@ The module is tested by compiling and running the examples. The command above do
 The module supports both Typed as well as Generic data using Toml.Value. To avoid having to maintain 2 implementations the Typed version is implemented by going through the Generic version. As a result there are some extra data copies/allocations as well as limitations like no support for integers > S64_MAX and slightly reduced accuracy for float due to intermediate conversion through float64.
 
 ### Type reflection
-We only have a run-time reflection based implementation, e.g. Any based like: `value_to_type :: (toml: Value, output: Any)`. A compile-time reflection based implementation, see the [comptime branch](https://github.com/sjorsdonkers/toml-jai/tree/comptime), that has the types determined at compile-time like `value_to_type :: (toml: Value, data: *$T)` would have slightly cleaner code, better run-time performance, and can handle generic custom types (like `Hash_Table`) more conveniently, but it does not support dynamic types like Any, and custom handlers become more complex, with module parameters, code insertion and`#poke_name`. Having multiple implementations is considered undesirable. This should be reevaluated when the `#poke_name` replacement has landed in Jai.
+We only have a run-time reflection based implementation, e.g. Any based like: `value_to_type :: (toml: Value, output: Any)`. A compile-time reflection based implementation, see the [comptime branch](https://github.com/sjorsdonkers/toml-jai/tree/comptime), that has the types determined at compile-time like `value_to_type :: (toml: Value, data: *$T)` would have slightly cleaner code, better run-time performance, and can handle generic custom types (like `Hash_Table`) more conveniently, but it does not support dynamic types like Any, and custom handlers become more complex, with module parameters, code insertion and`#poke_name`. Having multiple implementations is considered undesirable. Switching to compile-time reflection should be reevaluated when the `#poke_name` replacement has landed in Jai.
 
 ### Customization points
 Custom handlers have several design goals:
  - Keep the core Toml module implementation clean from complexity.
  - Enable custom serialization of types we do not own (external Modules) as we may not be able to add notes or remove members.
  - The same type should be serializable in different ways defined at the procedure call site, not struct definition.
- - Enable data tweaks during serialization as opposed to full copies of nested structure trees (separate structs for serialization and use within the application).
- - The user should be able to opt-out of the default behavior of handling special types like Toml.Value, Chrono, and SumTypes. A user can opt-out by setting a procedure which is a no-op or any procedure that does not call the default_custom_handler.
+ - Enable data tweaks during serialization as opposed to full data copies of nested structure trees (separate structs for serialization and usage within the application).
+ - The user should be able to opt-out of the default behavior of handling special types like Toml.Value, Chrono, and SumTypes. A user can opt-out by setting a procedure that does not call the default_custom_handler.
 
-In addition to handlers we currently also support making struct members optional through a @TomlOptional note. This means there are 2 ways to do the same thing, it also requires the original Type(_Info) to be modified. It is likely this note will be removed when these kinds of operations are better supported through custom handlers.
+In addition to handlers we currently also support making struct members optional through a `@TomlOptional` note. This means there are 2 ways to do the same thing, the note also requires the original Type(_Info) to be modified. It is likely this note will be removed when these kinds of operations are better supported through custom handlers.
 
 The context member `toml.null_value` is introduced as a customization point as it would otherwise be relatively complicated to catch all cases where pointers can occur. toml.null_value can be any kind of Toml.Value, by default it is a string of value `"~null~"`. Deserialization of the value `"~null~"` for a `*string` member can be surprising as it would result into a null pointer instead of a string with value `"~null~"`. The `~`s are added to make it a string that is less likely to occur naturally.
-Alternative sentinel values like and empty table `{}` which is the equivalent of a struct without members are not chosen as due to `@TomlOptional` it is also equivalent to a struct with all optional members.
+Alternative sentinel values like the empty table `{}` which is the equivalent of a struct without members are not chosen as due to `@TomlOptional` it is also equivalent to a struct with all optional members.
 
 ### Lexer
 The tokenization/lexer phase completes before the parser starts. As a result memory needs to be allocated to store the tokens. There is no particular reason for this implementation other than that I wanted to experiment with this type of lexer. Unlike traditional lexers the one implemented here does not parse the tokens into literals like int/float/etc it just determines a token starts and ends. It is the responsibility of the parser to interpret the string when it has more context.
