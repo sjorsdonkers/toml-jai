@@ -319,15 +319,15 @@ polymorphic_types_like_hashtable_support :: () {
     // Deserialize the Hash_Table with a custom handler.
     ok, my_hash_table = Toml.string_to_type("three=3\nfour=4\n", Str_To_U8,, toml = .{custom_value_to_type = custom_value_to_hashtable}); assert(ok);
     assert(my_hash_table.count == 2);
-    ok=, three:= table_find_new(*my_hash_table, "three"); assert(ok);
-    ok=, four := table_find_new(*my_hash_table, "four");  assert(ok);
+    ok=, three:= table_find(*my_hash_table, "three"); assert(ok);
+    ok=, four := table_find(*my_hash_table, "four");  assert(ok);
     assert(three == 3 && four == 4, "%", my_hash_table);
 
     // We can also deserialize Table's with complex types like The_Key_Table with user structs as keys
     ok=, my_struct_table := Toml.string_to_type("\"{id = 7}\"=3\n\"{id = 6}\"=4\n", The_Key_Table,, toml = .{custom_value_to_type = custom_value_to_hashtable}); assert(ok);
     assert(my_struct_table.count == 2);
-    ok=, key1 := table_find_new(*my_struct_table, .{id=7}); assert(ok);
-    ok=, key2 := table_find_new(*my_struct_table, .{id=6}); assert(ok);
+    ok=, key1 := table_find(*my_struct_table, .{id=7}); assert(ok);
+    ok=, key2 := table_find(*my_struct_table, .{id=6}); assert(ok);
     assert(key1 == 3 && key2 == 4, "%", my_struct_table);
 }
 

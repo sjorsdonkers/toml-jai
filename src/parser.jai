@@ -446,7 +446,7 @@ table_find_value_by_key :: (table: *Value, key: string) -> found:=false, table:*
         for table.table if it.key == key { return true, *it.value; }
     } else {                                                           // Use hash lookup for large tables
         index_map    := *context.toml.index_maps[index_map_id(table)];
-        found, index := table_find_new(index_map, key);
+        found, index := table_find(index_map, key);
         if found { return true, *table.table[index].value; }
     }
     return false;
