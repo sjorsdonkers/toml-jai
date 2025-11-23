@@ -16,25 +16,22 @@ string_to_value_shared_memory :: (contents: string) -> ok:=false, root_table:Val
 
         if token.type == {
         case .SCOPE_BRACKET;        // [table] header
-            define(current_table, .HEADER); // Finalize the previous Table, to prevent re-definition
+            define(current_table, .HEADER);                                                     // Finalize the previous Table, to prevent re-definition
             header_scope     := eat_scope(*scope, token);
             ok, current_table = parse_key(*root_table, header_scope, true); if !ok return;
             if is_defined(current_table, .DOTTED_KEY) then return_with_error_line(scope.source, peek(scope.tokens).loc, "Cannot redefine Table defined via dotted key");
             if is_defined(current_table, .HEADER)     then return_with_error_line(scope.source, peek(scope.tokens).loc, "Cannot redefine a [Table] / [[Array of Tables]]");
         case .SCOPE_DOUBLE_BRACKET; // [[array of tables]] header
-            define(current_table, .HEADER); // Finalize the previous Table, to prevent re-definition
+            define(current_table, .HEADER);                                                     // Finalize the previous Table, to prevent re-definition
             header_scope                := eat_scope(*scope, token);
-            ok=, current_table=, is_new := parse_key(*root_table, header_scope, true); if !ok return;
-            if is_new then { current_table.* = .{type=.ARRAY, array=[..]Value.{}}; }
-            else if (current_table.type != .ARRAY || current_table.table.count == 0) { return_with_error_line(header_scope.source, peek(header_scope.tokens).loc, "Cannot use key as Array of Tables as it already has a value: %", current_table.type); }
-            define(current_table, .HEADER); // Finalize the Array, to prevent re-definition
-            current_table = array_add(*current_table.array);
+            ok=, aot, is_new := parse_key(*root_table, header_scope, true); if !ok return;
+            if is_new then { aot.* = .{type=.ARRAY, array=[..]Value.{}}; define(aot, .HEADER); } // Create and finalize the Array, to prevent re-definition
+            else if (aot.type != .ARRAY || aot.table.count == 0) then return_with_error_line(header_scope.source, peek(header_scope.tokens).loc, "Cannot use key as Array of Tables as it already has a value: %", aot.type);
+            current_table = array_add(*aot.array);                                               // Add a new entry as current_table
         case;                       // key = value
-            ok=, key_scope                         := eat_scope_until_assign(*scope);             if !ok return;
-            ok=, leaf_value, is_new, in_header_def := parse_key(current_table, key_scope, false); if !ok return;
-            if !is_new       then return_with_error_line(scope.source, peek(key_scope.tokens).loc, "Key already has a value of type %", leaf_value.type);
-            if in_header_def then return_with_error_line(scope.source, peek(key_scope.tokens).loc, "Cannot modify a defined Table or Array of Tables");
-            ok=, leaf_value.* = parse_value(leaf_value, *scope);                                  if !ok return;
+            ok=, key_scope   := eat_scope_until_assign(*scope);             if !ok return;
+            ok=, leaf_value  := parse_key(current_table, key_scope, false); if !ok return;
+            ok=, leaf_value.* = parse_value(leaf_value, *scope);            if !ok return;
         }
         if has_next(scope) { eat_expected(*scope, .NEWLINE); if !ok return; }
     }
@@ -44,26 +41,27 @@ string_to_value_shared_memory :: (contents: string) -> ok:=false, root_table:Val
 #scope_module
 
 // Parse: key. key.'key'."etc"
-parse_key :: (parent: *Value, scope: Scope, is_header: bool) -> ok:=false, leaf:*Value=null, leaf_is_new:bool=false, in_header_def:=false {
+parse_key :: (parent: *Value, scope: Scope, parsing_header: bool) -> ok:=false, leaf:*Value=null, leaf_is_new:bool=false {
     if !has_next(scope) { return_with_error("Unexpected end of scope while parsing key"); }
     if parent.type != .TABLE { return_with_error("Cannot use key as table as it already has a value: %", parent.type); }
 
     ok, token                     := eat_expected_key(*scope, .LITERAL); if !ok return;
     current_is_new, current_value := find_or_insert_key(parent, token.str);
-    if is_defined(current_value, .VALUE) { return_with_error_line(scope.source, token.loc, "Cannot modify a defined Value: %", token.str); }
-    in_header_def := is_defined(current_value, .HEADER);
+    if is_defined(current_value, .VALUE)                     then return_with_error_line(scope.source, token.loc, "Cannot modify a defined Value: %", token.str);
+    if !parsing_header && is_defined(current_value, .HEADER) then return_with_error_line(scope.source, peek(scope.tokens).loc, "Cannot modify a defined Table or Array of Tables");
 
     // Check for dotted keys
     if has_next(scope) {
         // Dotted keys create and define a table for each key part before the last one, redefining such tables using a [table] header is not allowed.
-        if !is_header { define(current_value, .DOTTED_KEY); }
+        if !parsing_header { define(current_value, .DOTTED_KEY); }
         ok = eat_expected_key(*scope, .DOT); if !ok return;
         // If this is an Array of Tables header then we are going to add into its last table
         if current_value.type == .ARRAY { current_value = peek_pointer(current_value.array); }
-        ok=, current_value=, current_is_new=, child_in_header := parse_key(current_value, scope, is_header); if !ok return;
-        in_header_def |= child_in_header;
+        ok=, current_value, current_is_new = parse_key(current_value, scope, parsing_header); if !ok return;
     }
-    return true, current_value, current_is_new, in_header_def;
+
+    if !parsing_header && !current_is_new then return_with_error_line(scope.source, peek(scope.tokens).loc, "Key already has a value of type %", current_value.type);
+    return true, current_value, current_is_new;
 }
 
 // * current_table is null for values in arrays
@@ -88,10 +86,9 @@ parse_inline_table :: (current_table: *Value, scope: Scope) -> ok:=false, table:
     table_root: Value; // Needed for tables in arrays that have no parent
     if current_table == null { current_table = *table_root; }
     while has_next(scope) {
-        ok, key_scope           := eat_scope_until_assign(*scope);             if !ok return;
-        ok=, leaf_value, is_new := parse_key(current_table, key_scope, false); if !ok return;
-        if !is_new { return_with_error_line(scope.source, peek(key_scope.tokens).loc, "Key already has a value of type %", leaf_value.type); }
-        ok=, leaf_value.*        = parse_value(leaf_value, *scope);            if !ok return;
+        ok, key_scope    := eat_scope_until_assign(*scope);             if !ok return;
+        ok=, leaf_value  := parse_key(current_table, key_scope, false); if !ok return;
+        ok=, leaf_value.* = parse_value(leaf_value, *scope);            if !ok return;
         if has_next(scope, 2) { eat_expected(*scope, Token.Type.COMMA); } // Inline tables are not allowed to have trailing commas
     }
     return true, current_table.*;
@@ -126,26 +123,26 @@ parse_literal :: (scope: *Scope) -> ok:=false, literal:Value=.{} {
         clean_str := join(..us_split);
 
         parse_int_with_base :: (us_split: []string, clean_str: string, base: u8) -> ok:=false, value:=-1 {
-            if us_split[0].count < 3      return;
-            for us_split if it.count == 0 return;
+            if us_split[0].count < 3      return; // Catch underscores before the first digit like: 0x_, 0_x
+            for us_split if it.count == 0 return; // Catches consecutive, leading or trailing underscores
 
             without_base := slice(clean_str, 2, clean_str.count - 2);
-            value, success, remainder := string_to_int_checked(without_base, base, s64);
-            return success && remainder.count == 0, value;
+            value, ok, remainder := string_to_int_checked(without_base, base, s64);
+            return ok && remainder.count == 0, value;
         }
 
         if begins_with(token.str, "0x") {
-            success, value := parse_int_with_base(us_split, clean_str, 16); if !success then return_with_error_line(scope.source, token.loc, "Invalid hex literal %", token.str);
+            ok, value := parse_int_with_base(us_split, clean_str, 16); if !ok then return_with_error_line(scope.source, token.loc, "Invalid hex literal %", token.str);
             return true, .{type=.INT, int_value=value};
         } else if begins_with(token.str, "0b") {
-            success, value := parse_int_with_base(us_split, clean_str, 2);  if !success then return_with_error_line(scope.source, token.loc, "Invalid binary literal %", token.str);
+            ok, value := parse_int_with_base(us_split, clean_str, 2);  if !ok then return_with_error_line(scope.source, token.loc, "Invalid binary literal %", token.str);
             return true, .{type=.INT, int_value=value};
         } else if begins_with(token.str, "0o") {
-            success, value := parse_int_with_base(us_split, clean_str, 8);  if !success then return_with_error_line(scope.source, token.loc, "Invalid octal literal %", token.str);
+            ok, value := parse_int_with_base(us_split, clean_str, 8);  if !ok then return_with_error_line(scope.source, token.loc, "Invalid octal literal %", token.str);
             return true, .{type=.INT, int_value=value};
         } else {
-            int_value, success, remainder := string_to_int_checked(clean_str, 10, s64);
-            if success && remainder.count == 0 {
+            int_value, ok, remainder := string_to_int_checked(clean_str, 10, s64);
+            if ok && remainder.count == 0 {
                 for us_split if it.count == 0 then return_with_error_line(scope.source, token.loc, "Invalid placement of _ in integer literal %", token.str);
                 start_digit := ifx (clean_str[0] == "+" || clean_str[0] =="-") then 1 else 0;
                 if clean_str[start_digit] == "0" && clean_str.count - start_digit > 1 then return_with_error_line(scope.source, token.loc, "Leading zeros are not allowed in integer literal %", token.str);
@@ -154,8 +151,8 @@ parse_literal :: (scope: *Scope) -> ok:=false, literal:Value=.{} {
         }
 
         // Parse float
-        float_value, success, remainder := string_to_float64(clean_str);
-        if success && remainder.count == 0 {
+        float_value, ok, remainder := string_to_float64(clean_str);
+        if ok && remainder.count == 0 {
             is_dot_or_e :: inline (c: u8) -> bool { return c == "." || c == "e" || c == "E"; }
 
             start_digit := ifx (clean_str[0] == "+" || clean_str[0] =="-") then 1 else 0;
@@ -187,8 +184,8 @@ parse_literal :: (scope: *Scope) -> ok:=false, literal:Value=.{} {
                 date_input.count += 1 + eat_token(scope).str.count;
             }
         }
-        success=, chrono := parse_datetime(date_input);
-        if success { return true, .{type=.DATETIME, datetime=chrono}; }
+        ok=, chrono := parse_datetime(date_input);
+        if ok { return true, .{type=.DATETIME, datetime=chrono}; }
 
         return_with_error_line(scope.source, token.loc, "Unable to parse literal %", token.str);
     case; return_with_error_line(scope.source, token.loc, "Unexpected token %, expected a value", token.type);
@@ -238,8 +235,8 @@ unescape :: (basic_token: Token, source: string) -> ok:=false, unescaped:string=
 
             if pos + num_digits > basic.count {return_with_error_line(source, basic_token.loc, "Expected % characters in the unicode escape sequence", num_digits); }
             unicode_hex_str := slice(basic, pos, num_digits);
-            hex_value, success, remainder := string_to_int_checked(unicode_hex_str, 16, u32);
-            if !success || remainder.count != 0 { return_with_error_line(source, basic_token.loc, "not valid unicode"); } // TODO improve loc, including \n
+            hex_value, ok, remainder := string_to_int_checked(unicode_hex_str, 16, u32);
+            if !ok || remainder.count != 0 { return_with_error_line(source, basic_token.loc, "not valid unicode"); } // TODO improve loc, including \n
 
             utf8_slice := string.{4, buffer.data + buffer.count};
             Unicode.character_utf32_to_utf8(hex_value, *utf8_slice);
@@ -333,7 +330,7 @@ split_from_left_incl :: (s: string, separator: u8) -> (left: string, right: stri
 }
 
 // Taken from Basic, modified to check overflow
-string_to_int_checked :: (s: string, base := 10, $T := int) -> result: T, success: bool, remainder: string {
+string_to_int_checked :: (s: string, base := 10, $T := int) -> result: T, ok: bool, remainder: string {
     assert(base == 16 || base <= 10);
     if !s return 0, false, "";
 
