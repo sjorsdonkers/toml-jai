@@ -122,36 +122,26 @@ parse_literal :: (scope: *Scope) -> ok:=false, literal:Value=.{} {
         us_split := split(token.str, "_");
         clean_str := join(..us_split);
 
-        parse_int_with_base :: (us_split: []string, clean_str: string, base: u8) -> ok:=false, value:=-1 {
-            if us_split[0].count < 3      return; // Catch underscores before the first digit like: 0x_, 0_x
-            for us_split if it.count == 0 return; // Catches consecutive, leading or trailing underscores
+        if clean_str.count >= 2 && clean_str[0] == "0" && (clean_str[1] == "x" || clean_str[1] == "b" || clean_str[1] == "o") {
+            if us_split[0].count == 2     then return_with_error_line(scope.source, token.loc, "Invalid _ in base of integer literal %", token.str);
+            for us_split if it.count == 0 then return_with_error_line(scope.source, token.loc, "Invalid placement of _ in integer literal %", token.str);
 
             without_base := slice(clean_str, 2, clean_str.count - 2);
+            base := ifx clean_str[1] == "x" then 16 else ifx clean_str[1] == "b" then 2 else 8;
             value, ok, remainder := string_to_int_checked(without_base, base, s64);
-            return ok && remainder.count == 0, value;
+            if !ok || remainder.count != 0 then return_with_error_line(scope.source, token.loc, "Invalid hex/binary/octal literal %", token.str);
+            return true, .{type=.INT, int_value=value};
         }
-
-        if begins_with(token.str, "0x") {
-            ok, value := parse_int_with_base(us_split, clean_str, 16); if !ok then return_with_error_line(scope.source, token.loc, "Invalid hex literal %", token.str);
-            return true, .{type=.INT, int_value=value};
-        } else if begins_with(token.str, "0b") {
-            ok, value := parse_int_with_base(us_split, clean_str, 2);  if !ok then return_with_error_line(scope.source, token.loc, "Invalid binary literal %", token.str);
-            return true, .{type=.INT, int_value=value};
-        } else if begins_with(token.str, "0o") {
-            ok, value := parse_int_with_base(us_split, clean_str, 8);  if !ok then return_with_error_line(scope.source, token.loc, "Invalid octal literal %", token.str);
-            return true, .{type=.INT, int_value=value};
-        } else {
-            int_value, ok, remainder := string_to_int_checked(clean_str, 10, s64);
-            if ok && remainder.count == 0 {
-                for us_split if it.count == 0 then return_with_error_line(scope.source, token.loc, "Invalid placement of _ in integer literal %", token.str);
-                start_digit := ifx (clean_str[0] == "+" || clean_str[0] =="-") then 1 else 0;
-                if clean_str[start_digit] == "0" && clean_str.count - start_digit > 1 then return_with_error_line(scope.source, token.loc, "Leading zeros are not allowed in integer literal %", token.str);
-                return true, .{type=.INT, int_value=int_value};
-            }
+        int_value, ok, remainder := string_to_int_checked(clean_str, 10, s64);
+        if ok && remainder.count == 0 {
+            for us_split if it.count == 0 then return_with_error_line(scope.source, token.loc, "Invalid placement of _ in integer literal %", token.str);
+            start_digit := ifx (clean_str[0] == "+" || clean_str[0] =="-") then 1 else 0;
+            if clean_str[start_digit] == "0" && clean_str.count - start_digit > 1 then return_with_error_line(scope.source, token.loc, "Leading zeros are not allowed in integer literal %", token.str);
+            return true, .{type=.INT, int_value=int_value};
         }
 
         // Parse float
-        float_value, ok, remainder := string_to_float64(clean_str);
+        float_value:, ok, remainder = string_to_float64(clean_str);
         if ok && remainder.count == 0 {
             is_dot_or_e :: inline (c: u8) -> bool { return c == "." || c == "e" || c == "E"; }
 
