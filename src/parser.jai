@@ -83,7 +83,7 @@ parse_inline_table :: (current_table: *Value, scope: Scope) -> ok:=false, table:
     // An inline table is either the right-hand side of an assignment to a key
     // or a value in an array. In case of the former it is important that we continue building
     // on the current key as a.b = {c.d = 1} is the same as in a.b.c.d = 1
-    table_root: Value; // Needed for tables in arrays that have no parent
+    table_root: Value; // Needed for tables in arrays which have no parent
     if current_table == null { current_table = *table_root; }
     while has_next(scope) {
         ok, key_scope    := eat_scope_until_assign(*scope);             if !ok return;
@@ -164,7 +164,7 @@ parse_literal :: (scope: *Scope) -> ok:=false, literal:Value=.{} {
         if token.str == "nan" || token.str == "+nan" { return true, .{type=.FLOAT, float_value=Math.FLOAT64_NAN}; }
         if token.str == "-nan"                       { return true, .{type=.FLOAT, float_value=-Math.FLOAT64_NAN}; }
 
-        // If date, check if next token is time separated by single space: 1979-05-27 07:32:00Z
+        // Parse date, check if next token is time separated by single space: 1979-05-27 07:32:00Z
         date_input := token.str;
         if has_next(scope) {
             next := peek_token(scope);
@@ -187,7 +187,7 @@ unescape :: (basic_token: Token, source: string) -> ok:=false, unescaped:string=
     basic := basic_token.str;
 
     buffer := alloc_string(basic.count); // Allocate same size as input since unescaped string is always <= input length
-    buffer.count = 0;                    // Start with empty buffer, we'll grow it as we write, but need #no_abc
+    buffer.count = 0;                    // Start with empty buffer, we'll increment it as we write, but need #no_abc
     pos := 0;
     while pos < basic.count {
         if basic[pos] != "\\" {
@@ -280,14 +280,12 @@ eat_key :: (scope: *Scope) -> ok:=false, key:Token=.{} {
         }
     }
     // Handling potentially dot separated RAW key
-    char_num := cast(s32, inline find_index_from_right(original.str, scope.remaining_key));
+    char_pos :s32= cast(s32, original.str.count - scope.remaining_key.count); // Assumes remaining_key is a suffix of original.str
     next:, scope.remaining_key = split_from_left_incl(scope.remaining_key, ".");
-    if scope.remaining_key.count == 0 { eat_token(scope); }
-    if next == "." { return true, Token.{type=Token.Type.DOT, loc=Location.{original.loc.line, char_num}}; }
-    else {
-        if !is_bare_key(next) { return_with_error_line(scope.source, .{original.loc.line, char_num}, "Invalid key % Bare keys may contain only A-Za-z0-9_- otherwise use quotes", next); }
-        return true, Token.{type=Token.Type.LITERAL, str=next, loc=Location.{original.loc.line, char_num}};
-    }
+    if scope.remaining_key.count == 0 { eat_token(scope); }                   // Consume the token once all parts have been eaten
+    if next == "." { return true, Token.{type=Token.Type.DOT, loc=Location.{original.loc.line, char_pos}}; }
+    if !is_bare_key(next) { return_with_error_line(scope.source, .{original.loc.line, char_pos}, "Invalid key % Bare keys may contain only A-Za-z0-9_- otherwise use quotes", next); }
+    return true, Token.{type=Token.Type.LITERAL, str=next, loc=Location.{original.loc.line, char_pos}};
 }
 eat_expected_key :: (scope: *Scope, expected: Token.Type) -> ok:=false, key:Token=.{} {
     ok, token := eat_key(scope); if !ok return;
