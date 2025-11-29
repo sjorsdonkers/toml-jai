@@ -1,6 +1,6 @@
 # TOML-jai
 
-![](https://img.shields.io/badge/Jai-beta%200.2.019-blue.svg)
+![](https://img.shields.io/badge/Jai-beta%200.2.020-blue.svg)
 
 A module for `TOML v1.0.0` support. It provides functionality to read/write TOML files and convert them directly to/from Jai data structures.
 
@@ -16,7 +16,7 @@ A module for `TOML v1.0.0` support. It provides functionality to read/write TOML
 ok, my_struct := Toml.string_to_type(toml_string, My_Struct);
 ```
 - Read TOML directly into any (nested) struct or generic `Toml.Value`.
-- Any field not in the TOML fails unless annotated with `@TomlOptional`. Any superfluous fields in the TOML are ignored.
+- Any field missing in the TOML fails unless annotated with `@TomlOptional` or `#overlay` members. Any superfluous fields in the TOML are ignored.
 - Compile-time constants are ignored and not compared.
 - The parser assures the input is fully [TOML spec](https://toml.io/en/v1.0.0) compliant.
 
@@ -26,8 +26,7 @@ ok, toml_string := Toml.type_to_string(my_struct);
 ```
 - Write any (nested) struct or `Toml.Value` to TOML string.
 - Null pointers/null Anys by default are written as `"~null~"`, this can be controlled via the context member `toml.null_value`.
-- Compile-time `constants` & `imports` are skipped.
-- `#place` members (containing pointers) may not be safe! Overlapping members are all serialized.
+- Compile-time `constants` & `imports` as well as `#overlay` members are skipped.
 
 ## Error handling
 Success -> bool  

@@ -48,11 +48,9 @@ type_to_value_shared_memory :: (input: Any) -> ok:=false, toml:Value=.{} {
         struct_info :*Type_Info_Struct= xx info;
         if struct_info.textual_flags & .UNION return_with_error("Untagged unions (%) are not supported, as we cannot determine the active member, use @SumType", ifx struct_info.name then struct_info.name else "anonymous");
 
-        // Unlike Basic.print we do re-print all overlapping #place members. This will output the same data multiple times, but is likely more predictable.
-        // Otherwise we would need to recursively track to check whether the offset is always increasing compared to the highest offset.
         table: [..]KeyValue;
         for member: struct_info.members {
-            if member.flags & (.CONSTANT | .IMPORTED) continue;
+            if member.flags & (.CONSTANT | .IMPORTED | .OVERLAY) continue; // We don't print overlay members, just the primary variables the overlay
             ok, member_value:= type_to_value_shared_memory(Any.{member.type, slot + member.offset_in_bytes});  if !ok return;
             array_add(*table, KeyValue.{key=member.name, value=member_value});
         }

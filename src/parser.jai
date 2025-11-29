@@ -16,14 +16,14 @@ string_to_value_shared_memory :: (contents: string) -> ok:=false, root_table:Val
 
         if token.type == {
         case .SCOPE_BRACKET;        // [table] header
-            define(current_table, .HEADER);                                                     // Finalize the previous Table, to prevent re-definition
+            define(current_table, .HEADER);                                                      // Finalize the previous Table, to prevent re-definition
             header_scope     := eat_scope(*scope, token);
             ok, current_table = parse_key(*root_table, header_scope, true); if !ok return;
             if is_defined(current_table, .DOTTED_KEY) then return_with_error_line(scope.source, peek(scope.tokens).loc, "Cannot redefine Table defined via dotted key");
             if is_defined(current_table, .HEADER)     then return_with_error_line(scope.source, peek(scope.tokens).loc, "Cannot redefine a [Table] / [[Array of Tables]]");
         case .SCOPE_DOUBLE_BRACKET; // [[array of tables]] header
-            define(current_table, .HEADER);                                                     // Finalize the previous Table, to prevent re-definition
-            header_scope                := eat_scope(*scope, token);
+            define(current_table, .HEADER);                                                      // Finalize the previous Table, to prevent re-definition
+            header_scope     := eat_scope(*scope, token);
             ok=, aot, is_new := parse_key(*root_table, header_scope, true); if !ok return;
             if is_new then { aot.* = .{type=.ARRAY, array=[..]Value.{}}; define(aot, .HEADER); } // Create and finalize the Array, to prevent re-definition
             else if (aot.type != .ARRAY || aot.table.count == 0) then return_with_error_line(header_scope.source, peek(header_scope.tokens).loc, "Cannot use key as Array of Tables as it already has a value: %", aot.type);
@@ -42,8 +42,8 @@ string_to_value_shared_memory :: (contents: string) -> ok:=false, root_table:Val
 
 // Parse: key. key.'key'."etc"
 parse_key :: (parent: *Value, scope: Scope, parsing_header: bool) -> ok:=false, leaf:*Value=null, leaf_is_new:bool=false {
-    if !has_next(scope) { return_with_error("Unexpected end of scope while parsing key"); }
-    if parent.type != .TABLE { return_with_error("Cannot use key as table as it already has a value: %", parent.type); }
+    if !has_next(scope)      then return_with_error("Unexpected end of scope while parsing key");
+    if parent.type != .TABLE then return_with_error("Cannot use key as table as it already has a value: %", parent.type);
 
     ok, token                     := eat_expected_key(*scope, .LITERAL); if !ok return;
     current_is_new, current_value := find_or_insert_key(parent, token.str);
@@ -243,7 +243,7 @@ Scope :: struct {
     source: string;
     tokens: []Token;
     pos: s64 = 0;
-    remaining_key: string;
+    remaining_key: string = "";
 }
 has_next :: (scope: Scope, count:=1) -> bool {
     return scope.pos + count -1 < scope.tokens.count;

@@ -59,7 +59,7 @@ value_to_type :: (toml: Value, output: Any, name:string="", parent_name:string="
             found, value_ptr := table_find_value_by_key(*toml, member.name);
             if found {
                 ok:= value_to_type(value_ptr.*, Any.{member.type, slot + member.offset_in_bytes}, member.name, name);  if !ok return;
-            } else if !array_find(member.notes, context.toml.optional_note) {
+            } else if !array_find(member.notes, context.toml.optional_note) && !(member.flags & .OVERLAY) {
                 return_with_error("Missing field %.%", struct_info.name, member.name);
             }
         }

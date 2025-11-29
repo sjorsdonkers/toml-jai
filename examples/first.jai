@@ -217,7 +217,7 @@ unions_and_place :: () {
     }
     group:= Group.{tag=.SECOND, second=Guy.{mytag=.ORANGE, orange="color"}};
     ok=, group_toml := Toml.type_to_string(group); assert(ok);
-    assert("SECOND.scared.ORANGE=\"color\"\n" == tprint("%", group_toml));
+    assert("SECOND.scared.ORANGE=\"color\"\n" == group_toml);
     ok, group = Toml.string_to_type("THIRD.scared.BANANA = -17", Group); assert(ok);
     assert(group.tag == .THIRD && group.third.mytag == .BANANA && group.third.banana.* == -17);
 
@@ -237,7 +237,7 @@ unions_and_place :: () {
     assert(#string DONE
 named.scared.APPLE={a=9, b="butter"}
 "".B.scared.ORANGE="kleur"
-DONE == tprint("%", smem_toml), "%", smem_toml);
+DONE == smem_toml, "%", smem_toml);
 
     ok, smem = Toml.string_to_type(#string DONE
 named.scared.BANANA = 987
@@ -246,17 +246,29 @@ DONE, StructMember); assert(ok);
     assert(smem.named.mytag == .BANANA && smem.named.banana.* == 987);
     assert(smem.tag == .B && smem.b.mytag == .APPLE && smem.b.apple.a == 3 && smem.b.apple.b == "peanut");
 
-    // If a structure has overlapping members / members with different names through the #place directive
-    // they are all serialized. This is inconsistent with Basic.print which skips members that overlap previous members.
-    // Note that this may be unsafe if #place is used for a union use-case like a string overlapping some floats. In this case,
-    // if the floats are "active" the string is still serialized assuming the data pointer is valid. -- Perhaps we should simply not allow #place.
-    // When deserializing the last overlapping member in the struct definition that is also in the toml wins.
-    // It is recommended to make #place members @TomlOptional such that they are not all required.
-    #import "Math";
-    has_hash_place:= Plane3.{3., 81., .18, .65};
-    print("has_hash_place: %\n", has_hash_place);
-    ok=, hash_toml:= Toml.type_to_string(has_hash_place); assert(ok);
-    print("hash_toml: %\n", hash_toml);
+    // #overlay members are not serialized, as the data they represent is already printed by the primary members which they overlay
+    // This also means the primary members should always be in a valid state, pointer members must point to data matching the type
+    My_Overlay :: struct {
+        a: u8; b: u8; c: u8; d: u8;
+        #overlay (a) abcd: u32;
+    }
+    my_overlay := My_Overlay.{abcd=4346721};
+    ok=, overlay_toml := Toml.type_to_string(my_overlay); assert(ok);
+    assert("a=97\nb=83\nc=66\nd=0\n" == overlay_toml, "%", overlay_toml);
+    // #overlay fields are optional and not recommended
+    ok=, overlay_data := Toml.string_to_type("a=1\nb=2\nc=3\nd=4", My_Overlay); assert(ok); // abcd is omitted
+    assert(overlay_data.a == 1
+        && overlay_data.b == 2
+        && overlay_data.c == 3
+        && overlay_data.d == 4
+        && overlay_data.abcd == 67305985, "%", overlay_data.abcd);
+    // #overlay fields may be provided in the toml, the data is overwritten on top of each other in the order of the members in the struct
+    ok, overlay_data = Toml.string_to_type("a=3\nb=3\nc=3\nd=3\nabcd=4346721", My_Overlay); assert(ok);
+    assert(overlay_data.a == 97
+        && overlay_data.b == 83
+        && overlay_data.c == 66
+        && overlay_data.d == 0
+        && overlay_data.abcd == 4346721);
 }
 
 error_handling :: () {
