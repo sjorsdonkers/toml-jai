@@ -50,7 +50,7 @@ type_to_value_shared_memory :: (input: Any) -> ok:=false, toml:Value=.{} {
 
         table: [..]KeyValue;
         for member: struct_info.members {
-            if member.flags & (.CONSTANT | .IMPORTED | .OVERLAY) continue; // We don't print overlay members, just the primary variables the overlay
+            if member.flags & (.CONSTANT | .IMPORTED | .OVERLAY) continue; // We don't print overlay members, just the primary variables they overlay
             ok, member_value:= type_to_value_shared_memory(Any.{member.type, slot + member.offset_in_bytes});  if !ok return;
             array_add(*table, KeyValue.{key=member.name, value=member_value});
         }

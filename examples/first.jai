@@ -255,7 +255,7 @@ DONE, StructMember); assert(ok);
     my_overlay := My_Overlay.{abcd=4346721};
     ok=, overlay_toml := Toml.type_to_string(my_overlay); assert(ok);
     assert("a=97\nb=83\nc=66\nd=0\n" == overlay_toml, "%", overlay_toml);
-    // #overlay fields are optional and not recommended
+    // #overlay fields are optional and not recommended in the toml string
     ok=, overlay_data := Toml.string_to_type("a=1\nb=2\nc=3\nd=4", My_Overlay); assert(ok); // abcd is omitted
     assert(overlay_data.a == 1
         && overlay_data.b == 2
