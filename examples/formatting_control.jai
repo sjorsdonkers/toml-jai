@@ -24,11 +24,11 @@ floats :: () {
     assert(f1 == "value=0.000998\n", "Got '%'", f1);
 
     // The context's print_style can be set to change the format for all floats
-    ok, f1  = Toml.type_to_string(F64.{value=val},, toml=.{default_format_float=.{mode=.SCIENTIFIC, trailing_width=0}}); assert(ok);
+    ok, f1  = Toml.type_to_string(F64.{value=val},, toml={default_format_float={mode=.SCIENTIFIC, trailing_width=0}}); assert(ok);
     assert(f1 == "value=1e-03\n", "Got '%'", f1);
 
     // For individual members the FormatFloat type can be used to override the default
-    format := FormatF64.{value = .{value=val, mode=.SCIENTIFIC}};
+    format := FormatF64.{value = {value=val, mode=.SCIENTIFIC}};
     ok, f1  = Toml.type_to_string(format); assert(ok);
     assert(f1 == "value=9.98e-04\n", "Got '%'", f1);
 
@@ -59,11 +59,11 @@ ints ::() {
     assert(i1 == "value=42\n", "Got '%'", i1);
 
     // The context's print_style can be set to change the format for all ints
-    ok, i1  = Toml.type_to_string(S64.{value=val},, toml=.{default_format_int=.{base=16}}); assert(ok);
+    ok, i1  = Toml.type_to_string(S64.{value=val},, toml={default_format_int={base=16}}); assert(ok);
     assert(i1 == "value=2a\n", "Got '%'", i1);
 
     // For individual members the FormatInt type can be used to override the default
-    format := FormatS64.{value = .{value=val, base=2}};
+    format := FormatS64.{value = {value=val, base=2}};
     ok, i1  = Toml.type_to_string(format); assert(ok);
     assert(i1 == "value=101010\n", "Got '%'", i1);
 

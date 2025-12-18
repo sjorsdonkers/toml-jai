@@ -2,7 +2,7 @@
 // As such the keys and strings in the returned Value may point into the source string
 // Additionally this procedure does not deallocate any temporary memory
 // Sets context.toml.index_maps
-string_to_value_shared_memory :: (contents: string) -> ok:=false, root_table:Value=.{} {
+string_to_value_shared_memory :: (contents: string) -> ok:=false, root_table:Value={} {
     ok, tokens := tokenize(contents);  if !ok return; // Not freeing tokens as it will be in a Pool
     scope      := Scope.{contents, tokens, 0, ""};
 
@@ -25,7 +25,7 @@ string_to_value_shared_memory :: (contents: string) -> ok:=false, root_table:Val
             define(current_table, .HEADER);                                                      // Finalize the previous Table, to prevent re-definition
             header_scope     := eat_scope(*scope, token);
             ok=, aot, is_new := parse_key(*root_table, header_scope, true); if !ok return;
-            if is_new then { aot.* = .{type=.ARRAY, array=[..]Value.{}}; define(aot, .HEADER); } // Create and finalize the Array, to prevent re-definition
+            if is_new then { aot.* = {type=.ARRAY, array=[..]Value.{}}; define(aot, .HEADER); }  // Create and finalize the Array, to prevent re-definition
             else if (aot.type != .ARRAY || aot.table.count == 0) then return_with_error_line(header_scope.source, peek(header_scope.tokens).loc, "Cannot use key as Array of Tables as it already has a value: %", aot.type);
             current_table = array_add(*aot.array);                                               // Add a new entry as current_table
         case;                       // key = value
@@ -65,7 +65,7 @@ parse_key :: (parent: *Value, scope: Scope, parsing_header: bool) -> ok:=false, 
 }
 
 // * current_table is null for values in arrays
-parse_value :: (current_table: *Value, scope: *Scope) -> ok:=false, value:Value=.{} {
+parse_value :: (current_table: *Value, scope: *Scope) -> ok:=false, value:Value={} {
     if !has_next(scope) { return_with_error("Unexpected end of file while parsing value"); }
 
     ok: bool; value: Value;
@@ -79,7 +79,7 @@ parse_value :: (current_table: *Value, scope: *Scope) -> ok:=false, value:Value=
     return ok, value;
 }
 
-parse_inline_table :: (current_table: *Value, scope: Scope) -> ok:=false, table:Value=.{} {
+parse_inline_table :: (current_table: *Value, scope: Scope) -> ok:=false, table:Value={} {
     // An inline table is either the right-hand side of an assignment to a key
     // or a value in an array. In case of the former it is important that we continue building
     // on the current key as a.b = {c.d = 1} is the same as in a.b.c.d = 1
@@ -94,29 +94,29 @@ parse_inline_table :: (current_table: *Value, scope: Scope) -> ok:=false, table:
     return true, current_table.*;
 }
 
-parse_array :: (scope: Scope) -> ok:=false, array:Value=.{} {
+parse_array :: (scope: Scope) -> ok:=false, array:Value={} {
     values : [..]Value;
     while has_next(scope) {
         ok, value := parse_value(null, *scope); if !ok return;
         array_add(*values, value);
         if has_next(scope) { eat_expected(*scope, Token.Type.COMMA); }
     }
-    return true, .{type=.ARRAY, array=values};
+    return true, {type=.ARRAY, array=values};
 }
 
-parse_literal :: (scope: *Scope) -> ok:=false, literal:Value=.{} {
+parse_literal :: (scope: *Scope) -> ok:=false, literal:Value={} {
     token := eat_token(scope);
     if token.type == {
     case .LITERAL;       #through;
-    case .LITERAL_MULTI; return true, .{type=.STRING, string_value=token.str};
+    case .LITERAL_MULTI; return true, {type=.STRING, string_value=token.str};
     case .BASIC;         #through;
     case .BASIC_MULTI;
         ok, unescaped := unescape(token, scope.source); if !ok return;
-        return true, .{type=.STRING, string_value=unescaped};
+        return true, {type=.STRING, string_value=unescaped};
     case .RAW;
         // Parse boolean
-        if token.str == "true"  { return true, .{type=.BOOL, bool_value=true}; }
-        if token.str == "false" { return true, .{type=.BOOL, bool_value=false}; }
+        if token.str == "true"  { return true, {type=.BOOL, bool_value=true}; }
+        if token.str == "false" { return true, {type=.BOOL, bool_value=false}; }
 
         // Parse integer
         us_split := split(token.str, "_");
@@ -130,14 +130,14 @@ parse_literal :: (scope: *Scope) -> ok:=false, literal:Value=.{} {
             base := ifx clean_str[1] == "x" then 16 else ifx clean_str[1] == "b" then 2 else 8;
             value, ok, remainder := string_to_int_checked(without_base, base, s64);
             if !ok || remainder.count != 0 then return_with_error_line(scope.source, token.loc, "Invalid hex/binary/octal literal %", token.str);
-            return true, .{type=.INT, int_value=value};
+            return true, {type=.INT, int_value=value};
         }
         int_value, ok, remainder := string_to_int_checked(clean_str, 10, s64);
         if ok && remainder.count == 0 {
             for us_split if it.count == 0 then return_with_error_line(scope.source, token.loc, "Invalid placement of _ in integer literal %", token.str);
             start_digit := ifx (clean_str[0] == "+" || clean_str[0] =="-") then 1 else 0;
             if clean_str[start_digit] == "0" && clean_str.count - start_digit > 1 then return_with_error_line(scope.source, token.loc, "Leading zeros are not allowed in integer literal %", token.str);
-            return true, .{type=.INT, int_value=int_value};
+            return true, {type=.INT, int_value=int_value};
         }
 
         // Parse float
@@ -157,12 +157,12 @@ parse_literal :: (scope: *Scope) -> ok:=false, literal:Value=.{} {
             for idx: start_digit..clean_str.count-2 {
                 if clean_str[idx] == "." && (clean_str[idx + 1] == "e" || clean_str[idx + 1] == "E") then return_with_error_line(scope.source, token.loc, "Invalid .e in float literal %", token.str);
             }
-            return true, .{type=.FLOAT, float_value=float_value};
+            return true, {type=.FLOAT, float_value=float_value};
         }
-        if token.str == "inf" || token.str == "+inf" { return true, .{type=.FLOAT, float_value=Math.FLOAT64_INFINITY}; }
-        if token.str == "-inf"                       { return true, .{type=.FLOAT, float_value=-Math.FLOAT64_INFINITY}; }
-        if token.str == "nan" || token.str == "+nan" { return true, .{type=.FLOAT, float_value=Math.FLOAT64_NAN}; }
-        if token.str == "-nan"                       { return true, .{type=.FLOAT, float_value=-Math.FLOAT64_NAN}; }
+        if token.str == "inf" || token.str == "+inf" { return true, {type=.FLOAT, float_value=Math.FLOAT64_INFINITY}; }
+        if token.str == "-inf"                       { return true, {type=.FLOAT, float_value=-Math.FLOAT64_INFINITY}; }
+        if token.str == "nan" || token.str == "+nan" { return true, {type=.FLOAT, float_value=Math.FLOAT64_NAN}; }
+        if token.str == "-nan"                       { return true, {type=.FLOAT, float_value=-Math.FLOAT64_NAN}; }
 
         // Parse date, check if next token is time separated by single space: 1979-05-27 07:32:00Z
         date_input := token.str;
@@ -175,7 +175,7 @@ parse_literal :: (scope: *Scope) -> ok:=false, literal:Value=.{} {
             }
         }
         ok=, chrono := parse_datetime(date_input);
-        if ok { return true, .{type=.DATETIME, datetime=chrono}; }
+        if ok { return true, {type=.DATETIME, datetime=chrono}; }
 
         return_with_error_line(scope.source, token.loc, "Unable to parse literal %", token.str);
     case; return_with_error_line(scope.source, token.loc, "Unexpected token %, expected a value", token.type);
@@ -262,7 +262,7 @@ eat_expected :: (scope: *Scope, expected: Token.Type) -> ok:=false {
     return true;
 }
 // * Return: Only DOT or LITERAL tokens
-eat_key :: (scope: *Scope) -> ok:=false, key:Token=.{} {
+eat_key :: (scope: *Scope) -> ok:=false, key:Token={} {
     original := peek_token(scope);
     if scope.remaining_key.count == 0 {
         if original.type == {
@@ -284,10 +284,10 @@ eat_key :: (scope: *Scope) -> ok:=false, key:Token=.{} {
     next:, scope.remaining_key = split_from_left_incl(scope.remaining_key, ".");
     if scope.remaining_key.count == 0 { eat_token(scope); }                   // Consume the token once all parts have been eaten
     if next == "." { return true, Token.{type=Token.Type.DOT, loc=Location.{original.loc.line, char_pos}}; }
-    if !is_bare_key(next) { return_with_error_line(scope.source, .{original.loc.line, char_pos}, "Invalid key % Bare keys may contain only A-Za-z0-9_- otherwise use quotes", next); }
+    if !is_bare_key(next) { return_with_error_line(scope.source, {original.loc.line, char_pos}, "Invalid key % Bare keys may contain only A-Za-z0-9_- otherwise use quotes", next); }
     return true, Token.{type=Token.Type.LITERAL, str=next, loc=Location.{original.loc.line, char_pos}};
 }
-eat_expected_key :: (scope: *Scope, expected: Token.Type) -> ok:=false, key:Token=.{} {
+eat_expected_key :: (scope: *Scope, expected: Token.Type) -> ok:=false, key:Token={} {
     ok, token := eat_key(scope); if !ok return;
     if token.type != expected { return_with_error_line(scope.source, token.loc, "Expected %, got %", expected, token.type); }
     return true, token;
@@ -298,7 +298,7 @@ eat_scope :: (scope: *Scope, edible: Token) -> Scope {
     return Scope.{scope.source, edible.scope, 0, ""};
 }
 // * sub_scope does not contain the scope_end token
-eat_scope_until_assign :: (scope: *Scope) -> ok:=false, sub_scope:Scope=.{} {
+eat_scope_until_assign :: (scope: *Scope) -> ok:=false, sub_scope:Scope={} {
     start_pos := scope.pos;
     while has_next(scope) {
         if eat_token(scope).type == .ASSIGN {
@@ -405,7 +405,7 @@ find_or_insert_key :: (table: *Value, key: string) -> is_new:bool, table:*Value 
 
     if table.table.count < context.toml.index_threshold {
         for table.table if it.key == key { return false, *it.value; } // Linear search for small tables
-        array_add(*table.table, KeyValue.{key=key, value=.{}});       // Add new key value
+        array_add(*table.table, KeyValue.{key=key, value={}});        // Add new key value
         return true, *peek_pointer(table.table).value;                // Return the value that was added to the end
     } else if table.table.count == context.toml.index_threshold {
         new_index_map: Table(string, s64);                               // Create an index map for a table when it reaches the threshold
@@ -420,7 +420,7 @@ find_or_insert_key :: (table: *Value, key: string) -> is_new:bool, table:*Value 
     if !is_new { return false, *table.table[key_index.*].value; } // Return the found existing value
 
     key_index.* = table.table.count;                        // The new index of the key into the table
-    array_add(*table.table, KeyValue.{key=key, value=.{}}); // Add new key value
+    array_add(*table.table, KeyValue.{key=key, value={}});  // Add new key value
     return true, *peek_pointer(table.table).value;          // Return the value that was added to the end
 }
 

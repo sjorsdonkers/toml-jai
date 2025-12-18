@@ -230,7 +230,7 @@ unions_and_place :: () {
         }
     }
     smem:= StructMember.{
-        named=Guy.{mytag=.APPLE, apple=.{a=9, b="butter"}},
+        named=Guy.{mytag=.APPLE, apple={a=9, b="butter"}},
         tag=.B, b=Guy.{mytag=.ORANGE, orange="kleur"}
     };
     ok=, smem_toml:= Toml.type_to_string(smem); assert(ok);
@@ -290,7 +290,7 @@ error_handling :: () {
         }
     }
 
-    wrap:= Log_Wrap.{context.logger, context.logger_data, .{}};                                    // Store the current logger in the wrap
+    wrap:= Log_Wrap.{context.logger, context.logger_data, {}};                                    // Store the current logger in the wrap
     Invalid :: struct { e: enum{}; }                                                               // Struct for which we know we can make an error occur
     inv_ok := Toml.type_to_string(Invalid.{e=xx,force 9},, logger=capture_log, logger_data=*wrap); // Call to serialize with the invalid struct and setting the context to the wrapped logger
     if !inv_ok print("capture_log: %", builder_to_string(*wrap.capture));                          // The operation failed and the error message is captured in the wrap
@@ -319,10 +319,10 @@ reference_types :: () {
     ok=, null_ptr := Toml.string_to_type("ptr = \"~null~\"", Null_Pointer); assert(ok);
     assert(null_ptr.ptr == null, "%", null_ptr);
     // We can change the string used to represent null values in the TOML data to any other Value.
-    ok=, zero_ptr := Toml.string_to_type("ptr = 17.0", Null_Pointer,, toml = .{null_value = Value.{type=.FLOAT, float_value=17.0}}); assert(ok);
+    ok=, zero_ptr := Toml.string_to_type("ptr = 17.0", Null_Pointer,, toml = {null_value = Value.{type=.FLOAT, float_value=17.0}}); assert(ok);
     assert(zero_ptr.ptr == null, "%", zero_ptr);
     // Serialization works the same way.
-    ok=, nil_toml := Toml.type_to_string(Null_Pointer.{ptr=null},, toml = .{null_value = Value.{type=.STRING, string_value="nil"}}); assert(ok);
+    ok=, nil_toml := Toml.type_to_string(Null_Pointer.{ptr=null},, toml = {null_value = Value.{type=.STRING, string_value="nil"}}); assert(ok);
     assert(nil_toml == "ptr=\"nil\"\n", "%", nil_toml);
 
     // Optional pointer

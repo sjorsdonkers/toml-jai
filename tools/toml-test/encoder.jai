@@ -10,7 +10,7 @@ main :: () {
     }
 
     builder: String_Builder;
-    ok = Toml.type_to_builder(*builder, toml_value,, toml=.{default_format_float=.{mode=.SCIENTIFIC, trailing_width=15}});
+    ok = Toml.type_to_builder(*builder, toml_value,, toml={default_format_float={mode=.SCIENTIFIC, trailing_width=15}});
     if !ok {
         print("Failed to serialize TOML\n", to_standard_error=true);
         exit(1);
@@ -65,7 +65,7 @@ parse_object_to_toml :: (parser: *JSON_Parser) -> ok:=false, value:=Toml.Value.{
         eat_whitespace(parser);
         value_ok, value := parse_json_to_toml(parser);
         if !value_ok return;
-        array_add(*table, .{key = key, value = value});
+        array_add(*table, {key = key, value = value});
 
         eat_whitespace(parser);
         if parser.pos >= parser.data.count return;
@@ -185,7 +185,7 @@ parse_typed_value :: (type_str: string, value_str: string) -> ok:=false, value:=
     case "date-local";     #through;
     case "time-local";
         ok, chrono := parse_datetime(value_str); if !ok return;
-        return true, .{type=.DATETIME, datetime=chrono};
+        return true, {type=.DATETIME, datetime=chrono};
     }
     return;
 }

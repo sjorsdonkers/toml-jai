@@ -14,7 +14,7 @@
     test("./tools/toml-test", "run_toml-tests",     args);
     print("Tests ran in % seconds\n", seconds_since_init() - t0);
 
-    set_build_options_dc(.{do_output=false});
+    set_build_options_dc({do_output=false});
 }
 
 test :: (dir: string, filestem: string, args: string){

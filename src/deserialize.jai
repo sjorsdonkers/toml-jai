@@ -1,5 +1,5 @@
-deserialize :: inline (contents: string, $Target: Type) -> ok:=false, value:Target=.{} #deprecated "Renamed string_to_type" { ok, value := string_to_type(contents, Target); return ok, value; }
-string_to_type :: (contents: string, $Target: Type) -> ok:=false, value:Target=.{} {
+deserialize :: inline (contents: string, $Target: Type) -> ok:=false, value:Target={} #deprecated "Renamed string_to_type" { ok, value := string_to_type(contents, Target); return ok, value; }
+string_to_type :: (contents: string, $Target: Type) -> ok:=false, value:Target={} {
     auto_release_temp_maybe();
     ok, value := string_to_value_shared_memory(contents,, temp); if !ok return;
     defer context.toml.index_maps = [..]Table(string, s64).{}; // Reset the index as the memory is on the pool

@@ -47,7 +47,7 @@ tokenize :: (data: string) -> ok:=false, tokens:[..]Token=[..]Token.{} {
 
         if c == "\n" || has_next(lexer, 2) && peek_slice(lexer, 2) == "\r\n"{
             if lexer.scope_stack.count == 0 {
-                array_add(*lexer.tokens, .{ type=.NEWLINE, loc=lexer.loc });
+                array_add(*lexer.tokens, { type=.NEWLINE, loc=lexer.loc });
             } else {
                 scope := lexer.tokens[peek(lexer.scope_stack)];
                 if scope.type == #char "{" || (lexer.at_root && scope.type == #char "[") || scope.type == .SCOPE_DOUBLE_BRACKET { return_with_error_line(lexer.data, lexer.loc, "Newline in header or inline-table"); }
@@ -60,7 +60,7 @@ tokenize :: (data: string) -> ok:=false, tokens:[..]Token=[..]Token.{} {
 
         if c == "," || c == "=" {
             if c == "=" lexer.at_root = false;
-            array_add(*lexer.tokens, .{ type=xx c, loc=lexer.loc});
+            array_add(*lexer.tokens, { type=xx c, loc=lexer.loc});
             eat_char(*lexer);
             continue;
         }
@@ -201,7 +201,7 @@ Lexer :: struct {
     data: string;            // The original TOML input string
     tokens: [..]Token;       // The lexed tokens to be returned
     pos: s64      = 0;       // Index into data of the current char to be evaluated
-    loc: Location = .{1, 1}; // Location of the current char
+    loc: Location = {1, 1};  // Location of the current char
     scope_stack: [..]int;    // Indices into `tokens` for scopes that have not been closed yet `{` and `[`
     at_root := true;         // True when we expect only a header or a key
 }

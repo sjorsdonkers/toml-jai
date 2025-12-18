@@ -1,6 +1,6 @@
 # TOML-jai
 
-![](https://img.shields.io/badge/Jai-beta%200.2.021-blue.svg)
+![](https://img.shields.io/badge/Jai-beta%200.2.022-blue.svg)
 
 A module for `TOML v1.0.0` support. It provides functionality to read/write TOML files and convert them directly to/from Jai data structures.
 
@@ -56,7 +56,7 @@ Note that these custom handler drive "what" is (de)serialized, they do not help 
 
 Serialization can be modified by changing the custom handler procedure in the context.
 ```jai
-enum_to_value :: (input: Any) -> done:=true, ok:=false, toml:Value=.{} {
+enum_to_value :: (input: Any) -> done:=true, ok:=false, toml:Value={} {
     if input.type.type != .ENUM return false;
     enum_value := Reflection.get_enum_value(input.value_pointer, xx input.type);
     ok, value  := Toml.type_to_value(*enum_value, type_info(s64));
@@ -65,7 +65,7 @@ enum_to_value :: (input: Any) -> done:=true, ok:=false, toml:Value=.{} {
 
 ok, toml := Toml.type_to_string(
     my_struct
-    ,, toml = .{custom_type_to_value=enum_to_value}
+    ,, toml = {custom_type_to_value=enum_to_value}
 );
 ```
 

@@ -15,14 +15,14 @@ type_to_builder :: (builder: *String_Builder, input: Any) -> ok:=false {
     return true;
 }
 
-type_to_value :: (input: Any) -> ok:=false, value:Value=.{} {
+type_to_value :: (input: Any) -> ok:=false, value:Value={} {
     ok, value := type_to_value_shared_memory(input,, scoped_pool()); if !ok return;
     return ok, copy(value); // Would be nice if we could just copy the reused strings and Value arrays and tables.
 }
 
 // NOTE: Does not deep copy!
 // Not meant to be called directly by the user, but instead to be used inside custom serializers.
-type_to_value_shared_memory :: (input: Any) -> ok:=false, toml:Value=.{} {
+type_to_value_shared_memory :: (input: Any) -> ok:=false, toml:Value={} {
     done, ok, value := context.toml.custom_type_to_value(input);
     if done return ok, value;
 
@@ -32,18 +32,18 @@ type_to_value_shared_memory :: (input: Any) -> ok:=false, toml:Value=.{} {
     if #complete info.type == {
     case .INTEGER;
         ok, value := get_integer_value(slot, xx info); if !ok return;
-        return true, .{type=.INT, int_value=value};
+        return true, {type=.INT, int_value=value};
     case .FLOAT;
-        if      info.runtime_size == 4 { return true, .{type=.FLOAT, float_value=cast(*float32, slot).*}; }
-        else if info.runtime_size == 8 { return true, .{type=.FLOAT, float_value=cast(*float64, slot).*}; }
+        if      info.runtime_size == 4 { return true, {type=.FLOAT, float_value=cast(*float32, slot).*}; }
+        else if info.runtime_size == 8 { return true, {type=.FLOAT, float_value=cast(*float64, slot).*}; }
         else { assert(false, "Unsupported float size %", info.runtime_size); }
-    case .BOOL;   return true, .{type=.BOOL, bool_value=cast(*bool, slot).*};
-    case .STRING; return true, .{type=.STRING, string_value=cast(*string, slot).*}; // No deep copy!
+    case .BOOL;   return true, {type=.BOOL, bool_value=cast(*bool, slot).*};
+    case .STRING; return true, {type=.STRING, string_value=cast(*string, slot).*}; // No deep copy!
     case .POINTER;
         if cast(**void, slot).* == null return true, context.toml.null_value; // User can change default null value as module parameter
         ok, value := type_to_value_shared_memory(Any.{cast(*Type_Info_Pointer, info).pointer_to, cast(**void, slot).*});
         return ok, value;
-    case .VOID;  return true, .{};
+    case .VOID;  return true, {};
     case .STRUCT;
         struct_info :*Type_Info_Struct= xx info;
         if struct_info.textual_flags & .UNION return_with_error("Untagged unions (%) are not supported, as we cannot determine the active member, use @SumType", ifx struct_info.name then struct_info.name else "anonymous");
@@ -54,7 +54,7 @@ type_to_value_shared_memory :: (input: Any) -> ok:=false, toml:Value=.{} {
             ok, member_value:= type_to_value_shared_memory(Any.{member.type, slot + member.offset_in_bytes});  if !ok return;
             array_add(*table, KeyValue.{key=member.name, value=member_value});
         }
-        return true, .{type=.TABLE, table=table};
+        return true, {type=.TABLE, table=table};
     case .ARRAY;
         array_info :*Type_Info_Array= xx info;
         array_count:= ifx array_info.array_type == .FIXED then array_info.array_count else cast(*s64,   slot).*;
@@ -67,7 +67,7 @@ type_to_value_shared_memory :: (input: Any) -> ok:=false, toml:Value=.{} {
             ok, record_value:= type_to_value_shared_memory(Any.{array_info.element_type, element_slot}); if !ok return;
             array_add(*array, record_value);
         }
-        return true, .{type=.ARRAY, array=array};
+        return true, {type=.ARRAY, array=array};
     case .ANY;
         any_value :*Any_Struct= xx slot;
         if any_value.value_pointer == null return true, context.toml.null_value; // Similar to null pointer
@@ -77,7 +77,7 @@ type_to_value_shared_memory :: (input: Any) -> ok:=false, toml:Value=.{} {
         enum_info :*Type_Info_Enum= xx info;
         enum_value:= Reflection.get_enum_value(slot, enum_info);
         for enum_info.values  if it == enum_value {
-            return true, .{type=.STRING, string_value=enum_info.names[it_index]};
+            return true, {type=.STRING, string_value=enum_info.names[it_index]};
         }
         return_with_error("Enum value % not found in enum %", enum_value, enum_info.name);
     case .VARIANT;
@@ -90,27 +90,27 @@ type_to_value_shared_memory :: (input: Any) -> ok:=false, toml:Value=.{} {
     return_with_error("Parsing of type % is not supported", info.type);
 }
 
-default_custom_type_to_value :: (input: Any) -> done:=true, ok:=false, toml:Value=.{} {
-    if input.type.type != .STRUCT return false, true, .{};
+default_custom_type_to_value :: (input: Any) -> done:=true, ok:=false, toml:Value={} {
+    if input.type.type != .STRUCT return false, true, {};
     struct_info :*Type_Info_Struct= xx input.type;
 
     slot := input.value_pointer;
     if struct_info == {
     case type_info(Value);          return true, true, cast(*Value, slot).*; // No deep copy!
-    case type_info(Chrono);         return true, true, .{type=.DATETIME, datetime=cast(*Chrono, slot).*};
-    case type_info(Time);           return true, true, .{type=.DATETIME, datetime=.{type=.LOCAL_TIME,      time=           cast(*Time, slot).*}};
-    case type_info(Date);           return true, true, .{type=.DATETIME, datetime=.{type=.LOCAL_DATE,      date=           cast(*Date, slot).*}};
-    case type_info(DateTime);       return true, true, .{type=.DATETIME, datetime=.{type=.LOCAL_DATETIME,  datetime=       cast(*DateTime, slot).*}};
-    case type_info(DateTimeOffset); return true, true, .{type=.DATETIME, datetime=.{type=.OFFSET_DATETIME, datetime_offset=cast(*DateTimeOffset, slot).*}};
-    case type_info(FormatInt);      return true, true, .{type=.FORMAT_INT,   format_int  =cast(*FormatInt,   slot)};
-    case type_info(FormatFloat);    return true, true, .{type=.FORMAT_FLOAT, format_float=cast(*FormatFloat, slot)};
+    case type_info(Chrono);         return true, true, {type=.DATETIME, datetime=cast(*Chrono, slot).*};
+    case type_info(Time);           return true, true, {type=.DATETIME, datetime={type=.LOCAL_TIME,      time=           cast(*Time, slot).*}};
+    case type_info(Date);           return true, true, {type=.DATETIME, datetime={type=.LOCAL_DATE,      date=           cast(*Date, slot).*}};
+    case type_info(DateTime);       return true, true, {type=.DATETIME, datetime={type=.LOCAL_DATETIME,  datetime=       cast(*DateTime, slot).*}};
+    case type_info(DateTimeOffset); return true, true, {type=.DATETIME, datetime={type=.OFFSET_DATETIME, datetime_offset=cast(*DateTimeOffset, slot).*}};
+    case type_info(FormatInt);      return true, true, {type=.FORMAT_INT,   format_int  =cast(*FormatInt,   slot)};
+    case type_info(FormatFloat);    return true, true, {type=.FORMAT_FLOAT, format_float=cast(*FormatFloat, slot)};
     }
     if array_find(struct_info.notes, "SumType") { ok, sumtype_value:= sumtype_to_value(slot, struct_info); return true, ok, sumtype_value; }
 
-    return false, true, .{};
+    return false, true, {};
 }
 
-sumtype_to_value :: (slot: *void, struct_info: *Type_Info_Struct) -> ok:=false, value:Value=.{} {
+sumtype_to_value :: (slot: *void, struct_info: *Type_Info_Struct) -> ok:=false, value:Value={} {
     valid, tag_member, union_member, tag_info, union_info:= is_valid_sumtype(struct_info);
     if !valid { return_with_error("SumType % is not valid", struct_info.name); }
 
@@ -121,8 +121,8 @@ sumtype_to_value :: (slot: *void, struct_info: *Type_Info_Struct) -> ok:=false, 
 
     ok, union_value:= type_to_value_shared_memory(Any.{active_variant.type, variant_slot}); if !ok return;
     table: [..]KeyValue;
-    array_add(*table, .{key=tag_info.names[active_tag_idx], value=union_value}); // We use the enums string name as the union member may be anonymous
-    return true, .{type=.TABLE, table=table};
+    array_add(*table, {key=tag_info.names[active_tag_idx], value=union_value}); // We use the enums string name as the union member may be anonymous
+    return true, {type=.TABLE, table=table};
 }
 
 // NOTE: Print procedures after this use context.print_style for int/float formatting

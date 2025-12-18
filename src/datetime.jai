@@ -41,12 +41,12 @@ DateTimeOffset :: struct {
 }
 
 // Parses a datetime in the format "YYYY-MM-DDTHH:MM:SS[.SSS][Z|(+|-)HH:MM]"
-parse_datetime :: (input: string) -> ok:=false, value:Chrono=.{} {
+parse_datetime :: (input: string) -> ok:=false, value:Chrono={} {
     success, time := parse_time(input);
-    if success { return true, .{type=.LOCAL_TIME, time=time}; }
+    if success { return true, {type=.LOCAL_TIME, time=time}; }
 
     success =, date:= parse_date(input); if !success return;
-    if input.count == 10 { return true, .{type=.LOCAL_DATE, date=date}; }
+    if input.count == 10 { return true, {type=.LOCAL_DATE, date=date}; }
 
     // Must be datetime [offset]
     if input.count < 19 return;
@@ -56,7 +56,7 @@ parse_datetime :: (input: string) -> ok:=false, value:Chrono=.{} {
     if time_str[time_str.count-1] == "Z" || time_str[time_str.count-1] == "z" {
         // Datetime with Zulu time
         success, time = parse_time(slice(time_str, 0, time_str.count-1)); if !success return;
-        return true, .{type=.OFFSET_DATETIME, datetime_offset=.{date=date, time=time, offset_hour=0, offset_minute=0}};
+        return true, {type=.OFFSET_DATETIME, datetime_offset={date=date, time=time, offset_hour=0, offset_minute=0}};
     } else if time_str[time_str.count-6] == "+" || time_str[time_str.count-6] == "-" {
         // Datetime with timezone by offset
         success, time = parse_time(slice(time_str, 0, time_str.count-6)); if !success return;
@@ -68,16 +68,16 @@ parse_datetime :: (input: string) -> ok:=false, value:Chrono=.{} {
 
         if offset_hour   > 23 { return_with_error("Invalid hour in timezone offset: %", offset_hour); }
         if offset_minute > 59 { return_with_error("Invalid minute in timezone offset: %", offset_minute); }
-        return true, .{type=.OFFSET_DATETIME, datetime_offset=.{date=date, time=time, offset_hour=offset_hour, offset_minute=offset_minute, offset_is_negative=offset_is_negative}};
+        return true, {type=.OFFSET_DATETIME, datetime_offset={date=date, time=time, offset_hour=offset_hour, offset_minute=offset_minute, offset_is_negative=offset_is_negative}};
     } else {
         // Datetime without timezone
         success, time = parse_time(time_str); if !success return;
-        return true, .{type=.LOCAL_DATETIME, datetime=.{date=date, time=time}};
+        return true, {type=.LOCAL_DATETIME, datetime={date=date, time=time}};
     }
 }
 
 // Parses a time in the format "HH:MM:SS[.SSS]", extra characters may only be digits
-parse_time :: (input: string) -> ok:=false, value:Time=.{} {
+parse_time :: (input: string) -> ok:=false, value:Time={} {
     if input.count < 8 return;
     if input[2] != ":" || input[5] != ":" return;
     hour   := slice_to_int(input, 0, 2, u8);
@@ -100,7 +100,7 @@ parse_time :: (input: string) -> ok:=false, value:Time=.{} {
 }
 
 // Parses a date in the format "YYYY-MM-DD", extra characters are ignored
-parse_date :: (input: string) -> ok:=false, value:Date=.{} {
+parse_date :: (input: string) -> ok:=false, value:Date={} {
     if input.count < 10 return;
     if input[4] != "-" || input[7] != "-" return;
     year  := slice_to_int(input, 0, 4, u16);
