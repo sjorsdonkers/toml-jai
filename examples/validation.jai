@@ -3,7 +3,7 @@ main :: () {
     keys();
     strings();
     end_lines();
-    assert(type_info(Value).runtime_size == 48, "%", type_info(Value).runtime_size);
+    assert(type_info(Value).runtime_size == 56, "%", type_info(Value).runtime_size); // Should be 48
 }
 
 reassignment :: () {

@@ -12,9 +12,9 @@ string_to_value_shared_memory :: (contents: string) -> ok:=false, root_table:Val
     context.toml.index_maps = [..]Table(string, s64).{};
     while has_next(scope) {
         token := peek_token(scope);
-        if token.type == .NEWLINE { eat_token(*scope); continue; }
+        if token.kind == .NEWLINE { eat_token(*scope); continue; }
 
-        if token.type == {
+        if token.kind == {
         case .SCOPE_BRACKET;        // [table] header
             define(current_table, .HEADER);                                                      // Finalize the previous Table, to prevent re-definition
             header_scope     := eat_scope(*scope, token);
@@ -70,7 +70,7 @@ parse_value :: (current_table: *Value, scope: *Scope) -> ok:=false, value:Value=
 
     ok: bool; value: Value;
     token := peek_token(scope);
-    if token.type == {
+    if token.kind == {
     case .SCOPE_BRACE;   ok, value = parse_inline_table(current_table, eat_scope(scope, token));
     case .SCOPE_BRACKET; ok, value = parse_array(eat_scope(scope, token));
     case;                ok, value = parse_literal(scope);
@@ -89,7 +89,7 @@ parse_inline_table :: (current_table: *Value, scope: Scope) -> ok:=false, table:
         ok, key_scope    := eat_scope_until_assign(*scope);             if !ok return;
         ok=, leaf_value  := parse_key(current_table, key_scope, false); if !ok return;
         ok=, leaf_value.* = parse_value(leaf_value, *scope);            if !ok return;
-        if has_next(scope, 2) { eat_expected(*scope, Token.Type.COMMA); } // Inline tables are not allowed to have trailing commas
+        if has_next(scope, 2) { eat_expected(*scope, .COMMA); } // Inline tables are not allowed to have trailing commas
     }
     return true, current_table.*;
 }
@@ -99,14 +99,14 @@ parse_array :: (scope: Scope) -> ok:=false, array:Value=.{} {
     while has_next(scope) {
         ok, value := parse_value(null, *scope); if !ok return;
         array_add(*values, value);
-        if has_next(scope) { eat_expected(*scope, Token.Type.COMMA); }
+        if has_next(scope) { eat_expected(*scope, .COMMA); }
     }
     return true, .{kind=.ARRAY, array=values};
 }
 
 parse_literal :: (scope: *Scope) -> ok:=false, literal:Value=.{} {
     token := eat_token(scope);
-    if token.type == {
+    if token.kind == {
     case .LITERAL;       #through;
     case .LITERAL_MULTI; return true, .{kind=.STRING, string_value=token.str};
     case .BASIC;         #through;
@@ -168,7 +168,7 @@ parse_literal :: (scope: *Scope) -> ok:=false, literal:Value=.{} {
         date_input := token.str;
         if has_next(scope) {
             next := peek_token(scope);
-            if next.type == .RAW
+            if next.kind == .RAW
             && (token.str.data + token.str.count).* == " "
             && token.str.data + token.str.count + 1 == next.str.data {
                 date_input.count += 1 + eat_token(scope).str.count;
@@ -178,12 +178,12 @@ parse_literal :: (scope: *Scope) -> ok:=false, literal:Value=.{} {
         if ok { return true, .{kind=.DATETIME, datetime=chrono}; }
 
         return_with_error_line(scope.source, token.loc, "Unable to parse literal %", token.str);
-    case; return_with_error_line(scope.source, token.loc, "Unexpected token %, expected a value", token.type);
+    case; return_with_error_line(scope.source, token.loc, "Unexpected token %, expected a value", token.kind);
     }
 }
 
 unescape :: (basic_token: Token, source: string) -> ok:=false, unescaped:string="" #no_abc {
-    assert(basic_token.type == Token.Type.BASIC || basic_token.type == Token.Type.BASIC_MULTI);
+    assert(basic_token.kind == .BASIC || basic_token.kind == .BASIC_MULTI);
     basic := basic_token.str;
 
     buffer := alloc_string(basic.count); // Allocate same size as input since unescaped string is always <= input length
@@ -210,7 +210,7 @@ unescape :: (basic_token: Token, source: string) -> ok:=false, unescaped:string=
         case "\t"; #through;
         case " ";  #through;
         case "\n";
-            if basic_token.type != Token.Type.BASIC_MULTI return_with_error_line(source, basic_token.loc, "Only multi-line basic strings (\"\"\") may end with escaped whitespace");
+            if basic_token.kind != .BASIC_MULTI return_with_error_line(source, basic_token.loc, "Only multi-line basic strings (\"\"\") may end with escaped whitespace");
             pos += 2;
             has_endline := basic[pos-1] == "\n";
             while (pos < basic.count) && ( basic[pos] == " " || basic[pos] == "\t" || basic[pos] == "\r" || basic[pos] == "\n") {
@@ -256,44 +256,44 @@ eat_token :: (scope: *Scope) -> Token {
     scope.pos += 1;
     return token;
 }
-eat_expected :: (scope: *Scope, expected: Token.Type) -> ok:=false {
+eat_expected :: (scope: *Scope, expected: Token.Kind) -> ok:=false {
     token := eat_token(scope);
-    if token.type != expected { return_with_error_line(scope.source, token.loc, "Expected %, got %", expected, token.type); }
+    if token.kind != expected { return_with_error_line(scope.source, token.loc, "Expected %, got %", expected, token.kind); }
     return true;
 }
 // * Return: Only DOT or LITERAL tokens
 eat_key :: (scope: *Scope) -> ok:=false, key:Token=.{} {
     original := peek_token(scope);
     if scope.remaining_key.count == 0 {
-        if original.type == {
+        if original.kind == {
         case .RAW;    scope.remaining_key = original.str; // A raw token may contain several dot separated keys
         case .LITERAL; return true, eat_token(scope);     // A quoted token cannot have sub-keys
         case .BASIC;                                      // Normalize to LITERAL as the unescaped needs to be compared
             toki := eat_token(scope);
             ok:, toki.str = unescape(toki, scope.source); if !ok return;
-            toki.type = Token.Type.LITERAL;
+            toki.kind = .LITERAL;
             return true, toki;
         case .BASIC_MULTI;   #through;
         case .LITERAL_MULTI; return_with_error_line(scope.source, original.loc, "Cannot use multi-line strings as key");
         case .DOT;           assert(false, "Parser expects lexer to give `.` as RAW, not as DOT");
-        case;                return_with_error_line(scope.source, original.loc, "Expected key, got %", original.type);
+        case;                return_with_error_line(scope.source, original.loc, "Expected key, got %", original.kind);
         }
     }
     // Handling potentially dot separated RAW key
     char_pos :s32= cast(s32, original.str.count - scope.remaining_key.count); // Assumes remaining_key is a suffix of original.str
     next:, scope.remaining_key = split_from_left_incl(scope.remaining_key, ".");
     if scope.remaining_key.count == 0 { eat_token(scope); }                   // Consume the token once all parts have been eaten
-    if next == "." { return true, Token.{type=Token.Type.DOT, loc=Location.{original.loc.line, char_pos}}; }
+    if next == "." { return true, Token.{kind=.DOT, loc=Location.{original.loc.line, char_pos}}; }
     if !is_bare_key(next) { return_with_error_line(scope.source, .{original.loc.line, char_pos}, "Invalid key % Bare keys may contain only A-Za-z0-9_- otherwise use quotes", next); }
-    return true, Token.{type=Token.Type.LITERAL, str=next, loc=Location.{original.loc.line, char_pos}};
+    return true, Token.{kind=.LITERAL, str=next, loc=Location.{original.loc.line, char_pos}};
 }
-eat_expected_key :: (scope: *Scope, expected: Token.Type) -> ok:=false, key:Token=.{} {
+eat_expected_key :: (scope: *Scope, expected: Token.Kind) -> ok:=false, key:Token=.{} {
     ok, token := eat_key(scope); if !ok return;
-    if token.type != expected { return_with_error_line(scope.source, token.loc, "Expected %, got %", expected, token.type); }
+    if token.kind != expected { return_with_error_line(scope.source, token.loc, "Expected %, got %", expected, token.kind); }
     return true, token;
 }
 eat_scope :: (scope: *Scope, edible: Token) -> Scope {
-    assert(edible.type == .SCOPE_BRACE || edible.type == .SCOPE_BRACKET || edible.type == .SCOPE_DOUBLE_BRACKET);
+    assert(edible.kind == .SCOPE_BRACE || edible.kind == .SCOPE_BRACKET || edible.kind == .SCOPE_DOUBLE_BRACKET);
     scope.pos += edible.scope.count + 1;
     return Scope.{scope.source, edible.scope, 0, ""};
 }
@@ -301,7 +301,7 @@ eat_scope :: (scope: *Scope, edible: Token) -> Scope {
 eat_scope_until_assign :: (scope: *Scope) -> ok:=false, sub_scope:Scope=.{} {
     start_pos := scope.pos;
     while has_next(scope) {
-        if eat_token(scope).type == .ASSIGN {
+        if eat_token(scope).kind == .ASSIGN {
             return true, Scope.{scope.source, array_view(scope.tokens, start_pos, scope.pos - start_pos - 1), 0, ""};
         }
     }

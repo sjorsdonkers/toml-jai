@@ -4,7 +4,7 @@
 #scope_module
 
 Token :: struct {
-    Type :: enum u8 {
+    Kind :: enum u8 {
         RAW                  :: 0;          // str
         LITERAL              :: 1;          // str
         LITERAL_MULTI        :: 2;          // str   // Not using LITERAL as multi-line string cannot be keys
@@ -18,8 +18,7 @@ Token :: struct {
         SCOPE_BRACE          :: #char "{";  // scope
         SCOPE_DOUBLE_BRACKET :: 5;          // scope // Only for headers, not nested arrays
     }
-    type: Type;
-    union {
+    union kind := Kind.RAW {
         str  : string;        // View into `data`
         scope: []Token = ---; // View into `tokens` starting at the next token
     };
@@ -47,10 +46,10 @@ tokenize :: (data: string) -> ok:=false, tokens:[..]Token=[..]Token.{} {
 
         if c == "\n" || has_next(lexer, 2) && peek_slice(lexer, 2) == "\r\n"{
             if lexer.scope_stack.count == 0 {
-                array_add(*lexer.tokens, .{ type=.NEWLINE, loc=lexer.loc });
+                array_add(*lexer.tokens, .{ kind=.NEWLINE, loc=lexer.loc });
             } else {
                 scope := lexer.tokens[peek(lexer.scope_stack)];
-                if scope.type == #char "{" || (lexer.at_root && scope.type == #char "[") || scope.type == .SCOPE_DOUBLE_BRACKET { return_with_error_line(lexer.data, lexer.loc, "Newline in header or inline-table"); }
+                if scope.kind == #char "{" || (lexer.at_root && scope.kind == #char "[") || scope.kind == .SCOPE_DOUBLE_BRACKET { return_with_error_line(lexer.data, lexer.loc, "Newline in header or inline-table"); }
             }
             if lexer.scope_stack.count == 0 { lexer.at_root = true; }
             if c == "\r" then eat_char(*lexer);
@@ -60,7 +59,7 @@ tokenize :: (data: string) -> ok:=false, tokens:[..]Token=[..]Token.{} {
 
         if c == "," || c == "=" {
             if c == "=" lexer.at_root = false;
-            array_add(*lexer.tokens, .{ type=xx c, loc=lexer.loc});
+            array_add(*lexer.tokens, .{ kind=xx c, loc=lexer.loc});
             eat_char(*lexer);
             continue;
         }
@@ -82,7 +81,7 @@ tokenize :: (data: string) -> ok:=false, tokens:[..]Token=[..]Token.{} {
         if is_raw(c) {
             start := lexer.pos;
             while has_next(lexer) && is_raw(peek_char(lexer)) { eat_char(*lexer); }
-            token := Token.{ type=.RAW, str=slice(lexer.data, start, lexer.pos - start), loc=Location.{lexer.loc.line, lexer.loc.char - xx (lexer.pos - start)} };
+            token := Token.{ kind=.RAW, str=slice(lexer.data, start, lexer.pos - start), loc=Location.{lexer.loc.line, lexer.loc.char - xx (lexer.pos - start)} };
             array_add(*lexer.tokens, token);
             continue;
         }
@@ -121,8 +120,8 @@ tokenize :: (data: string) -> ok:=false, tokens:[..]Token=[..]Token.{} {
                 if has_next(lexer, 4) && peek_char(lexer, 4) == c { eat_char(*lexer); }
                 if has_next(lexer, 4) && peek_char(lexer, 4) == c { eat_char(*lexer); }
 
-                token_type :Token.Type= ifx c == "\"" then .BASIC_MULTI else .LITERAL_MULTI;
-                token := Token.{ type=token_type, str=slice(data, start, lexer.pos - start), loc=Location.{lexer.loc.line, lexer.loc.char - xx (lexer.pos - start)} };
+                token_kind :Token.Kind= ifx c == "\"" then .BASIC_MULTI else .LITERAL_MULTI;
+                token := Token.{ kind=token_kind, str=slice(data, start, lexer.pos - start), loc=Location.{lexer.loc.line, lexer.loc.char - xx (lexer.pos - start)} };
                 if !is_valid_utf8(token.str) return_with_error_line(lexer.data, lexer.loc, "Invalid UTF-8 sequence in string.");
                 array_add(*lexer.tokens, token);
                 eat_char(*lexer, 3);
@@ -145,8 +144,8 @@ tokenize :: (data: string) -> ok:=false, tokens:[..]Token=[..]Token.{} {
                 }
                 if !has_next(lexer) { return_with_error_line(lexer.data, lexer.loc, "Unterminated string."); }
 
-                token_type :Token.Type= ifx c == "\"" then .BASIC else .LITERAL;
-                token := Token.{ type=token_type, str=slice(data, start, lexer.pos - start), loc=Location.{lexer.loc.line, lexer.loc.char - xx (lexer.pos - start)} };
+                token_kind :Token.Kind= ifx c == "\"" then .BASIC else .LITERAL;
+                token := Token.{ kind=token_kind, str=slice(data, start, lexer.pos - start), loc=Location.{lexer.loc.line, lexer.loc.char - xx (lexer.pos - start)} };
                 if !is_valid_utf8(token.str) return_with_error_line(lexer.data, lexer.loc, "Invalid UTF-8 sequence in string.");
                 array_add(*lexer.tokens, token);
                 eat_char(*lexer);
@@ -157,13 +156,13 @@ tokenize :: (data: string) -> ok:=false, tokens:[..]Token=[..]Token.{} {
         // Scopes
         if c == "{" || c == "[" {
             scope_index := lexer.tokens.count;
-            token_type :Token.Type= xx c;
+            token_kind :Token.Kind= xx c;
             if lexer.at_root &&c == "[" && has_next(lexer, 2) && peek_slice(lexer, 2) == "[[" {
-                token_type = .SCOPE_DOUBLE_BRACKET;
+                token_kind = .SCOPE_DOUBLE_BRACKET;
                 eat_char(*lexer); // Eat the first [
             }
              // .scope is replaced by actual scope on scope closing, scope.count points to the slice token itself for now
-            token := Token.{ type=token_type, scope = lexer.tokens, loc=Location.{lexer.loc.line, lexer.loc.char} };
+            token := Token.{ kind=token_kind, scope = lexer.tokens, loc=Location.{lexer.loc.line, lexer.loc.char} };
             array_add(*lexer.tokens, token);
             array_add(*lexer.scope_stack, scope_index);
             eat_char(*lexer);
@@ -173,13 +172,13 @@ tokenize :: (data: string) -> ok:=false, tokens:[..]Token=[..]Token.{} {
             if lexer.scope_stack.count == 0 { return_with_error_line(lexer.data, lexer.loc, "Mismatched braces. No scope opened for: %", to_string(*c, 1)); }
 
             scope_token := *lexer.tokens[pop(*lexer.scope_stack)];
-            if c == "]" && scope_token.type == .SCOPE_DOUBLE_BRACKET {
+            if c == "]" && scope_token.kind == .SCOPE_DOUBLE_BRACKET {
                 if !has_next(lexer, 2) || peek_slice(lexer, 2) != "]]" {
                     return_with_error_line(lexer.data, lexer.loc, "Double square bracket scope opened with [[ but closed with single ]. Expected ]].");
                 }
                 eat_char(*lexer); // Eat the first ]
-            } else if !(scope_token.type == #char "{" && c == "}") && !(scope_token.type == #char "[" && c == "]") {
-                return_with_error_line(lexer.data, lexer.loc, "Mismatched scope closure. Scope Opened with: % Attempt to close with: %", to_string(*cast(u8, scope_token.type), 1), to_string(*c,1));
+            } else if !(scope_token.kind == #char "{" && c == "}") && !(scope_token.kind == #char "[" && c == "]") {
+                return_with_error_line(lexer.data, lexer.loc, "Mismatched scope closure. Scope Opened with: % Attempt to close with: %", to_string(*cast(u8, scope_token.kind), 1), to_string(*c,1));
             }
 
             tokens_in_scope := lexer.tokens.count - scope_token.scope.count - 1;
@@ -192,7 +191,7 @@ tokenize :: (data: string) -> ok:=false, tokens:[..]Token=[..]Token.{} {
 
     if lexer.scope_stack.count > 0 {
         scope := lexer.tokens[peek(lexer.scope_stack)];
-        return_with_error_line(lexer.data, scope.loc, "Unclosed scope %", to_string(*cast(u8, scope.type), 1));
+        return_with_error_line(lexer.data, scope.loc, "Unclosed scope %", to_string(*cast(u8, scope.kind), 1));
     }
     return true, lexer.tokens;
 }
