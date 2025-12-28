@@ -1,4 +1,3 @@
-
 main :: () {
     // These files contain all the example data taken from https://toml.io/en/v1.0.0
     read_parse_print("data/array_of_tables.toml");

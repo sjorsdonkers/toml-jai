@@ -39,7 +39,7 @@ parse_json_to_toml :: (parser: *JSON_Parser) -> ok:=false, value:=Toml.Value.{} 
         return ok, value;
     case #char "\"";
         ok, str := parse_string(parser);  if !ok return;
-        return true, Toml.Value.{type = .STRING, string_value = str};
+        return true, Toml.Value.{kind = .STRING, string_value = str};
     case; return;
     }
 }
@@ -76,11 +76,11 @@ parse_object_to_toml :: (parser: *JSON_Parser) -> ok:=false, value:=Toml.Value.{
 
     // Check if this is a typed value (exactly 2 keys: "type" and "value" with string values)
     if table.count == 2 && table[0].key == "type" && table[1].key == "value" &&
-       table[0].value.type == .STRING && table[1].value.type == .STRING {
+     table[0].value.kind == .STRING && table[1].value.kind == .STRING {
         ok, typed_value := parse_typed_value(table[0].value.string_value, table[1].value.string_value);
         if ok return true, typed_value;
     }
-    return true, Toml.Value.{type = .TABLE, table = table};
+    return true, Toml.Value.{kind = .TABLE, table = table};
 }
 
 parse_array_to_toml :: (parser: *JSON_Parser) -> ok:=false, value:=Toml.Value.{} {
@@ -101,7 +101,7 @@ parse_array_to_toml :: (parser: *JSON_Parser) -> ok:=false, value:=Toml.Value.{}
             parser.pos += 1;
         }
     }
-    return true, Toml.Value.{type = .ARRAY, array = values};
+    return true, Toml.Value.{kind = .ARRAY, array = values};
 }
 
 parse_string :: (parser: *JSON_Parser) -> ok:=false, str:="" {
@@ -162,22 +162,22 @@ eat_whitespace :: (parser: *JSON_Parser) {
 
 parse_typed_value :: (type_str: string, value_str: string) -> ok:=false, value:=Toml.Value.{} {
     if type_str == {
-    case "string";  return true, Toml.Value.{type = .STRING, string_value = value_str};
+    case "string";  return true, Toml.Value.{kind = .STRING, string_value = value_str};
     case "integer";
         int_val, ok := string_to_int(value_str);        if !ok return;
-        return true, Toml.Value.{type = .INT, int_value = int_val};
+        return true, Toml.Value.{kind = .INT, int_value = int_val};
     case "float";
         if value_str ==  {
-        case "inf";  return true, Toml.Value.{type = .FLOAT, float_value =  FLOAT64_INFINITY};
-        case "-inf"; return true, Toml.Value.{type = .FLOAT, float_value = -FLOAT64_INFINITY};
-        case "nan";  return true, Toml.Value.{type = .FLOAT, float_value =  FLOAT64_NAN};
+        case "inf";  return true, Toml.Value.{kind = .FLOAT, float_value =  FLOAT64_INFINITY};
+        case "-inf"; return true, Toml.Value.{kind = .FLOAT, float_value = -FLOAT64_INFINITY};
+        case "nan";  return true, Toml.Value.{kind = .FLOAT, float_value =  FLOAT64_NAN};
         }
         float_val, ok := string_to_float64(value_str);  if !ok return;
-        return true, Toml.Value.{type = .FLOAT, float_value = float_val};
+        return true, Toml.Value.{kind = .FLOAT, float_value = float_val};
     case "bool";
         if value_str == {
-        case "true";  return true, Toml.Value.{type = .BOOL, bool_value = true};
-        case "false"; return true, Toml.Value.{type = .BOOL, bool_value = false};
+        case "true";  return true, Toml.Value.{kind = .BOOL, bool_value = true};
+        case "false"; return true, Toml.Value.{kind = .BOOL, bool_value = false};
         case;         return;
         }
     case "datetime";       #through;
@@ -185,7 +185,7 @@ parse_typed_value :: (type_str: string, value_str: string) -> ok:=false, value:=
     case "date-local";     #through;
     case "time-local";
         ok, chrono := parse_datetime(value_str); if !ok return;
-        return true, .{type=.DATETIME, datetime=chrono};
+        return true, .{kind=.DATETIME, datetime=chrono};
     }
     return;
 }

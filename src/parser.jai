@@ -25,8 +25,8 @@ string_to_value_shared_memory :: (contents: string) -> ok:=false, root_table:Val
             define(current_table, .HEADER);                                                      // Finalize the previous Table, to prevent re-definition
             header_scope     := eat_scope(*scope, token);
             ok=, aot, is_new := parse_key(*root_table, header_scope, true); if !ok return;
-            if is_new then { aot.* = .{type=.ARRAY, array=[..]Value.{}}; define(aot, .HEADER); } // Create and finalize the Array, to prevent re-definition
-            else if (aot.type != .ARRAY || aot.table.count == 0) then return_with_error_line(header_scope.source, peek(header_scope.tokens).loc, "Cannot use key as Array of Tables as it already has a value: %", aot.type);
+            if is_new then { aot.* = .{kind=.ARRAY, array=[..]Value.{}}; define(aot, .HEADER); } // Create and finalize the Array, to prevent re-definition
+            else if (aot.kind != .ARRAY || aot.table.count == 0) then return_with_error_line(header_scope.source, peek(header_scope.tokens).loc, "Cannot use key as Array of Tables as it already has a value: %", aot.kind);
             current_table = array_add(*aot.array);                                               // Add a new entry as current_table
         case;                       // key = value
             ok=, key_scope   := eat_scope_until_assign(*scope);             if !ok return;
@@ -43,7 +43,7 @@ string_to_value_shared_memory :: (contents: string) -> ok:=false, root_table:Val
 // Parse: key. key.'key'."etc"
 parse_key :: (parent: *Value, scope: Scope, parsing_header: bool) -> ok:=false, leaf:*Value=null, leaf_is_new:bool=false {
     if !has_next(scope)      then return_with_error("Unexpected end of scope while parsing key");
-    if parent.type != .TABLE then return_with_error("Cannot use key as table as it already has a value: %", parent.type);
+    if parent.kind != .TABLE then return_with_error("Cannot use key as table as it already has a value: %", parent.kind);
 
     ok, token                     := eat_expected_key(*scope, .LITERAL); if !ok return;
     current_is_new, current_value := find_or_insert_key(parent, token.str);
@@ -56,11 +56,11 @@ parse_key :: (parent: *Value, scope: Scope, parsing_header: bool) -> ok:=false, 
         if !parsing_header { define(current_value, .DOTTED_KEY); }
         ok = eat_expected_key(*scope, .DOT); if !ok return;
         // If this is an Array of Tables header then we are going to add into its last table
-        if current_value.type == .ARRAY { current_value = peek_pointer(current_value.array); }
+        if current_value.kind == .ARRAY { current_value = peek_pointer(current_value.array); }
         ok=, current_value, current_is_new = parse_key(current_value, scope, parsing_header); if !ok return;
     }
 
-    if !parsing_header && !current_is_new then return_with_error_line(scope.source, peek(scope.tokens).loc, "Key already has a value of type %", current_value.type);
+    if !parsing_header && !current_is_new then return_with_error_line(scope.source, peek(scope.tokens).loc, "Key already has a value of kind %", current_value.kind);
     return true, current_value, current_is_new;
 }
 
@@ -101,22 +101,22 @@ parse_array :: (scope: Scope) -> ok:=false, array:Value=.{} {
         array_add(*values, value);
         if has_next(scope) { eat_expected(*scope, Token.Type.COMMA); }
     }
-    return true, .{type=.ARRAY, array=values};
+    return true, .{kind=.ARRAY, array=values};
 }
 
 parse_literal :: (scope: *Scope) -> ok:=false, literal:Value=.{} {
     token := eat_token(scope);
     if token.type == {
     case .LITERAL;       #through;
-    case .LITERAL_MULTI; return true, .{type=.STRING, string_value=token.str};
+    case .LITERAL_MULTI; return true, .{kind=.STRING, string_value=token.str};
     case .BASIC;         #through;
     case .BASIC_MULTI;
         ok, unescaped := unescape(token, scope.source); if !ok return;
-        return true, .{type=.STRING, string_value=unescaped};
+        return true, .{kind=.STRING, string_value=unescaped};
     case .RAW;
         // Parse boolean
-        if token.str == "true"  { return true, .{type=.BOOL, bool_value=true}; }
-        if token.str == "false" { return true, .{type=.BOOL, bool_value=false}; }
+        if token.str == "true"  { return true, .{kind=.BOOL, bool_value=true}; }
+        if token.str == "false" { return true, .{kind=.BOOL, bool_value=false}; }
 
         // Parse integer
         us_split := split(token.str, "_");
@@ -130,14 +130,14 @@ parse_literal :: (scope: *Scope) -> ok:=false, literal:Value=.{} {
             base := ifx clean_str[1] == "x" then 16 else ifx clean_str[1] == "b" then 2 else 8;
             value, ok, remainder := string_to_int_checked(without_base, base, s64);
             if !ok || remainder.count != 0 then return_with_error_line(scope.source, token.loc, "Invalid hex/binary/octal literal %", token.str);
-            return true, .{type=.INT, int_value=value};
+            return true, .{kind=.INT, int_value=value};
         }
         int_value, ok, remainder := string_to_int_checked(clean_str, 10, s64);
         if ok && remainder.count == 0 {
             for us_split if it.count == 0 then return_with_error_line(scope.source, token.loc, "Invalid placement of _ in integer literal %", token.str);
             start_digit := ifx (clean_str[0] == "+" || clean_str[0] =="-") then 1 else 0;
             if clean_str[start_digit] == "0" && clean_str.count - start_digit > 1 then return_with_error_line(scope.source, token.loc, "Leading zeros are not allowed in integer literal %", token.str);
-            return true, .{type=.INT, int_value=int_value};
+            return true, .{kind=.INT, int_value=int_value};
         }
 
         // Parse float
@@ -157,12 +157,12 @@ parse_literal :: (scope: *Scope) -> ok:=false, literal:Value=.{} {
             for idx: start_digit..clean_str.count-2 {
                 if clean_str[idx] == "." && (clean_str[idx + 1] == "e" || clean_str[idx + 1] == "E") then return_with_error_line(scope.source, token.loc, "Invalid .e in float literal %", token.str);
             }
-            return true, .{type=.FLOAT, float_value=float_value};
+            return true, .{kind=.FLOAT, float_value=float_value};
         }
-        if token.str == "inf" || token.str == "+inf" { return true, .{type=.FLOAT, float_value=Math.FLOAT64_INFINITY}; }
-        if token.str == "-inf"                       { return true, .{type=.FLOAT, float_value=-Math.FLOAT64_INFINITY}; }
-        if token.str == "nan" || token.str == "+nan" { return true, .{type=.FLOAT, float_value=Math.FLOAT64_NAN}; }
-        if token.str == "-nan"                       { return true, .{type=.FLOAT, float_value=-Math.FLOAT64_NAN}; }
+        if token.str == "inf" || token.str == "+inf" { return true, .{kind=.FLOAT, float_value=Math.FLOAT64_INFINITY}; }
+        if token.str == "-inf"                       { return true, .{kind=.FLOAT, float_value=-Math.FLOAT64_INFINITY}; }
+        if token.str == "nan" || token.str == "+nan" { return true, .{kind=.FLOAT, float_value=Math.FLOAT64_NAN}; }
+        if token.str == "-nan"                       { return true, .{kind=.FLOAT, float_value=-Math.FLOAT64_NAN}; }
 
         // Parse date, check if next token is time separated by single space: 1979-05-27 07:32:00Z
         date_input := token.str;
@@ -175,7 +175,7 @@ parse_literal :: (scope: *Scope) -> ok:=false, literal:Value=.{} {
             }
         }
         ok=, chrono := parse_datetime(date_input);
-        if ok { return true, .{type=.DATETIME, datetime=chrono}; }
+        if ok { return true, .{kind=.DATETIME, datetime=chrono}; }
 
         return_with_error_line(scope.source, token.loc, "Unable to parse literal %", token.str);
     case; return_with_error_line(scope.source, token.loc, "Unexpected token %, expected a value", token.type);
@@ -401,7 +401,7 @@ index_map_id :: inline (value: *Value, new_id: s32) {
 
 // Get or insert key with index map
 find_or_insert_key :: (table: *Value, key: string) -> is_new:bool, table:*Value {
-    assert(table.type == .TABLE);
+    assert(table.kind == .TABLE);
 
     if table.table.count < context.toml.index_threshold {
         for table.table if it.key == key { return false, *it.value; } // Linear search for small tables
@@ -426,7 +426,7 @@ find_or_insert_key :: (table: *Value, key: string) -> is_new:bool, table:*Value 
 
 // Uses index when available, if index_map_id is set entry must exist in index_maps
 table_find_value_by_key :: (table: *Value, key: string) -> found:=false, table:*Value=null {
-    assert(table.type == .TABLE);
+    assert(table.kind == .TABLE);
     if context.toml.index_maps.count == 0 || index_map_id(table) < 0 { // Linear search for small tables
         for table.table if it.key == key { return true, *it.value; }
     } else {                                                           // Use hash lookup for large tables

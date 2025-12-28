@@ -319,10 +319,10 @@ reference_types :: () {
     ok=, null_ptr := Toml.string_to_type("ptr = \"~null~\"", Null_Pointer); assert(ok);
     assert(null_ptr.ptr == null, "%", null_ptr);
     // We can change the string used to represent null values in the TOML data to any other Value.
-    ok=, zero_ptr := Toml.string_to_type("ptr = 17.0", Null_Pointer,, toml = .{null_value = Value.{type=.FLOAT, float_value=17.0}}); assert(ok);
+    ok=, zero_ptr := Toml.string_to_type("ptr = 17.0", Null_Pointer,, toml = .{null_value = Value.{kind=.FLOAT, float_value=17.0}}); assert(ok);
     assert(zero_ptr.ptr == null, "%", zero_ptr);
     // Serialization works the same way.
-    ok=, nil_toml := Toml.type_to_string(Null_Pointer.{ptr=null},, toml = .{null_value = Value.{type=.STRING, string_value="nil"}}); assert(ok);
+    ok=, nil_toml := Toml.type_to_string(Null_Pointer.{ptr=null},, toml = .{null_value = Value.{kind=.STRING, string_value="nil"}}); assert(ok);
     assert(nil_toml == "ptr=\"nil\"\n", "%", nil_toml);
 
     // Optional pointer

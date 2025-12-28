@@ -25,19 +25,19 @@ value_to_type :: (toml: Value, output: Any, name:string="", parent_name:string="
 
     if #complete info.type == {
     case .INTEGER;
-        expect(toml.type, .INT, parent_name, name);
+        expect(toml.kind, .INT, parent_name, name);
         valid, low, high := range_check_and_store(toml.int_value, xx info, slot);
         if !valid { return_with_error("Value for %.% is out of range. Given % expected min % max %", parent_name, name, toml.int_value, low, high); }
     case .FLOAT;
-        if toml.type != .INT expect(toml.type, .FLOAT, parent_name, name); // Allow int to float conversion
-        if      info.runtime_size == 4 { cast(*float32, slot).* = ifx toml.type == .INT then cast(float32, toml.int_value) else cast(float32, toml.float_value); }
-        else if info.runtime_size == 8 { cast(*float64, slot).* = ifx toml.type == .INT then cast(float64, toml.int_value) else               toml.float_value;  }
+        if toml.kind != .INT expect(toml.kind, .FLOAT, parent_name, name); // Allow int to float conversion
+        if      info.runtime_size == 4 { cast(*float32, slot).* = ifx toml.kind == .INT then cast(float32, toml.int_value) else cast(float32, toml.float_value); }
+        else if info.runtime_size == 8 { cast(*float64, slot).* = ifx toml.kind == .INT then cast(float64, toml.int_value) else               toml.float_value;  }
         else { return_with_error("Unsupported float size %", info.runtime_size); }
     case .BOOL;
-        expect(toml.type, .BOOL, parent_name, name);
+        expect(toml.kind, .BOOL, parent_name, name);
         cast(*bool, slot).* = toml.bool_value;
     case .STRING;
-        expect(toml.type, .STRING, parent_name, name);
+        expect(toml.kind, .STRING, parent_name, name);
         cast(*string, slot).* = copy_string(toml.string_value);
     case .POINTER;
         if toml == context.toml.null_value return true; // Null pointer
@@ -48,10 +48,10 @@ value_to_type :: (toml: Value, output: Any, name:string="", parent_name:string="
         cast(**void, slot).* = memory;
         return value_to_type(toml, Any.{pointer_info.pointer_to, memory}, name, parent_name);
     case .VOID;
-        expect(toml.type, .TABLE, parent_name, name);
+        expect(toml.kind, .TABLE, parent_name, name);
         if toml.table.count != 0 { return_with_error("Expected empty table for %.%, got %", parent_name, name, toml.table.count);  }
     case .STRUCT;
-        expect(toml.type, .TABLE, parent_name, name);
+        expect(toml.kind, .TABLE, parent_name, name);
         struct_info :*Type_Info_Struct= xx info;
 
         for member: struct_info.members {
@@ -64,7 +64,7 @@ value_to_type :: (toml: Value, output: Any, name:string="", parent_name:string="
             }
         }
     case .ARRAY;
-        expect(toml.type, .ARRAY, parent_name, name);
+        expect(toml.kind, .ARRAY, parent_name, name);
         array_info :*Type_Info_Array= xx info;
         element_type := array_info.element_type;
 
@@ -100,7 +100,7 @@ value_to_type :: (toml: Value, output: Any, name:string="", parent_name:string="
         any_value.value_pointer = alloc(any_value.type.runtime_size);
         any_value.value_pointer.(*Value).* = copy(toml); // No recursion so we don't rely on the custom_value_to_type
     case .ENUM;
-        expect(toml.type, .STRING, parent_name, name);
+        expect(toml.kind, .STRING, parent_name, name);
         enum_info :*Type_Info_Enum= xx info;
 
         found, index := array_find(enum_info.names, toml.string_value);
@@ -126,17 +126,17 @@ default_custom_value_to_type :: (toml: Value, output: Any, name:string, parent_n
     if value_to_chrono(toml, slot, struct_info) return true, true;
 
     if array_find(struct_info.notes, "SumType") {
-        expect(toml.type, .TABLE, parent_name, name);
+        expect(toml.kind, .TABLE, parent_name, name);
         return true, value_to_sumtype(toml.table, slot, struct_info, name);
     }
     return false, true;
 }
 
 value_to_chrono ::  (toml: Value, slot: *void, info: *Type_Info) -> is_chrono:bool {
-    if toml.type != .DATETIME return false;
+    if toml.kind != .DATETIME return false;
 
     if info == type_info(Chrono) { cast(*Chrono, slot).* = toml.datetime; return true;}
-    if #complete toml.datetime.type == {
+    if #complete toml.datetime.kind == {
     case .LOCAL_TIME;       if info == type_info(Time)           { cast(*Time, slot).*           = toml.datetime.time;            return true; }
     case .LOCAL_DATE;       if info == type_info(Date)           { cast(*Date, slot).*           = toml.datetime.date;            return true; }
     case .LOCAL_DATETIME;   if info == type_info(DateTime)       { cast(*DateTime, slot).*       = toml.datetime.datetime;        return true; }
@@ -170,7 +170,7 @@ is_valid_sumtype :: (struct_info: *Type_Info_Struct) -> bool, tag_member:*Type_I
     return true, tag_member, union_member, tag_info, union_info;
 }
 
-expect :: inline (given: Value.Type, expected: Value.Type, struct_name: string, member_name: string) #expand {
+expect :: inline (given: Value.Kind, expected: Value.Kind, struct_name: string, member_name: string) #expand {
     if given != expected { log_error("Wrong type for %.%, expected %, got % ", struct_name, member_name, expected, given); `return; }
 }
 

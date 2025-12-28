@@ -1,17 +1,5 @@
 Value :: struct {
-    union {
-        bool_value   : bool         = ---;
-        int_value    : s64          = ---;
-        float_value  : float64      = ---;
-        string_value : string       = ---;
-        datetime     : Chrono       = ---;
-        array        : [..]Value    = ---;
-        table        : [..]KeyValue;
-        format_int   : *FormatInt   = ---; // Only for serialization, * to reduce size
-        format_float : *FormatFloat = ---; // Only for serialization, * to reduce size
-    };
-    type :Type= .TABLE;
-    Type :: enum u8 {
+    Kind :: enum u8 {
         BOOL;
         INT;
         FLOAT;
@@ -22,6 +10,17 @@ Value :: struct {
         FORMAT_INT;   // Only for serialization
         FORMAT_FLOAT; // Only for serialization
     }
+    union kind := Kind.TABLE {
+        bool_value   : bool         = ---;
+        int_value    : s64          = ---;
+        float_value  : float64      = ---;
+        string_value : string       = ---;
+        datetime     : Chrono       = ---;
+        array        : [..]Value    = ---;
+        table        : [..]KeyValue;
+        format_int   : *FormatInt   = ---; // Only for serialization, * to reduce size
+        format_float : *FormatFloat = ---; // Only for serialization, * to reduce size
+    };
     parsing_meta :[7]u8 = .[0, 0, 0, 0xFF, 0xFF, 0xFF, 0xFF]; // INTERNAL
 }
 KeyValue :: struct {
@@ -30,14 +29,14 @@ KeyValue :: struct {
 }
 
 copy :: (value: Value) -> Value {
-    if #complete value.type == {
+    if #complete value.kind == {
     case .BOOL;  #through;
     case .INT;   #through;
     case .FLOAT; #through;
     case .DATETIME; return value;
-    case .STRING;   return Value.{type=.STRING, string_value=copy_string(value.string_value)};
+    case .STRING;   return Value.{kind=.STRING, string_value=copy_string(value.string_value)};
     case .ARRAY;
-        output:= Value.{type=.ARRAY, array=[..]Value.{}};
+        output:= Value.{kind=.ARRAY, array=[..]Value.{}};
         array_reserve(*output.array, value.array.count);
         output.array.count = value.array.count;
         for 0..value.array.count-1 { output.array[it] = copy(value.array[it]); }
@@ -48,8 +47,8 @@ copy :: (value: Value) -> Value {
         output.table.count = value.table.count;
         for 0..value.table.count-1 { output.table[it] = copy(value.table[it]); }
         return output;
-    case .FORMAT_INT;   return Value.{type=.FORMAT_INT,   format_int  =copy(value.format_int  )};
-    case .FORMAT_FLOAT; return Value.{type=.FORMAT_FLOAT, format_float=copy(value.format_float)};
+    case .FORMAT_INT;   return Value.{kind=.FORMAT_INT,   format_int  =copy(value.format_int  )};
+    case .FORMAT_FLOAT; return Value.{kind=.FORMAT_FLOAT, format_float=copy(value.format_float)};
     }
 }
 copy :: (keyvalue: KeyValue) -> KeyValue {
@@ -74,8 +73,8 @@ copy :: (format: *FormatInt) -> *FormatInt {
 }
 
 operator == :: (left: Value, right: Value) -> bool {
-    if left.type != right.type { return false; }
-    if #complete left.type == {
+    if left.kind != right.kind { return false; }
+    if #complete left.kind == {
     case .BOOL;     return left.bool_value   == right.bool_value;
     case .INT;      return left.int_value    == right.int_value;
     case .FLOAT;    return left.float_value  == right.float_value;
@@ -107,8 +106,8 @@ operator == :: (left: KeyValue, right: KeyValue) -> bool {
     return left.key == right.key && left.value == right.value;
 }
 operator == :: (left: Chrono, right: Chrono) -> bool {
-    if left.type != right.type { return false; }
-    if #complete left.type == {
+    if left.kind != right.kind { return false; }
+    if #complete left.kind == {
     case .LOCAL_TIME; return left.time == right.time;
     case .LOCAL_DATE; return left.date == right.date;
     case .LOCAL_DATETIME; return left.datetime == right.datetime;
