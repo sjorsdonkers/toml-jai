@@ -246,7 +246,7 @@ polymorphic_types_like_hashtable_support :: () {
     custom_hashtable_to_value :: (input: Any) -> done:=true, ok:=false, toml:Value=.{} {
         if input.type.type != .STRUCT then return false;
         struct_info :*Type_Info_Struct= xx input.type;
-        if struct_info.polymorph_source_struct != type_info(Table(void, void)).polymorph_source_struct then return false;
+        if struct_info.polymorph_source_struct != type_info(Table(u8, u8)).polymorph_source_struct then return false;
 
         // Retrieve all relevant Type_Info for the specific Hash_Table.
         entries_member := struct_info.members[5]; assert(entries_member.name == "entries");
@@ -311,7 +311,7 @@ polymorphic_types_like_hashtable_support :: () {
         // Runtime check if we did not forget to add a Hash_Table specialization.
         if output.type.type != .STRUCT return false;
         struct_info :*Type_Info_Struct= xx output.type;
-        assert(struct_info.polymorph_source_struct != type_info(Table(void, void)).polymorph_source_struct,
+        assert(struct_info.polymorph_source_struct != type_info(Table(u8, u8)).polymorph_source_struct,
             "Unsupported Hash_Table specialization: %", struct_info.name);
         return false;
     }
@@ -338,7 +338,7 @@ return_value_to_hashtable :: ($Table_Type: Type) #expand {
     if `output.type != type_info(Table_Type) return; // Not the type we are looking for
     struct_info :*Type_Info_Struct= xx `output.type;
     assert(`output.type.type == .STRUCT);
-    assert(struct_info.polymorph_source_struct == type_info(Table(void, void)).polymorph_source_struct);
+    assert(struct_info.polymorph_source_struct == type_info(Table(u8, u8)).polymorph_source_struct);
     expect(`toml.type, .TABLE, `parent_name, `name);
 
     hash_table := `output.value_pointer.(*Table_Type);

@@ -105,6 +105,11 @@ DONE
     // Success is returned as a boolean as the first return value. At this time there is no clear need to return an enum.
     // When an operation failed the error message can be found in the error log. If needed the error log can be captured as shown in this procedure.
     error_handling();
+
+    // We do not need to serialize to strings all the time, we can also serialize to Toml.Value.
+    ok=, tt_value := Toml.type_to_value(MyFloat.{f=3.0}); assert(ok);
+    assert(tt_value.table[0].type == .FLOAT && tt_value.table[0].float_value == 3.0, "%", tt_value.table[0].float_value);
+
 }
 
 optionals :: () {
