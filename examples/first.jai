@@ -108,7 +108,7 @@ DONE
 
     // We do not need to serialize to strings all the time, we can also serialize to Toml.Value.
     ok=, tt_value := Toml.type_to_value(MyFloat.{f=3.0}); assert(ok);
-    assert(tt_value.table[0].type == .FLOAT && tt_value.table[0].float_value == 3.0, "%", tt_value.table[0].float_value);
+    assert(tt_value.table[0].kind == .FLOAT && tt_value.table[0].float_value == 3.0, "%", tt_value.table[0].float_value);
 
 }
 
@@ -187,12 +187,11 @@ union_and_overlay :: () {
             .ORANGE,, orange: string="default";
         } @TomlOptional
     }
-    ok, apple := Toml.string_to_type("scared.APPLE = {a = 32, b = 'Y'}", Guy); assert(ok);
+    ok, apple := Toml.string_to_type("scared.apple = {a = 32, b = 'Y'}", Guy); assert(ok);
     print("struct_apple: %\n", apple);
     print("struct_apple: %: %\n", apple.mytag, apple.apple);
     ok_apple, toml_apple := Toml.type_to_string(apple); assert(ok_apple);
-    assert("scared.APPLE={a=32, b=\"Y\"}\n" == toml_apple, "%", toml_apple);
-
+    assert("scared.apple={a=32, b=\"Y\"}\n" == toml_apple, "%", toml_apple);
     // If the TOML data does not contain a field that is present in the struct, the field will be initialized to its default value.
     ok=, void_orange := Toml.string_to_type("", Guy); assert(ok);
     assert(void_orange.mytag == .ORANGE, "%", void_orange.mytag);
@@ -201,7 +200,7 @@ union_and_overlay :: () {
     // Serializing Tagged Unions to null pointers/anys is supported with the NULL_STRING module parameter.
     null_banana := Guy.{mytag=.BANANA, banana=null};
     ok=, sum_null := Toml.type_to_string(null_banana); assert(ok);
-    assert("scared.BANANA=\"~null~\"\n" == sum_null, "%", sum_null);
+    assert("scared.banana=\"~null~\"\n" == sum_null, "%", sum_null);
 
     // Tagged Unions can be nested without issue.
     Group :: union tag: enum {
@@ -216,8 +215,8 @@ union_and_overlay :: () {
 
     group:= Group.{tag=.SECOND, second=Guy.{mytag=.ORANGE, orange="color"}};
     ok=, group_toml := Toml.type_to_string(group); assert(ok);
-    assert("SECOND.scared.ORANGE=\"color\"\n" == group_toml);
-    ok, group = Toml.string_to_type("THIRD.scared.BANANA = -17", Group); assert(ok);
+    assert("second.scared.orange=\"color\"\n" == group_toml);
+    ok, group = Toml.string_to_type("third.scared.banana = -17", Group); assert(ok);
     assert(group.tag == .THIRD && group.third.mytag == .BANANA && group.third.banana.* == -17);
 
     // Note that just like normal structs if the member is anonymous it still requires the empty key "" in the TOML data.
@@ -233,16 +232,24 @@ union_and_overlay :: () {
     };
     ok=, smem_toml:= Toml.type_to_string(smem); assert(ok);
     assert(#string DONE
-named.scared.APPLE={a=9, b="butter"}
-"".B.scared.ORANGE="kleur"
+named.scared.apple={a=9, b="butter"}
+"".b.scared.orange="kleur"
 DONE == smem_toml, "%", smem_toml);
 
     ok, smem = Toml.string_to_type(#string DONE
-named.scared.BANANA = 987
-"".B.scared.APPLE = {a = 3, b = 'peanut'}
+named.scared.banana = 987
+"".b.scared.apple = {a = 3, b = 'peanut'}
 DONE, StructMember); assert(ok);
     assert(smem.named.mytag == .BANANA && smem.named.banana.* == 987);
     assert(smem.tag == .B && smem.b.mytag == .APPLE && smem.b.apple.a == 3 && smem.b.apple.b == "peanut");
+
+    // TODO Show anonymous union variant as "[index]" key
+    // TODO Show integer union
+    // TODO Show Type union
+
+
+///// OVERLAYS /////
+
 
     // #overlay members are not serialized, as the data they represent is already printed by the primary members which they overlay
     // This also means the primary members should always be in a valid state, pointer members must point to data matching the type
@@ -386,7 +393,7 @@ reference_types :: () {
     MyUnionPtr :: struct {
         p_union: *MyUnionStruct;
     }
-    ok=, un_ptr := Toml.string_to_type("p_union.FIRST.number = 3", MyUnionPtr); assert(ok);
+    ok=, un_ptr := Toml.string_to_type("p_union.first.number = 3", MyUnionPtr); assert(ok);
     print("un_ptr: %: %\n", un_ptr.p_union.tag, un_ptr.p_union.first);
     assert(un_ptr.p_union.first.number == 3);
     assert(un_ptr.p_union.first.getal == 23);

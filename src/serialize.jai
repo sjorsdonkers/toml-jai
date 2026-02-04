@@ -114,42 +114,43 @@ union_to_value :: (slot: *void, struct_info: *Type_Info_Struct) -> done:=true, o
     if !(struct_info.textual_flags & .UNION_IS_TAGGED) return_with_error("Untagged unions (%) are not supported, as we cannot determine the active member", ifx struct_info.name then struct_info.name else "anonymous");
 
     tag_member   := *struct_info.members[0];
-    active_member :*Type_Info_Struct_Member= null;
-    name          : string; // Enum: .VARIANT_NAME, Integer: 13, Type: member_name. We prefer to avoid member_name as it can be "" anonymous, but the Type can be too.
+    UNSET :: -1;
+    active_member_idx :s64= UNSET;
+
     if tag_member.type.type == {
     case .ENUM;
         tag_value :s64= Reflection.get_enum_value(slot + tag_member.offset_in_bytes, xx tag_member.type);
         tag_value_u64 :u64= cast(*u64, *tag_value).*;
-        for binding: struct_info.tagged_union_bindings if binding.constant_value == tag_value_u64 {
-            active_member = *struct_info.members[binding.member_index];
+        for struct_info.tagged_union_bindings if it.constant_value == tag_value_u64 {
+            active_member_idx = it.member_index;
             break;
         }
-        if !active_member return_with_error("Tagged Union tag % not found in union %", tag_value, ifx struct_info.name then struct_info.name else "anonymous");
-        // NOTE: The union's enum may have repeated values, the name in such case will always be the first name with matching value.
-        // We want to be using the name of the enum here, especially if we get case syntax for enum tagged union in the future which would allow multiple members per enum value, making anonymous member_names common.
-        // However, the advantage of using member_name is that an anonymous/using-ed tagged union member can be safely lifted into the parent's struct scope.
-        tag_info :*Type_Info_Enum= xx tag_member.type;
-        found, active_tag_idx := array_find(tag_info.values, tag_value); if !found then return_with_error("Active tag % not found in %", tag_value, tag_info.name);
-        name = tag_info.names[active_tag_idx];
+        if active_member_idx == UNSET {
+            // If the value is not bound we assume the union variant matches the tag VALUE directly, so not the INDEX!
+            active_member_idx = tag_value + 1; // +1 as first member is the tag
+            if active_member_idx < 0 || active_member_idx >= struct_info.members.count then return_with_error("Tagged Union active enum index % out of bounds for union with % members", active_member_idx, struct_info.members.count - 1);
+        }
     case .INTEGER;
         // Int tagged union, the value simply indicates the active member index
-        ok, active_tag_idx := get_integer_value(slot, xx tag_member); if !ok return;
+        ok, active_tag_idx := get_integer_value(slot, xx tag_member.type); if !ok return;
         active_member_idx := active_tag_idx + 1; // +1 as first member is the tag
-        if active_member_idx < 0 || active_member_idx >= struct_info.members.count then return_with_error("Tagged Union active index % out of bounds for union with % members", active_member_idx, struct_info.members.count - 1);
-        active_member = *struct_info.members[active_member_idx];
-        name = sprint("%", active_tag_idx,, print_style = .{default_format_int=context.toml.default_format_int}); // TBD does it make sense to use the context default_format_int here?
+        if active_member_idx < 0 || active_member_idx >= struct_info.members.count then return_with_error("Tagged Union active integer index % out of bounds for union with % members", active_member_idx, struct_info.members.count - 1);
     case .TYPE;
-        tag_value :u64= xx,no_check cast(*u64, slot + tag_member.offset_in_bytes).*;
-        for binding: struct_info.tagged_union_bindings if binding.constant_value == tag_value {
-            active_member := *struct_info.members[binding.member_index];
+        tag_value := cast(**Type_Info, slot + tag_member.offset_in_bytes).*;
+        for array_view(struct_info.members, 1) if it.type == tag_value {
+            active_member_idx = it_index + 1;
             break;
         }
-        if !active_member return_with_error("Tagged Union tag % not found in union %", tag_value, ifx struct_info.name then struct_info.name else "anonymous");
-        name = active_member.name;
+        if active_member_idx == UNSET return_with_error("Tagged Union Type tag % not found in union %", tag_value, ifx struct_info.name then struct_info.name else "anonymous");
     case; return_with_error("Tagged Union tag type % not supported", tag_member.type.type);
     }
 
+    active_member := *struct_info.members[active_member_idx];
     ok, value := type_to_value_shared_memory(Any.{active_member.type, slot + active_member.offset_in_bytes}); if !ok return;
+
+    name := active_member.name;
+    if !name then name = sprint("%", active_member_idx-1,, print_style = .{default_format_int=context.toml.default_format_int}); // TBD does it make sense to use the context default_format_int here?
+
     table: [..]KeyValue;
     array_add(*table, .{key=name, value=value});
     return true, true, .{kind=.TABLE, table=table};

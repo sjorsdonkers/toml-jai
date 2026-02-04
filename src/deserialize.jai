@@ -148,42 +148,50 @@ value_to_union :: (toml_table: []KeyValue, slot: *void, struct_info: *Type_Info_
 
     if toml_table.count != 1  return_with_error("Tagged union % should have exactly one key-value pair", struct_info.name); // TODO just loop till table till we find one that works and ignore the rest like usual
 
-    tag_member := *struct_info.members[0];
     UNSET :: -1;
     active_member_idx :s64= UNSET;
-    if tag_member.type.type == {
-    case .ENUM;
-        tag_info :*Type_Info_Enum= xx tag_member.type;
-        for name: tag_info.names if name == toml_table[0].key {
-            tag_value := tag_info.values[it_index];
-            Reflection.set_enum_value(slot + tag_member.offset_in_bytes, tag_info, tag_value);
-
-            active_member :*Type_Info_Struct_Member= null;
-            tag_value_u64 :u64= cast(*u64, *tag_value).*;
-            // Since the value matches the member by tag name we need to do a find instead of a lookup
-            for struct_info.tagged_union_bindings if it.constant_value == tag_value_u64 {
-                active_member_idx = it.member_index;
-                break;
-            }
-            break;
-        }
-    case .INTEGER;
-        tag_value, ok, remainder := string_to_int_checked(toml_table[0].key, 10, s64); if !ok return_with_error("Failed to parse tagged union tag % as integer for %.%", toml_table[0].key, parent_name, struct_info.name);
+    for array_view(struct_info.members, 1) {
+        if it.name == toml_table[0].key {
+        active_member_idx = it_index + 1;
+        break;
+    }}
+    if active_member_idx == UNSET {
+        tag_value, ok, remainder := string_to_int_checked(toml_table[0].key, 10, s64);
+        if !ok return_with_error("Cannot find member for union tag % for %.%", toml_table[0].key, parent_name, struct_info.name); // TODO could just ignore and move on if it has superfluous keys
         if remainder return_with_error("Failed to parse tagged union tag % as integer for %.%, unexpected trailing characters: %", toml_table[0].key, parent_name, struct_info.name, remainder);
         // Int tagged union, the value simply indicates the active member index
         active_member_idx = tag_value + 1; // +1 as first member is the tag
         if active_member_idx < 0 || active_member_idx >= struct_info.members.count then return_with_error("Tagged Union tag index % out of bounds for union with % members", active_member_idx, struct_info.members.count - 1);
-    case .TYPE;
-        active_member :*Type_Info_Struct_Member= null;
-        for array_view(struct_info.members, 1) if it.name == toml_table[0].key {
-            active_member_idx = it_index;
+    }
+    active_member := *struct_info.members[active_member_idx];
+    // We set the members's value at the end so that the tag is set before we recurse into the value
+
+    tag_member := *struct_info.members[0];
+    if tag_member.type.type == {
+    case .ENUM;
+        tag_info :*Type_Info_Enum= xx tag_member.type;
+        UNSET :: Math.U64_MAX;
+        tag_value_u64 := UNSET;
+        tag_value: s64;
+        for struct_info.tagged_union_bindings if it.member_index == active_member_idx {
+            tag_value_u64 = it.constant_value;
             break;
         }
+        if tag_value_u64 == UNSET { // If there is no binding, use the member index as VALUE, not as index
+            tag_value = active_member_idx - 1; // -1 as first member is the tag
+            if !(array_find(tag_info.values, tag_value)) return_with_error("Tagged Union tag value % not found in enum %", tag_value, tag_info.name);
+        } else {
+            tag_value = cast(*s64, *tag_value_u64).*;
+        }
+        Reflection.set_enum_value(slot + tag_member.offset_in_bytes, tag_info, tag_value);
+    case .INTEGER;
+        valid, low, high := range_check_and_store(active_member_idx-1, xx tag_member.type, slot + tag_member.offset_in_bytes);
+        if !valid { return_with_error("Tag for %.% is out of range. Given % expected min % max %", toml_table[0].key, parent_name, active_member_idx-1, low, high); }
+    case .TYPE;
+        cast(**Type_Info, slot + tag_member.offset_in_bytes).* = active_member.type;
     case; return_with_error("Tagged Union tag type % not supported", tag_member.type.type);
     }
 
-    if active_member_idx == UNSET return_with_error("Tagged Union tag % not found in union %", toml_table[0].key, ifx struct_info.name then struct_info.name else "anonymous");
-    active_member := *struct_info.members[active_member_idx];
     ok := value_to_type(toml_table[0].value, Any.{active_member.type, slot + active_member.offset_in_bytes}, toml_table[0].key, parent_name);
     return true, ok;
 }
