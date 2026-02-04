@@ -16,7 +16,8 @@ type_to_builder :: (builder: *String_Builder, input: Any) -> ok:=false {
 }
 
 type_to_value :: (input: Any) -> ok:=false, value:Value=.{} {
-    ok, value := type_to_value_shared_memory(input,, scoped_pool()); if !ok return;
+    auto_release_temp_maybe();
+    ok, value := type_to_value_shared_memory(input,, temp); if !ok return;
     return ok, copy(value); // Would be nice if we could just copy the reused strings and Value arrays and tables.
 }
 
