@@ -6,7 +6,7 @@
 // - Enable custom serialization of types we do not own (external Modules) as we may not be able to add notes or remove members.
 // - The same type should be serializable in different ways defined at the procedure call site, not struct definition.
 // - Enable data tweaks during serialization as opposed to full copies of nested structure trees (separate structs for serialization and use within the application).
-// - The user should be able to opt-out of the default behavior of handling special types like Toml.Value, Chrono, and SumTypes. A user can opt-out by setting a procedure which is a no-op or any procedure that does not call the default_custom_handler.
+// - The user should be able to opt-out of the default behavior of handling special types like Toml.Value, DateTimes. A user can opt-out by setting a procedure which is a no-op or any procedure that does not call the default_custom_handler.
 //
 // Note that these custom handler drive "what" is (de)serialized, they do not help with formatting of the toml.
 
@@ -215,7 +215,11 @@ error_on_superfluous_keys :: () {
     catch_superfluous_keys :: (toml: Value, output: Any, name:string, parent_name:string) -> done:=true, ok:=false {
         if output.type.type != .STRUCT || toml.kind != .TABLE return false;
         struct_info :*Type_Info_Struct = xx output.type;
-        if array_find(struct_info.notes, "SumType") return false; // SumTypes never allow superfluous fields
+
+        if (struct_info.textual_flags & .UNION_IS_TAGGED) && toml.table.count != 1 {
+            log_error("Expected exactly 1 key for tagged union, got %", toml.table.count);
+            return true, false;
+        }
 
         for keyvalue: toml.table {
             for member: struct_info.members {
@@ -223,9 +227,9 @@ error_on_superfluous_keys :: () {
                 if keyvalue.key == member.name continue keyvalue;
             }
             log_error("Superfluous key `%` in %.%", keyvalue.key, parent_name, name);
-            return true, false; // We are done, we found an error
+            return; // We are done, we found an error
         }
-        return false; // We are not done since we are only validating here, the Value still needs to be deserialized
+        return false, true; // We are not done since we are only validating here, the Value still needs to be deserialized
     }
 
     OnlyA :: struct {
@@ -246,7 +250,7 @@ polymorphic_types_like_hashtable_support :: () {
     custom_hashtable_to_value :: (input: Any) -> done:=true, ok:=false, toml:Value=.{} {
         if input.type.type != .STRUCT then return false;
         struct_info :*Type_Info_Struct= xx input.type;
-        if struct_info.polymorph_source_struct != type_info(Table(void, void)).polymorph_source_struct then return false;
+        if struct_info.polymorph_source_struct != type_info(Table(u8, u8)).polymorph_source_struct then return false;
 
         // Retrieve all relevant Type_Info for the specific Hash_Table.
         entries_member := struct_info.members[5]; assert(entries_member.name == "entries");
@@ -311,7 +315,7 @@ polymorphic_types_like_hashtable_support :: () {
         // Runtime check if we did not forget to add a Hash_Table specialization.
         if output.type.type != .STRUCT return false;
         struct_info :*Type_Info_Struct= xx output.type;
-        assert(struct_info.polymorph_source_struct != type_info(Table(void, void)).polymorph_source_struct,
+        assert(struct_info.polymorph_source_struct != type_info(Table(u8, u8)).polymorph_source_struct,
             "Unsupported Hash_Table specialization: %", struct_info.name);
         return false;
     }
@@ -338,7 +342,7 @@ return_value_to_hashtable :: ($Table_Type: Type) #expand {
     if `output.type != type_info(Table_Type) return; // Not the type we are looking for
     struct_info :*Type_Info_Struct= xx `output.type;
     assert(`output.type.type == .STRUCT);
-    assert(struct_info.polymorph_source_struct == type_info(Table(void, void)).polymorph_source_struct);
+    assert(struct_info.polymorph_source_struct == type_info(Table(u8, u8)).polymorph_source_struct);
     expect(`toml.kind, .TABLE, `parent_name, `name);
 
     hash_table := `output.value_pointer.(*Table_Type);

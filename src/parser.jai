@@ -318,7 +318,7 @@ split_from_left_incl :: (s: string, separator: u8) -> (left: string, right: stri
 }
 
 // Taken from Basic, modified to check overflow
-string_to_int_checked :: (s: string, base := 10, $T := int) -> result: T, ok: bool, remainder: string {
+string_to_int_checked :: (s: string, base := 10, $T := s64) -> result: T, ok: bool, remainder: string {
     assert(base == 16 || base <= 10);
     if !s return 0, false, "";
 

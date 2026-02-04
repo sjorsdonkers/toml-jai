@@ -58,7 +58,7 @@ DONE
     using_members();
 
     // All run-time types are supported, excepts for serializing untagged unions. Unions are supported by tagging them.
-    unions_and_place();
+    union_and_overlay();
 
     // For convenience Toml.Value comes with an equality operator and copy procedure.
     ok=, left  := Toml.string_to_type("a.b = {c.d = 1}", Toml.Value); assert(ok);
@@ -169,21 +169,17 @@ using_members :: () {
 DONE, "%", anonymous_using_str);
 }
 
-unions_and_place :: () {
-    // A struct with a @SumType is required to have the first member be the tag and the second be the union with the same number of members as the tag.
+union_and_overlay :: () {
     // Jai's initialization of unions is wack. So it is highly recommended to use --- to disable initialization of all variants that do not correspond to the default tag.
     Guy :: struct {
-        using scared: struct @SumType {
-            mytag: enum {
-                BANANA;
-                APPLE;
-                ORANGE;
-            }= .ORANGE;
-            union {
-                banana: *s64 = ---;
-                apple: struct { a: u8; b: string;} = ---;
-                orange: string="default";
-            };
+        using scared: union mytag: enum {
+            BANANA;
+            APPLE;
+            ORANGE;
+        }= .ORANGE {
+            .BANANA,, banana: *s64 = ---;
+            .APPLE,,  apple: struct { a: u8; b: string;} = ---;
+            .ORANGE,, orange: string="default";
         } @TomlOptional
     }
     ok, apple := Toml.string_to_type("scared.APPLE = {a = 32, b = 'Y'}", Guy); assert(ok);
@@ -197,24 +193,22 @@ unions_and_place :: () {
     assert(void_orange.mytag == .ORANGE, "%", void_orange.mytag);
     assert(void_orange.orange == "default", "%", void_orange.orange);
 
-    // Serializing SumTypes to null pointers/anys is supported with the NULL_STRING module parameter.
+    // Serializing Tagged Unions to null pointers/anys is supported with the NULL_STRING module parameter.
     null_banana := Guy.{mytag=.BANANA, banana=null};
     ok=, sum_null := Toml.type_to_string(null_banana); assert(ok);
     assert("scared.BANANA=\"~null~\"\n" == sum_null, "%", sum_null);
 
-    // Sum-type can be nested without issue.
-    Group :: struct @SumType {
-        tag: enum {
+    // Tagged Unions can be nested without issue.
+    Group :: union tag: enum {
             FIRST;
             SECOND;
             THIRD;
-        }
-        union {
-            first: string;
-            second: Guy;
-            third: Guy;
-        };
+        } {
+            .FIRST,, first: string; // TODO what if 1 is not explicitly tagged!!
+            .SECOND,, second: Guy;
+            .THIRD,, third: Guy;
     }
+
     group:= Group.{tag=.SECOND, second=Guy.{mytag=.ORANGE, orange="color"}};
     ok=, group_toml := Toml.type_to_string(group); assert(ok);
     assert("SECOND.scared.ORANGE=\"color\"\n" == group_toml);
@@ -224,10 +218,9 @@ unions_and_place :: () {
     // Note that just like normal structs if the member is anonymous it still requires the empty key "" in the TOML data.
     StructMember :: struct  {
         named: Guy;
-        struct @SumType {
-            tag: enum { A; B; }
-            union { a: string; b: Guy; };
-        }
+        union tag: enum { A; B; } {
+            .A,, a: string; .B,, b: Guy;
+        };
     }
     smem:= StructMember.{
         named=Guy.{mytag=.APPLE, apple=.{a=9, b="butter"}},
@@ -376,15 +369,12 @@ reference_types :: () {
     assert(use20.p_using.getal == 23);
 
     // Union with first having an initializer
-    MyUnionStruct :: struct @SumType {
-        tag : enum {
+    MyUnionStruct :: union tag : enum {
             FIRST;
             SECOND;
-        }
-        union {
-            first: Vingt;
-            second: string = ---;
-        }
+        } {
+            .FIRST,, first: Vingt;
+            .SECOND,, second: string = ---;
     }
 
     // Pointer to union

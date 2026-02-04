@@ -46,7 +46,7 @@ type_to_value_shared_memory :: (input: Any) -> ok:=false, toml:Value=.{} {
     case .VOID;  return true, .{};
     case .STRUCT;
         struct_info :*Type_Info_Struct= xx info;
-        if struct_info.textual_flags & .UNION return_with_error("Untagged unions (%) are not supported, as we cannot determine the active member, use @SumType", ifx struct_info.name then struct_info.name else "anonymous");
+        done, ok, union_value := union_to_value(slot, struct_info); if done return ok, union_value;
 
         table: [..]KeyValue;
         for member: struct_info.members {
@@ -105,32 +105,64 @@ default_custom_type_to_value :: (input: Any) -> done:=true, ok:=false, toml:Valu
     case type_info(FormatInt);      return true, true, .{kind=.FORMAT_INT,   format_int  =cast(*FormatInt,   slot)};
     case type_info(FormatFloat);    return true, true, .{kind=.FORMAT_FLOAT, format_float=cast(*FormatFloat, slot)};
     }
-    if array_find(struct_info.notes, "SumType") { ok, sumtype_value:= sumtype_to_value(slot, struct_info); return true, ok, sumtype_value; }
-
     return false, true, .{};
 }
 
-sumtype_to_value :: (slot: *void, struct_info: *Type_Info_Struct) -> ok:=false, value:Value=.{} {
-    valid, tag_member, union_member, tag_info, union_info:= is_valid_sumtype(struct_info);
-    if !valid { return_with_error("SumType % is not valid", struct_info.name); }
+union_to_value :: (slot: *void, struct_info: *Type_Info_Struct) -> done:=true, ok:=false, value:Value=.{} {
+    if !(struct_info.textual_flags & .UNION) return false;
+    if !(struct_info.textual_flags & .UNION_IS_TAGGED) return_with_error("Untagged unions (%) are not supported, as we cannot determine the active member", ifx struct_info.name then struct_info.name else "anonymous");
 
-    active_tag:= Reflection.get_enum_value(slot + tag_member.offset_in_bytes, xx tag_member.type);
-    found, active_tag_idx := array_find(tag_info.values, active_tag); if !found { return_with_error("Active tag % not found in %", active_tag, tag_info.name); }
-    active_variant:= union_info.members[active_tag_idx];
-    variant_slot:= slot + union_member.offset_in_bytes + active_variant.offset_in_bytes;
+    tag_member   := *struct_info.members[0];
+    active_member :*Type_Info_Struct_Member= null;
+    name          : string; // Enum: .VARIANT_NAME, Integer: 13, Type: member_name. We prefer to avoid member_name as it can be "" anonymous, but the Type can be too.
+    if tag_member.type.type == {
+    case .ENUM;
+        tag_value :s64= Reflection.get_enum_value(slot + tag_member.offset_in_bytes, xx tag_member.type);
+        tag_value_u64 :u64= cast(*u64, *tag_value).*;
+        for binding: struct_info.tagged_union_bindings if binding.constant_value == tag_value_u64 {
+            active_member = *struct_info.members[binding.member_index];
+            break;
+        }
+        if !active_member return_with_error("Tagged Union tag % not found in union %", tag_value, ifx struct_info.name then struct_info.name else "anonymous");
+        // NOTE: The union's enum may have repeated values, the name in such case will always be the first name with matching value.
+        // We want to be using the name of the enum here, especially if we get case syntax for enum tagged union in the future which would allow multiple members per enum value, making anonymous member_names common.
+        // However, the advantage of using member_name is that an anonymous/using-ed tagged union member can be safely lifted into the parent's struct scope.
+        tag_info :*Type_Info_Enum= xx tag_member.type;
+        found, active_tag_idx := array_find(tag_info.values, tag_value); if !found then return_with_error("Active tag % not found in %", tag_value, tag_info.name);
+        name = tag_info.names[active_tag_idx];
+    case .INTEGER;
+        // Int tagged union, the value simply indicates the active member index
+        ok, active_tag_idx := get_integer_value(slot, xx tag_member); if !ok return;
+        active_member_idx := active_tag_idx + 1; // +1 as first member is the tag
+        if active_member_idx < 0 || active_member_idx >= struct_info.members.count then return_with_error("Tagged Union active index % out of bounds for union with % members", active_member_idx, struct_info.members.count - 1);
+        active_member = *struct_info.members[active_member_idx];
+        name = sprint("%", active_tag_idx,, print_style = .{default_format_int=context.toml.default_format_int}); // TBD does it make sense to use the context default_format_int here?
+    case .TYPE;
+        tag_value :u64= xx,no_check cast(*u64, slot + tag_member.offset_in_bytes).*;
+        for binding: struct_info.tagged_union_bindings if binding.constant_value == tag_value {
+            active_member := *struct_info.members[binding.member_index];
+            break;
+        }
+        if !active_member return_with_error("Tagged Union tag % not found in union %", tag_value, ifx struct_info.name then struct_info.name else "anonymous");
+        name = active_member.name;
+    case; return_with_error("Tagged Union tag type % not supported", tag_member.type.type);
+    }
 
-    ok, union_value:= type_to_value_shared_memory(Any.{active_variant.type, variant_slot}); if !ok return;
+    ok, value := type_to_value_shared_memory(Any.{active_member.type, slot + active_member.offset_in_bytes}); if !ok return;
     table: [..]KeyValue;
-    array_add(*table, .{key=tag_info.names[active_tag_idx], value=union_value}); // We use the enums string name as the union member may be anonymous
-    return true, .{kind=.TABLE, table=table};
+    array_add(*table, .{key=name, value=value});
+    return true, true, .{kind=.TABLE, table=table};
 }
 
-// NOTE: Print procedures after this use context.print_style for int/float formatting
+////////////////////////////////////////////////////////////////////////////////////////
+// NOTE: Print procedures after this use context.print_style for int/float formatting //
+////////////////////////////////////////////////////////////////////////////////////////
+
 table_to_builder :: (builder: *String_Builder, value: Value, parent_key:="", $root:=true) {
     assert(value.kind == .TABLE, "Only tables can be serialized at the top level, got %", value.kind);
     #if root {
         old_style := context.print_style;
-        context.print_style = Print_Style.{default_format_float=context.toml.default_format_float, default_format_int=context.toml.default_format_int};
+        context.print_style = .{default_format_float=context.toml.default_format_float, default_format_int=context.toml.default_format_int};
         defer context.print_style = old_style;
     }
 

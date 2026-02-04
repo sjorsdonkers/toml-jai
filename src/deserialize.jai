@@ -54,6 +54,8 @@ value_to_type :: (toml: Value, output: Any, name:string="", parent_name:string="
         expect(toml.kind, .TABLE, parent_name, name);
         struct_info :*Type_Info_Struct= xx info;
 
+        done, ok := value_to_union(toml.table, slot, struct_info, name); if done return ok;
+
         for member: struct_info.members {
             if member.flags & (.CONSTANT |.IMPORTED) continue;
             found, value_ptr := table_find_value_by_key(*toml, member.name);
@@ -125,10 +127,6 @@ default_custom_value_to_type :: (toml: Value, output: Any, name:string, parent_n
     if struct_info == type_info(Value) { cast(*Value, slot).* = copy(toml); return true, true; }
     if value_to_chrono(toml, slot, struct_info) return true, true;
 
-    if array_find(struct_info.notes, "SumType") {
-        expect(toml.kind, .TABLE, parent_name, name);
-        return true, value_to_sumtype(toml.table, slot, struct_info, name);
-    }
     return false, true;
 }
 
@@ -145,29 +143,49 @@ value_to_chrono ::  (toml: Value, slot: *void, info: *Type_Info) -> is_chrono:bo
     return false;
 }
 
-value_to_sumtype :: (toml_table: []KeyValue, slot: *void, struct_info: *Type_Info_Struct, parent_name: string) -> ok:=false {
-    valid, tag_member, union_member, tag_info, union_info:= is_valid_sumtype(struct_info);
-    if !valid { return_with_error("SumType % is not valid", struct_info.name); }
+value_to_union :: (toml_table: []KeyValue, slot: *void, struct_info: *Type_Info_Struct, parent_name: string) -> done:= true, ok:=false {
+    if !(struct_info.textual_flags & .UNION_IS_TAGGED) return false; // TODO double check union deserialization kinda works? Else error here
 
-    if toml_table.count != 1  return_with_error("SumType % should have exactly one key-value pair", struct_info.name);
+    if toml_table.count != 1  return_with_error("Tagged union % should have exactly one key-value pair", struct_info.name); // TODO just loop till table till we find one that works and ignore the rest like usual
 
-    for tag_info.names if it == toml_table[0].key {
-        Reflection.set_enum_value(slot + tag_member.offset_in_bytes, tag_info, tag_info.values[it_index]);
-        active_variant:= union_info.members[it_index];
-        return value_to_type(toml_table[0].value, Any.{active_variant.type, slot + union_member.offset_in_bytes + active_variant.offset_in_bytes}, toml_table[0].key, parent_name);
+    tag_member := *struct_info.members[0];
+    UNSET :: -1;
+    active_member_idx :s64= UNSET;
+    if tag_member.type.type == {
+    case .ENUM;
+        tag_info :*Type_Info_Enum= xx tag_member.type;
+        for name: tag_info.names if name == toml_table[0].key {
+            tag_value := tag_info.values[it_index];
+            Reflection.set_enum_value(slot + tag_member.offset_in_bytes, tag_info, tag_value);
+
+            active_member :*Type_Info_Struct_Member= null;
+            tag_value_u64 :u64= cast(*u64, *tag_value).*;
+            // Since the value matches the member by tag name we need to do a find instead of a lookup
+            for struct_info.tagged_union_bindings if it.constant_value == tag_value_u64 {
+                active_member_idx = it.member_index;
+                break;
+            }
+            break;
+        }
+    case .INTEGER;
+        tag_value, ok, remainder := string_to_int_checked(toml_table[0].key, 10, s64); if !ok return_with_error("Failed to parse tagged union tag % as integer for %.%", toml_table[0].key, parent_name, struct_info.name);
+        if remainder return_with_error("Failed to parse tagged union tag % as integer for %.%, unexpected trailing characters: %", toml_table[0].key, parent_name, struct_info.name, remainder);
+        // Int tagged union, the value simply indicates the active member index
+        active_member_idx = tag_value + 1; // +1 as first member is the tag
+        if active_member_idx < 0 || active_member_idx >= struct_info.members.count then return_with_error("Tagged Union tag index % out of bounds for union with % members", active_member_idx, struct_info.members.count - 1);
+    case .TYPE;
+        active_member :*Type_Info_Struct_Member= null;
+        for array_view(struct_info.members, 1) if it.name == toml_table[0].key {
+            active_member_idx = it_index;
+            break;
+        }
+    case; return_with_error("Tagged Union tag type % not supported", tag_member.type.type);
     }
-    return_with_error("Key % is not an enum variant of SumType %", toml_table[0].key, struct_info.name);
-}
 
-is_valid_sumtype :: (struct_info: *Type_Info_Struct) -> bool, tag_member:*Type_Info_Struct_Member=null, union_member:*Type_Info_Struct_Member=null, tag_info:*Type_Info_Enum=null, union_info:*Type_Info_Struct=null {
-    if struct_info.members.count < 2                                       return false;
-    tag_member, union_member:= *struct_info.members[0], *struct_info.members[1];
-    if tag_member.type.type != .ENUM || union_member.type.type != .STRUCT  return false;
-    tag_info :*Type_Info_Enum= xx tag_member.type;
-    union_info :*Type_Info_Struct= xx union_member.type;
-    if union_info.textual_flags & .UNION == 0                              return false;
-    if tag_info.values.count != union_info.members.count                   return false;
-    return true, tag_member, union_member, tag_info, union_info;
+    if active_member_idx == UNSET return_with_error("Tagged Union tag % not found in union %", toml_table[0].key, ifx struct_info.name then struct_info.name else "anonymous");
+    active_member := *struct_info.members[active_member_idx];
+    ok := value_to_type(toml_table[0].value, Any.{active_member.type, slot + active_member.offset_in_bytes}, toml_table[0].key, parent_name);
+    return true, ok;
 }
 
 expect :: inline (given: Value.Kind, expected: Value.Kind, struct_name: string, member_name: string) #expand {
