@@ -113,35 +113,36 @@ union_to_value :: (slot: *void, struct_info: *Type_Info_Struct) -> done:=true, o
     if !(struct_info.textual_flags & .UNION) return false;
     if !(struct_info.textual_flags & .UNION_IS_TAGGED) return_with_error("Untagged unions (%) are not supported, as we cannot determine the active member", ifx struct_info.name then struct_info.name else "anonymous");
 
+    member_index_from_intlike_uniontag :: (struct_info:*Type_Info_Struct, tag_value: s64) -> ok:=false, active_member_idx:s64=0 {
+        tag_value_u64 :u64= cast(*u64, *tag_value).*;
+        for struct_info.tagged_union_bindings if it.constant_value == tag_value_u64 {
+            return true, it.member_index;
+        }
+        // If the value is not bound we assume the union variant matches the tag VALUE directly, so not the INDEX!
+        active_member_idx := tag_value + 1; // +1 as first member is the tag
+        if active_member_idx < 0 || active_member_idx >= struct_info.members.count then return_with_error("Tagged Union active index % out of bounds for union with % members", active_member_idx, struct_info.members.count - 1);
+        return true, active_member_idx;
+    };
+
     tag_member   := *struct_info.members[0];
-    UNSET :: -1;
-    active_member_idx :s64= UNSET;
+    active_member_idx :s64;
 
     if tag_member.type.type == {
     case .ENUM;
         tag_value :s64= Reflection.get_enum_value(slot + tag_member.offset_in_bytes, xx tag_member.type);
-        tag_value_u64 :u64= cast(*u64, *tag_value).*;
-        for struct_info.tagged_union_bindings if it.constant_value == tag_value_u64 {
-            active_member_idx = it.member_index;
-            break;
-        }
-        if active_member_idx == UNSET {
-            // If the value is not bound we assume the union variant matches the tag VALUE directly, so not the INDEX!
-            active_member_idx = tag_value + 1; // +1 as first member is the tag
-            if active_member_idx < 0 || active_member_idx >= struct_info.members.count then return_with_error("Tagged Union active enum index % out of bounds for union with % members", active_member_idx, struct_info.members.count - 1);
-        }
+        ok:, active_member_idx = member_index_from_intlike_uniontag(struct_info, tag_value); if !ok return;
     case .INTEGER;
-        // Int tagged union, the value simply indicates the active member index
-        ok, active_tag_idx := get_integer_value(slot, xx tag_member.type); if !ok return;
-        active_member_idx := active_tag_idx + 1; // +1 as first member is the tag
-        if active_member_idx < 0 || active_member_idx >= struct_info.members.count then return_with_error("Tagged Union active integer index % out of bounds for union with % members", active_member_idx, struct_info.members.count - 1);
+        ok, tag_value := get_integer_value(slot, xx tag_member.type); if !ok return;
+        ok, active_member_idx = member_index_from_intlike_uniontag(struct_info, tag_value); if !ok return;
     case .TYPE;
         tag_value := cast(**Type_Info, slot + tag_member.offset_in_bytes).*;
+        found := false;
         for array_view(struct_info.members, 1) if it.type == tag_value {
             active_member_idx = it_index + 1;
+            found = true;
             break;
         }
-        if active_member_idx == UNSET return_with_error("Tagged Union Type tag % not found in union %", tag_value, ifx struct_info.name then struct_info.name else "anonymous");
+        if !found return_with_error("Tagged Union Type tag % not found in union %", tag_value, ifx struct_info.name then struct_info.name else "anonymous");
     case; return_with_error("Tagged Union tag type % not supported", tag_member.type.type);
     }
 
