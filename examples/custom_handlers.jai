@@ -6,7 +6,7 @@
 // - Enable custom serialization of types we do not own (external Modules) as we may not be able to add notes or remove members.
 // - The same type should be serializable in different ways defined at the procedure call site, not struct definition.
 // - Enable data tweaks during serialization as opposed to full copies of nested structure trees (separate structs for serialization and use within the application).
-// - The user should be able to opt-out of the default behavior of handling special types like Toml.Value, Chrono, and SumTypes. A user can opt-out by setting a procedure which is a no-op or any procedure that does not call the default_custom_handler.
+// - The user should be able to opt-out of the default behavior of handling special types like Toml.Value, DateTimes. A user can opt-out by setting a procedure which is a no-op or any procedure that does not call the default_custom_handler.
 //
 // Note that these custom handler drive "what" is (de)serialized, they do not help with formatting of the toml.
 
@@ -52,7 +52,7 @@ enum_as_int :: () {
     // The custom procedure receives a Toml Value and writes into the slot.
     custom_value_to_enum :: (toml: Value, output: Any, name:string, parent_name:string) -> done:=true, ok:=false {
         if output.type.type != .ENUM return false;
-        expect(toml.type, .INT, parent_name, name);
+        expect(toml.kind, .INT, parent_name, name);
         enum_info :*Type_Info_Enum = xx output.type;
 
         found := array_find(enum_info.values, toml.int_value);
@@ -184,7 +184,7 @@ custom_value_to_magic :: (toml: Value, output: Any, name:string, parent_name:str
     if output.type != type_info(Magic_Bytes) return false;
     slot := output.value_pointer;
 
-    if toml.type != .TABLE { log_error("Expected table for Magic_Bytes, got %", toml.type); return; }
+    if toml.kind != .TABLE { log_error("Expected table for Magic_Bytes, got %", toml.kind); return; }
     if toml.table.count == {
     case 2;
         if toml.table[0].key != "flag"   { log_error("Expected key 'flag' for Magic_Bytes, got %",   toml.table[0].key); return; }
@@ -213,9 +213,13 @@ error_on_superfluous_keys :: () {
     // By default the Toml module ignores superfluous keys in a table.
     // We can use a custom handler to error on superfluous keys.
     catch_superfluous_keys :: (toml: Value, output: Any, name:string, parent_name:string) -> done:=true, ok:=false {
-        if output.type.type != .STRUCT || toml.type != .TABLE return false;
+        if output.type.type != .STRUCT || toml.kind != .TABLE return false;
         struct_info :*Type_Info_Struct = xx output.type;
-        if array_find(struct_info.notes, "SumType") return false; // SumTypes never allow superfluous fields
+
+        if (struct_info.textual_flags & .UNION_IS_TAGGED) && toml.table.count != 1 {
+            log_error("Expected exactly 1 key for tagged union, got %", toml.table.count);
+            return true, false;
+        }
 
         for keyvalue: toml.table {
             for member: struct_info.members {
@@ -223,9 +227,9 @@ error_on_superfluous_keys :: () {
                 if keyvalue.key == member.name continue keyvalue;
             }
             log_error("Superfluous key `%` in %.%", keyvalue.key, parent_name, name);
-            return true, false; // We are done, we found an error
+            return; // We are done, we found an error
         }
-        return false; // We are not done since we are only validating here, the Value still needs to be deserialized
+        return false, true; // We are not done since we are only validating here, the Value still needs to be deserialized
     }
 
     OnlyA :: struct {
@@ -266,13 +270,13 @@ polymorphic_types_like_hashtable_support :: () {
 
             // Serialize the key as a string regardless of what type it is in the Hash_Table.
             builder: String_Builder;
-            if key_as_value.type == .STRING escaped_to_builder(*builder, key_as_value.string_value, true);
+            if key_as_value.kind == .STRING escaped_to_builder(*builder, key_as_value.string_value, true);
             else                            inline_value_to_builder(*builder, key_as_value);
             key := builder_to_string(*builder);
 
             array_add(*table, .{key=key, value=value});
         }
-        return true, true, .{type=.TABLE, table=table};
+        return true, true, .{kind=.TABLE, table=table};
     }
     Str_To_U8 :: Table(string, u8);
     my_hash_table: Str_To_U8;
@@ -339,7 +343,7 @@ return_value_to_hashtable :: ($Table_Type: Type) #expand {
     struct_info :*Type_Info_Struct= xx `output.type;
     assert(`output.type.type == .STRUCT);
     assert(struct_info.polymorph_source_struct == type_info(Table(u8, u8)).polymorph_source_struct);
-    expect(`toml.type, .TABLE, `parent_name, `name);
+    expect(`toml.kind, .TABLE, `parent_name, `name);
 
     hash_table := `output.value_pointer.(*Table_Type);
     table_ensure_space(hash_table, `toml.table.count);

@@ -7,6 +7,7 @@
 
     t0 := seconds_since_init();
     test("./examples",        "first",              args);
+    test("./examples",        "union_and_overlay",  args);
     test("./examples",        "file_examples",      args);
     test("./examples",        "validation",         args);
     test("./examples",        "custom_handlers",    args);

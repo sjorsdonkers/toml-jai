@@ -8,7 +8,6 @@ A module for `TOML v1.0.0` support. It provides functionality to read/write TOML
 - All run-time data types are supported as their native type including reference types (`pointer`, `array`, `any`), with the exception of `untagged unions`.
 - Generic data is supported through the [Toml.Value](src/data.jai) struct.
 - Dates/times are supported types provided in [datetime.jai](src/datetime.jai) (until Jai has native types, Apollo_time.Calendar_Time is not usable here).
-- Safe sum-types with `@SumType` notes to indicate the struct has a tag enum followed by a matching union.
 - Modifying the default behavior like: renaming, omitting, changing Type representation like Hash_Tables, enum as int, extra validation, or handling complex data like binary encodings are supported through [custom handlers](examples/custom_handlers.jai). 
 
 ## Deserialize
@@ -91,7 +90,7 @@ Custom handlers have several design goals:
  - Enable custom serialization of types we do not own (external Modules) as we may not be able to add notes or remove members.
  - The same type should be serializable in different ways defined at the procedure call site, not struct definition.
  - Enable data tweaks during serialization as opposed to full data copies of nested structure trees (separate structs for serialization and usage within the application).
- - The user should be able to opt-out of the default behavior of handling special types like Toml.Value, Chrono, and SumTypes. A user can opt-out by setting a procedure that does not call the default_custom_handler.
+ - The user should be able to opt-out of the default behavior of handling special types like Toml.Value, Chrono. A user can opt-out by setting a procedure that does not call the default_custom_handler.
 
 In addition to handlers we currently also support making struct members optional through a `@TomlOptional` note. This means there are 2 ways to do the same thing, the note also requires the original Type(_Info) to be modified. It is likely this note will be removed when these kinds of operations are better supported through custom handlers.
 

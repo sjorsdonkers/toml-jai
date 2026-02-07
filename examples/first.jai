@@ -57,9 +57,6 @@ DONE
     // If the member is anonymous the member name is an empty string "".
     using_members();
 
-    // All run-time types are supported, excepts for serializing untagged unions. Unions are supported by tagging them.
-    unions_and_place();
-
     // For convenience Toml.Value comes with an equality operator and copy procedure.
     ok=, left  := Toml.string_to_type("a.b = {c.d = 1}", Toml.Value); assert(ok);
     ok=, right := Toml.string_to_type("a.b.c.d = 1", Toml.Value);     assert(ok);
@@ -108,7 +105,7 @@ DONE
 
     // We do not need to serialize to strings all the time, we can also serialize to Toml.Value.
     ok=, tt_value := Toml.type_to_value(MyFloat.{f=3.0}); assert(ok);
-    assert(tt_value.table[0].type == .FLOAT && tt_value.table[0].float_value == 3.0, "%", tt_value.table[0].float_value);
+    assert(tt_value.table[0].kind == .FLOAT && tt_value.table[0].float_value == 3.0, "%", tt_value.table[0].float_value);
 
 }
 
@@ -174,108 +171,6 @@ using_members :: () {
 DONE, "%", anonymous_using_str);
 }
 
-unions_and_place :: () {
-    // A struct with a @SumType is required to have the first member be the tag and the second be the union with the same number of members as the tag.
-    // Jai's initialization of unions is wack. So it is highly recommended to use --- to disable initialization of all variants that do not correspond to the default tag.
-    Guy :: struct {
-        using scared: struct @SumType {
-            mytag: enum {
-                BANANA;
-                APPLE;
-                ORANGE;
-            }= .ORANGE;
-            union {
-                banana: *s64 = ---;
-                apple: struct { a: u8; b: string;} = ---;
-                orange: string="default";
-            };
-        } @TomlOptional
-    }
-    ok, apple := Toml.string_to_type("scared.APPLE = {a = 32, b = 'Y'}", Guy); assert(ok);
-    print("struct_apple: %\n", apple);
-    print("struct_apple: %: %\n", apple.mytag, apple.apple);
-    ok_apple, toml_apple := Toml.type_to_string(apple); assert(ok_apple);
-    assert("scared.APPLE={a=32, b=\"Y\"}\n" == toml_apple, "%", toml_apple);
-
-    // If the TOML data does not contain a field that is present in the struct, the field will be initialized to its default value.
-    ok=, void_orange := Toml.string_to_type("", Guy); assert(ok);
-    assert(void_orange.mytag == .ORANGE, "%", void_orange.mytag);
-    assert(void_orange.orange == "default", "%", void_orange.orange);
-
-    // Serializing SumTypes to null pointers/anys is supported with the NULL_STRING module parameter.
-    null_banana := Guy.{mytag=.BANANA, banana=null};
-    ok=, sum_null := Toml.type_to_string(null_banana); assert(ok);
-    assert("scared.BANANA=\"~null~\"\n" == sum_null, "%", sum_null);
-
-    // Sum-type can be nested without issue.
-    Group :: struct @SumType {
-        tag: enum {
-            FIRST;
-            SECOND;
-            THIRD;
-        }
-        union {
-            first: string;
-            second: Guy;
-            third: Guy;
-        };
-    }
-    group:= Group.{tag=.SECOND, second=Guy.{mytag=.ORANGE, orange="color"}};
-    ok=, group_toml := Toml.type_to_string(group); assert(ok);
-    assert("SECOND.scared.ORANGE=\"color\"\n" == group_toml);
-    ok, group = Toml.string_to_type("THIRD.scared.BANANA = -17", Group); assert(ok);
-    assert(group.tag == .THIRD && group.third.mytag == .BANANA && group.third.banana.* == -17);
-
-    // Note that just like normal structs if the member is anonymous it still requires the empty key "" in the TOML data.
-    StructMember :: struct  {
-        named: Guy;
-        struct @SumType {
-            tag: enum { A; B; }
-            union { a: string; b: Guy; };
-        }
-    }
-    smem:= StructMember.{
-        named=Guy.{mytag=.APPLE, apple=.{a=9, b="butter"}},
-        tag=.B, b=Guy.{mytag=.ORANGE, orange="kleur"}
-    };
-    ok=, smem_toml:= Toml.type_to_string(smem); assert(ok);
-    assert(#string DONE
-named.scared.APPLE={a=9, b="butter"}
-"".B.scared.ORANGE="kleur"
-DONE == smem_toml, "%", smem_toml);
-
-    ok, smem = Toml.string_to_type(#string DONE
-named.scared.BANANA = 987
-"".B.scared.APPLE = {a = 3, b = 'peanut'}
-DONE, StructMember); assert(ok);
-    assert(smem.named.mytag == .BANANA && smem.named.banana.* == 987);
-    assert(smem.tag == .B && smem.b.mytag == .APPLE && smem.b.apple.a == 3 && smem.b.apple.b == "peanut");
-
-    // #overlay members are not serialized, as the data they represent is already printed by the primary members which they overlay
-    // This also means the primary members should always be in a valid state, pointer members must point to data matching the type
-    My_Overlay :: struct {
-        a: u8; b: u8; c: u8; d: u8;
-        #overlay (a) abcd: u32;
-    }
-    my_overlay := My_Overlay.{abcd=4346721};
-    ok=, overlay_toml := Toml.type_to_string(my_overlay); assert(ok);
-    assert("a=97\nb=83\nc=66\nd=0\n" == overlay_toml, "%", overlay_toml);
-    // #overlay fields are optional and not recommended in the toml string
-    ok=, overlay_data := Toml.string_to_type("a=1\nb=2\nc=3\nd=4", My_Overlay); assert(ok); // abcd is omitted
-    assert(overlay_data.a == 1
-        && overlay_data.b == 2
-        && overlay_data.c == 3
-        && overlay_data.d == 4
-        && overlay_data.abcd == 67305985, "%", overlay_data.abcd);
-    // #overlay fields may be provided in the toml, the data is overwritten on top of each other in the order of the members in the struct
-    ok, overlay_data = Toml.string_to_type("a=3\nb=3\nc=3\nd=3\nabcd=4346721", My_Overlay); assert(ok);
-    assert(overlay_data.a == 97
-        && overlay_data.b == 83
-        && overlay_data.c == 66
-        && overlay_data.d == 0
-        && overlay_data.abcd == 4346721);
-}
-
 error_handling :: () {
     // To capture the error log without disturbing the normal logging behavior we can wrap the logger.
     Log_Wrap :: struct {
@@ -324,10 +219,10 @@ reference_types :: () {
     ok=, null_ptr := Toml.string_to_type("ptr = \"~null~\"", Null_Pointer); assert(ok);
     assert(null_ptr.ptr == null, "%", null_ptr);
     // We can change the string used to represent null values in the TOML data to any other Value.
-    ok=, zero_ptr := Toml.string_to_type("ptr = 17.0", Null_Pointer,, toml = .{null_value = Value.{type=.FLOAT, float_value=17.0}}); assert(ok);
+    ok=, zero_ptr := Toml.string_to_type("ptr = 17.0", Null_Pointer,, toml = .{null_value = Value.{kind=.FLOAT, float_value=17.0}}); assert(ok);
     assert(zero_ptr.ptr == null, "%", zero_ptr);
     // Serialization works the same way.
-    ok=, nil_toml := Toml.type_to_string(Null_Pointer.{ptr=null},, toml = .{null_value = Value.{type=.STRING, string_value="nil"}}); assert(ok);
+    ok=, nil_toml := Toml.type_to_string(Null_Pointer.{ptr=null},, toml = .{null_value = Value.{kind=.STRING, string_value="nil"}}); assert(ok);
     assert(nil_toml == "ptr=\"nil\"\n", "%", nil_toml);
 
     // Optional pointer
@@ -381,22 +276,19 @@ reference_types :: () {
     assert(use20.p_using.getal == 23);
 
     // Union with first having an initializer
-    MyUnionStruct :: struct @SumType {
-        tag : enum {
+    MyUnionStruct :: union tag : enum {
             FIRST;
             SECOND;
-        }
-        union {
-            first: Vingt;
-            second: string = ---;
-        }
+        } {
+            .FIRST,, first: Vingt;
+            .SECOND,, second: string = ---;
     }
 
     // Pointer to union
     MyUnionPtr :: struct {
         p_union: *MyUnionStruct;
     }
-    ok=, un_ptr := Toml.string_to_type("p_union.FIRST.number = 3", MyUnionPtr); assert(ok);
+    ok=, un_ptr := Toml.string_to_type("p_union.first.number = 3", MyUnionPtr); assert(ok);
     print("un_ptr: %: %\n", un_ptr.p_union.tag, un_ptr.p_union.first);
     assert(un_ptr.p_union.first.number == 3);
     assert(un_ptr.p_union.first.getal == 23);

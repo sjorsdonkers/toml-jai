@@ -14,7 +14,7 @@ main :: () {
 }
 
 value_to_json :: (builder: *String_Builder, value: Toml.Value) {
-    if #complete value.type == {
+    if #complete value.kind == {
     case .BOOL;  print_to_builder(builder, "{\"type\":\"bool\",\"value\":\"%\"}",    value.bool_value);
     case .INT;   print_to_builder(builder, "{\"type\":\"integer\",\"value\":\"%\"}", value.int_value);
     case .FLOAT;
@@ -27,7 +27,7 @@ value_to_json :: (builder: *String_Builder, value: Toml.Value) {
         json_escape_string(builder, value.string_value);
         append(builder, "}");
     case .DATETIME;
-        if #complete value.datetime.type == {
+        if #complete value.datetime.kind == {
             case .LOCAL_TIME;      append(builder, "{\"type\":\"time-local\",\"value\":\"");
             case .LOCAL_DATE;      append(builder, "{\"type\":\"date-local\",\"value\":\"");
             case .LOCAL_DATETIME;  append(builder, "{\"type\":\"datetime-local\",\"value\":\"");

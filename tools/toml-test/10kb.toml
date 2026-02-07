@@ -1,0 +1,348 @@
+["valid/array/array-subtables.toml-0"]
+
+  [["valid/array/array-subtables.toml-0".arr]]
+    ["valid/array/array-subtables.toml-0".arr.subtab]
+      val = 1
+
+  [["valid/array/array-subtables.toml-0".arr]]
+    ["valid/array/array-subtables.toml-0".arr.subtab]
+      val = 2
+
+["valid/array/array.toml-0"]
+  comments = [1, 2]
+  dates = [1987-07-05T17:45:00Z, 1979-05-27T07:32:00Z, 2006-06-01T11:00:00Z]
+  floats = [1.1, 2.1, 3.1]
+  ints = [1, 2, 3]
+  strings = ["a", "b", "c"]
+
+["valid/array/bool.toml-0"]
+  a = [true, false]
+
+["valid/array/empty.toml-0"]
+  thevoid = [[[[[]]]]]
+
+["valid/array/hetergeneous.toml-0"]
+  mixed = [[1, 2], ["a", "b"], [1.1, 2.1]]
+
+["valid/array/mixed-int-array.toml-0"]
+  arrays-and-ints = [1, ["Arrays are not integers."]]
+
+["valid/array/mixed-int-float.toml-0"]
+  ints-and-floats = [1, 1.1]
+
+["valid/array/mixed-int-string.toml-0"]
+  strings-and-ints = ["hi", 42]
+
+["valid/array/mixed-string-table.toml-0"]
+  contributors = ["Foo Bar <foo@example.com>", {email = "bazqux@example.com", name = "Baz Qux", url = "https://example.com/bazqux"}]
+  mixed = [{k = "a"}, "b", 1]
+
+["valid/array/nested-double.toml-0"]
+  nest = [[["a"], [1, 2, [3]]]]
+
+["valid/array/nested-inline-table.toml-0"]
+
+  [["valid/array/nested-inline-table.toml-0".a]]
+    ["valid/array/nested-inline-table.toml-0".a.b]
+
+["valid/array/nested.toml-0"]
+  nest = [["a"], ["b"]]
+
+["valid/array/nospaces.toml-0"]
+  ints = [1, 2, 3]
+
+["valid/array/open-parent-table.toml-0"]
+  ["valid/array/open-parent-table.toml-0"."valid/array/open-parent-table.toml-0-parent-table"]
+    not-arr = 1
+
+    [["valid/array/open-parent-table.toml-0"."valid/array/open-parent-table.toml-0-parent-table".arr]]
+
+    [["valid/array/open-parent-table.toml-0"."valid/array/open-parent-table.toml-0-parent-table".arr]]
+
+["valid/array/string-quote-comma-2.toml-0"]
+  title = [" \", "]
+
+["valid/array/string-quote-comma.toml-0"]
+  title = ["Client: \"XXXX\", Job: XXXX", "Code: XXXX"]
+
+["valid/array/string-with-comma-2.toml-0"]
+  title = ["Client: XXXX,\nJob: XXXX", "Code: XXXX"]
+
+["valid/array/string-with-comma.toml-0"]
+  title = ["Client: XXXX, Job: XXXX", "Code: XXXX"]
+
+["valid/array/strings.toml-0"]
+  string_array = ["all", "strings", "are the same", "type"]
+
+["valid/array/table-array-string-backslash.toml-0"]
+
+  [["valid/array/table-array-string-backslash.toml-0".foo]]
+    bar = "\"{{baz}}\""
+
+["valid/array/trailing-comma.toml-0"]
+  arr-1 = [1]
+  arr-2 = [2, 3]
+  arr-3 = [4]
+  arr-4 = [5, 6]
+
+["valid/bool/bool.toml-0"]
+  f = false
+  t = true
+
+["valid/comment/after-literal-no-ws.toml-0"]
+  false = false
+  inf = inf
+  nan = nan
+  true = true
+
+["valid/comment/at-eof.toml-0"]
+  key = "value"
+
+["valid/comment/at-eof2.toml-0"]
+  key = "value"
+
+["valid/comment/everywhere.toml-0"]
+  ["valid/comment/everywhere.toml-0"."valid/comment/everywhere.toml-0-group"]
+    answer = 42
+    d = 1979-05-26
+    dt = 1979-05-27T07:32:12-07:00
+    more = [42, 42]
+
+["valid/comment/noeol.toml-0"]
+
+["valid/comment/nonascii.toml-0"]
+
+["valid/comment/tricky.toml-0"]
+  ["valid/comment/tricky.toml-0"."valid/comment/tricky.toml-0-hash#tag"]
+    "#!" = "hash bang"
+    arr3 = ["#", "#", "###"]
+    arr4 = [1, 2, 3, 4]
+    arr5 = [[[[["#"]]]]]
+    ["valid/comment/tricky.toml-0"."valid/comment/tricky.toml-0-hash#tag"."valid/comment/tricky.toml-0-tbl1"]
+      "#" = "}#"
+  ["valid/comment/tricky.toml-0"."valid/comment/tricky.toml-0-section"]
+    8 = "eight"
+    eleven = 11.1
+    five = 5.5
+    four = "# no comment\n# nor this\n#also not comment"
+    one = "11"
+    six = 6
+    ten = 1000.0
+    three = "#"
+    two = "22#"
+
+["valid/datetime/datetime.toml-0"]
+  lower = 1987-07-05T17:45:00Z
+  space = 1987-07-05T17:45:00Z
+
+["valid/datetime/edge.toml-0"]
+  first-date = 0000-12-31
+  first-local = 0000-12-31T22:00:00
+  first-offset = 0001-01-01T00:00:00Z
+  last-date = 9999-12-30
+  last-local = 9999-12-31T21:59:59
+  last-offset = 9999-12-31T23:59:59Z
+
+["valid/datetime/leap-year.toml-0"]
+  2000-date = 2000-02-28
+  2000-datetime = 2000-02-29T15:15:15Z
+  2000-datetime-local = 2000-02-29T13:15:15
+  2024-date = 2024-02-28
+  2024-datetime = 2024-02-29T15:15:15Z
+  2024-datetime-local = 2024-02-29T13:15:15
+
+["valid/datetime/local-date.toml-0"]
+  bestdayever = 1987-07-04
+
+["valid/datetime/local-time.toml-0"]
+  besttimeever = 15:45:00
+  milliseconds = 08:32:00.555
+
+["valid/datetime/local.toml-0"]
+  local = 1987-07-05T15:45:00
+  milli = 1977-12-21T08:32:00.555
+  space = 1987-07-05T15:45:00
+
+["valid/datetime/milliseconds.toml-0"]
+  utc1 = 1987-07-05T17:45:56.123Z
+  utc2 = 1987-07-05T17:45:56.6Z
+  wita1 = 1987-07-05T17:45:56.123+08:00
+  wita2 = 1987-07-05T17:45:56.6+08:00
+
+["valid/datetime/timezone.toml-0"]
+  nzdt = 1987-07-05T17:45:56+13:00
+  nzst = 1987-07-05T17:45:56+12:00
+  pdt = 1987-07-05T17:45:56-05:00
+  utc = 1987-07-05T17:45:56Z
+
+["valid/empty-file.toml-0"]
+
+["valid/example.toml-0"]
+  best-day-ever = 1987-07-05T17:45:00Z
+  ["valid/example.toml-0"."valid/example.toml-0-numtheory"]
+    boring = false
+    perfection = [6, 28, 496]
+
+["valid/float/exponent.toml-0"]
+  lower = 300.0
+  minustenth = -0.1
+  neg = 0.03
+  pointlower = 310.0
+  pointupper = 310.0
+  pos = 300.0
+  upper = 300.0
+  zero = 3.0
+
+["valid/float/float.toml-0"]
+  leading-zero-fractional = 0.0123
+  negpi = -3.14
+  pi = 3.14
+  pospi = 3.14
+  zero-intpart = 0.123
+
+["valid/float/inf-and-nan.toml-0"]
+  infinity = inf
+  infinity_neg = -inf
+  infinity_plus = inf
+  nan = nan
+  nan_neg = -nan
+  nan_plus = nan
+
+["valid/float/long.toml-0"]
+  longpi = 3.141592653589793
+  neglongpi = -3.141592653589793
+
+["valid/float/max-int.toml-0"]
+  max_float = 9.007199254740991e+15
+  min_float = -9.007199254740991e+15
+
+["valid/float/underscore.toml-0"]
+  after = 3141.5927
+  before = 3141.5927
+  exponent = 3e+14
+
+["valid/float/zero.toml-0"]
+  exponent = 0.0
+  exponent-signed-neg = -0.0
+  exponent-signed-pos = 0.0
+  exponent-two-0 = 0.0
+  signed-neg = -0.0
+  signed-pos = 0.0
+  zero = 0.0
+
+["valid/implicit-and-explicit-after.toml-0"]
+  ["valid/implicit-and-explicit-after.toml-0"."valid/implicit-and-explicit-after.toml-0-a"]
+    better = 43
+    ["valid/implicit-and-explicit-after.toml-0"."valid/implicit-and-explicit-after.toml-0-a"."valid/implicit-and-explicit-after.toml-0-b"]
+      ["valid/implicit-and-explicit-after.toml-0"."valid/implicit-and-explicit-after.toml-0-a"."valid/implicit-and-explicit-after.toml-0-b"."valid/implicit-and-explicit-after.toml-0-c"]
+        answer = 42
+
+["valid/implicit-and-explicit-before.toml-0"]
+  ["valid/implicit-and-explicit-before.toml-0"."valid/implicit-and-explicit-before.toml-0-a"]
+    better = 43
+    ["valid/implicit-and-explicit-before.toml-0"."valid/implicit-and-explicit-before.toml-0-a"."valid/implicit-and-explicit-before.toml-0-b"]
+      ["valid/implicit-and-explicit-before.toml-0"."valid/implicit-and-explicit-before.toml-0-a"."valid/implicit-and-explicit-before.toml-0-b"."valid/implicit-and-explicit-before.toml-0-c"]
+        answer = 42
+
+["valid/implicit-groups.toml-0"]
+  ["valid/implicit-groups.toml-0"."valid/implicit-groups.toml-0-a"]
+    ["valid/implicit-groups.toml-0"."valid/implicit-groups.toml-0-a"."valid/implicit-groups.toml-0-b"]
+      ["valid/implicit-groups.toml-0"."valid/implicit-groups.toml-0-a"."valid/implicit-groups.toml-0-b"."valid/implicit-groups.toml-0-c"]
+        answer = 42
+
+["valid/inline-table/array-values.toml-0"]
+  ["valid/inline-table/array-values.toml-0"."valid/inline-table/array-values.toml-0-a"]
+    a = []
+  ["valid/inline-table/array-values.toml-0"."valid/inline-table/array-values.toml-0-b"]
+    a = [1, 2]
+    b = [3, 4]
+
+["valid/inline-table/array.toml-0"]
+
+  [["valid/inline-table/array.toml-0".arr]]
+    a = 1
+
+  [["valid/inline-table/array.toml-0".arr]]
+    a = 2
+
+  [["valid/inline-table/array.toml-0".people]]
+    first_name = "Bruce"
+    last_name = "Springsteen"
+
+  [["valid/inline-table/array.toml-0".people]]
+    first_name = "Eric"
+    last_name = "Clapton"
+
+  [["valid/inline-table/array.toml-0".people]]
+    first_name = "Bob"
+    last_name = "Seger"
+
+["valid/inline-table/bool.toml-0"]
+  ["valid/inline-table/bool.toml-0"."valid/inline-table/bool.toml-0-a"]
+    a = true
+    b = false
+
+["valid/inline-table/empty.toml-0"]
+
+  [["valid/inline-table/empty.toml-0".empty_in_array]]
+    not_empty = 1
+
+  [["valid/inline-table/empty.toml-0".empty_in_array]]
+
+  [["valid/inline-table/empty.toml-0".empty_in_array2]]
+
+  [["valid/inline-table/empty.toml-0".empty_in_array2]]
+    not_empty = 1
+
+  [["valid/inline-table/empty.toml-0".many_empty]]
+
+  [["valid/inline-table/empty.toml-0".many_empty]]
+
+  [["valid/inline-table/empty.toml-0".many_empty]]
+  ["valid/inline-table/empty.toml-0"."valid/inline-table/empty.toml-0-empty1"]
+  ["valid/inline-table/empty.toml-0"."valid/inline-table/empty.toml-0-empty2"]
+  ["valid/inline-table/empty.toml-0"."valid/inline-table/empty.toml-0-nested_empty"]
+    ["valid/inline-table/empty.toml-0"."valid/inline-table/empty.toml-0-nested_empty"."valid/inline-table/empty.toml-0-empty"]
+  ["valid/inline-table/empty.toml-0"."valid/inline-table/empty.toml-0-with_cmt"]
+
+["valid/inline-table/end-in-bool.toml-0"]
+  ["valid/inline-table/end-in-bool.toml-0"."valid/inline-table/end-in-bool.toml-0-black"]
+    allow_prereleases = true
+    python = ">3.6"
+    version = ">=18.9b0"
+
+["valid/inline-table/inline-table.toml-0"]
+
+  [["valid/inline-table/inline-table.toml-0".table-array]]
+    a = 1
+
+  [["valid/inline-table/inline-table.toml-0".table-array]]
+    b = 2
+  ["valid/inline-table/inline-table.toml-0"."valid/inline-table/inline-table.toml-0-name"]
+    first = "Tom"
+    last = "Preston-Werner"
+  ["valid/inline-table/inline-table.toml-0"."valid/inline-table/inline-table.toml-0-point"]
+    x = 1
+    y = 2
+  ["valid/inline-table/inline-table.toml-0"."valid/inline-table/inline-table.toml-0-simple"]
+    a = 1
+  ["valid/inline-table/inline-table.toml-0"."valid/inline-table/inline-table.toml-0-str-key"]
+    a = 1
+
+["valid/inline-table/key-dotted-1.toml-0"]
+  ["valid/inline-table/key-dotted-1.toml-0"."valid/inline-table/key-dotted-1.toml-0-a"]
+    ["valid/inline-table/key-dotted-1.toml-0"."valid/inline-table/key-dotted-1.toml-0-a"."valid/inline-table/key-dotted-1.toml-0-a"]
+      b = 1
+  ["valid/inline-table/key-dotted-1.toml-0"."valid/inline-table/key-dotted-1.toml-0-b"]
+    ["valid/inline-table/key-dotted-1.toml-0"."valid/inline-table/key-dotted-1.toml-0-b"."valid/inline-table/key-dotted-1.toml-0-a"]
+      b = 1
+  ["valid/inline-table/key-dotted-1.toml-0"."valid/inline-table/key-dotted-1.toml-0-c"]
+    ["valid/inline-table/key-dotted-1.toml-0"."valid/inline-table/key-dotted-1.toml-0-c"."valid/inline-table/key-dotted-1.toml-0-a"]
+      b = 1
+  ["valid/inline-table/key-dotted-1.toml-0"."valid/inline-table/key-dotted-1.toml-0-d"]
+    ["valid/inline-table/key-dotted-1.toml-0"."valid/inline-table/key-dotted-1.toml-0-d"."valid/inline-table/key-dotted-1.toml-0-a"]
+      b = 1
+  ["valid/inline-table/key-dotted-1.toml-0"."valid/inline-table/key-dotted-1.toml-0-e"]
+    ["valid/inline-table/key-dotted-1.toml-0"."valid/inline-table/key-dotted-1.toml-0-e"."valid/inline-table/key-dotted-1.toml-0-a"]
+      b = 1
+

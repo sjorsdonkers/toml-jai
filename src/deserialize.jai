@@ -25,19 +25,19 @@ value_to_type :: (toml: Value, output: Any, name:string="", parent_name:string="
 
     if #complete info.type == {
     case .INTEGER;
-        expect(toml.type, .INT, parent_name, name);
+        expect(toml.kind, .INT, parent_name, name);
         valid, low, high := range_check_and_store(toml.int_value, xx info, slot);
         if !valid { return_with_error("Value for %.% is out of range. Given % expected min % max %", parent_name, name, toml.int_value, low, high); }
     case .FLOAT;
-        if toml.type != .INT expect(toml.type, .FLOAT, parent_name, name); // Allow int to float conversion
-        if      info.runtime_size == 4 { cast(*float32, slot).* = ifx toml.type == .INT then cast(float32, toml.int_value) else cast(float32, toml.float_value); }
-        else if info.runtime_size == 8 { cast(*float64, slot).* = ifx toml.type == .INT then cast(float64, toml.int_value) else               toml.float_value;  }
+        if toml.kind != .INT expect(toml.kind, .FLOAT, parent_name, name); // Allow int to float conversion
+        if      info.runtime_size == 4 { cast(*float32, slot).* = ifx toml.kind == .INT then cast(float32, toml.int_value) else cast(float32, toml.float_value); }
+        else if info.runtime_size == 8 { cast(*float64, slot).* = ifx toml.kind == .INT then cast(float64, toml.int_value) else               toml.float_value;  }
         else { return_with_error("Unsupported float size %", info.runtime_size); }
     case .BOOL;
-        expect(toml.type, .BOOL, parent_name, name);
+        expect(toml.kind, .BOOL, parent_name, name);
         cast(*bool, slot).* = toml.bool_value;
     case .STRING;
-        expect(toml.type, .STRING, parent_name, name);
+        expect(toml.kind, .STRING, parent_name, name);
         cast(*string, slot).* = copy_string(toml.string_value);
     case .POINTER;
         if toml == context.toml.null_value return true; // Null pointer
@@ -48,11 +48,13 @@ value_to_type :: (toml: Value, output: Any, name:string="", parent_name:string="
         cast(**void, slot).* = memory;
         return value_to_type(toml, Any.{pointer_info.pointer_to, memory}, name, parent_name);
     case .VOID;
-        expect(toml.type, .TABLE, parent_name, name);
+        expect(toml.kind, .TABLE, parent_name, name);
         if toml.table.count != 0 { return_with_error("Expected empty table for %.%, got %", parent_name, name, toml.table.count);  }
     case .STRUCT;
-        expect(toml.type, .TABLE, parent_name, name);
+        expect(toml.kind, .TABLE, parent_name, name);
         struct_info :*Type_Info_Struct= xx info;
+
+        done, ok := value_to_union(toml.table, slot, struct_info, name); if done return ok;
 
         for member: struct_info.members {
             if member.flags & (.CONSTANT |.IMPORTED) continue;
@@ -64,7 +66,7 @@ value_to_type :: (toml: Value, output: Any, name:string="", parent_name:string="
             }
         }
     case .ARRAY;
-        expect(toml.type, .ARRAY, parent_name, name);
+        expect(toml.kind, .ARRAY, parent_name, name);
         array_info :*Type_Info_Array= xx info;
         element_type := array_info.element_type;
 
@@ -100,7 +102,7 @@ value_to_type :: (toml: Value, output: Any, name:string="", parent_name:string="
         any_value.value_pointer = alloc(any_value.type.runtime_size);
         any_value.value_pointer.(*Value).* = copy(toml); // No recursion so we don't rely on the custom_value_to_type
     case .ENUM;
-        expect(toml.type, .STRING, parent_name, name);
+        expect(toml.kind, .STRING, parent_name, name);
         enum_info :*Type_Info_Enum= xx info;
 
         found, index := array_find(enum_info.names, toml.string_value);
@@ -125,18 +127,14 @@ default_custom_value_to_type :: (toml: Value, output: Any, name:string, parent_n
     if struct_info == type_info(Value) { cast(*Value, slot).* = copy(toml); return true, true; }
     if value_to_chrono(toml, slot, struct_info) return true, true;
 
-    if array_find(struct_info.notes, "SumType") {
-        expect(toml.type, .TABLE, parent_name, name);
-        return true, value_to_sumtype(toml.table, slot, struct_info, name);
-    }
     return false, true;
 }
 
 value_to_chrono ::  (toml: Value, slot: *void, info: *Type_Info) -> is_chrono:bool {
-    if toml.type != .DATETIME return false;
+    if toml.kind != .DATETIME return false;
 
     if info == type_info(Chrono) { cast(*Chrono, slot).* = toml.datetime; return true;}
-    if #complete toml.datetime.type == {
+    if #complete toml.datetime.kind == {
     case .LOCAL_TIME;       if info == type_info(Time)           { cast(*Time, slot).*           = toml.datetime.time;            return true; }
     case .LOCAL_DATE;       if info == type_info(Date)           { cast(*Date, slot).*           = toml.datetime.date;            return true; }
     case .LOCAL_DATETIME;   if info == type_info(DateTime)       { cast(*DateTime, slot).*       = toml.datetime.datetime;        return true; }
@@ -145,32 +143,61 @@ value_to_chrono ::  (toml: Value, slot: *void, info: *Type_Info) -> is_chrono:bo
     return false;
 }
 
-value_to_sumtype :: (toml_table: []KeyValue, slot: *void, struct_info: *Type_Info_Struct, parent_name: string) -> ok:=false {
-    valid, tag_member, union_member, tag_info, union_info:= is_valid_sumtype(struct_info);
-    if !valid { return_with_error("SumType % is not valid", struct_info.name); }
+value_to_union :: (toml_table: []KeyValue, slot: *void, struct_info: *Type_Info_Struct, parent_name: string) -> done:= true, ok:=false {
+    if !(struct_info.textual_flags & .UNION_IS_TAGGED) return false;
+    if toml_table.count != 1  return_with_error("Tagged union % should have exactly one key-value pair", struct_info.name); // No superfluous values allowed here
 
-    if toml_table.count != 1  return_with_error("SumType % should have exactly one key-value pair", struct_info.name);
-
-    for tag_info.names if it == toml_table[0].key {
-        Reflection.set_enum_value(slot + tag_member.offset_in_bytes, tag_info, tag_info.values[it_index]);
-        active_variant:= union_info.members[it_index];
-        return value_to_type(toml_table[0].value, Any.{active_variant.type, slot + union_member.offset_in_bytes + active_variant.offset_in_bytes}, toml_table[0].key, parent_name);
+    // Determine the active member
+    found := false;
+    active_member_idx :s64;
+    for array_view(struct_info.members, 1) {
+        if it.name == toml_table[0].key {
+        active_member_idx = it_index + 1;
+        found = true;
+        break;
+    }}
+    if !found {
+        tag_value, ok, remainder := string_to_int_checked(toml_table[0].key, 10, s64);
+        if !ok return_with_error("Cannot find member for union tag % for %.%", toml_table[0].key, parent_name, struct_info.name);
+        if remainder return_with_error("Failed to parse tagged union tag % as integer for %.%, unexpected trailing characters: %", toml_table[0].key, parent_name, struct_info.name, remainder);
+        // Int tagged union, the value simply indicates the active member index
+        active_member_idx = tag_value + 1; // +1 as first member is the tag
+        if active_member_idx < 0 || active_member_idx >= struct_info.members.count then return_with_error("Tagged Union tag index % out of bounds for union with % members", active_member_idx, struct_info.members.count - 1);
     }
-    return_with_error("Key % is not an enum variant of SumType %", toml_table[0].key, struct_info.name);
+    active_member := *struct_info.members[active_member_idx]; // We set the members's value at the end so that the tag is set before we recurse into the value
+
+    // Find the corresponding tag value
+    tag_member := *struct_info.members[0];
+    intlike_uniontag_from_member_index :: (struct_info: *Type_Info_Struct, active_member_idx: s64, int_info: *Type_Info_Integer) -> ok:=false, tag_value:s64, requires_check:bool {
+        for struct_info.tagged_union_bindings if it.member_index == active_member_idx {
+            ok, tag_value := get_integer_value(*it.constant_value, int_info); // Works for negative values as well
+            return ok, tag_value, true;
+        }
+        // If there is no binding, use the member index as tag VALUE (not as enum.values.index)
+        return true, (active_member_idx - 1), false; // -1 as first member is the tag
+    }
+
+    if tag_member.type.type == {
+    case .ENUM;
+        tag_info :*Type_Info_Enum= xx tag_member.type;
+        ok, tag_value, requires_check := intlike_uniontag_from_member_index(struct_info, active_member_idx, xx tag_info.internal_type); if !ok return_with_error("Tagged Union tag constant value % cannot be represented in s64 for %.%", tag_value, parent_name, struct_info.name);
+        if requires_check && !(array_find(tag_info.values, tag_value)) return_with_error("Tagged Union tag value % not found in enum %", tag_value, tag_info.name);
+        Reflection.set_enum_value(slot + tag_member.offset_in_bytes, tag_info, tag_value);
+    case .INTEGER;
+        ok, tag_value, requires_check := intlike_uniontag_from_member_index(struct_info, active_member_idx, xx tag_member.type); if !ok return_with_error("Tagged Union tag constant value % cannot be represented in s64 for %.%", tag_value, parent_name, struct_info.name);
+        valid, low, high := range_check_and_store(tag_value, xx tag_member.type, slot + tag_member.offset_in_bytes);
+        if !valid { return_with_error("Tag for %.% is out of range. Given % expected min % max %", toml_table[0].key, parent_name, tag_value, low, high); }
+    case .TYPE;
+        cast(**Type_Info, slot + tag_member.offset_in_bytes).* = active_member.type;
+    case; return_with_error("Tagged Union tag type % not supported", tag_member.type.type);
+    }
+
+    // Deserialize the active member's value
+    ok := value_to_type(toml_table[0].value, Any.{active_member.type, slot + active_member.offset_in_bytes}, toml_table[0].key, parent_name);
+    return true, ok;
 }
 
-is_valid_sumtype :: (struct_info: *Type_Info_Struct) -> bool, tag_member:*Type_Info_Struct_Member=null, union_member:*Type_Info_Struct_Member=null, tag_info:*Type_Info_Enum=null, union_info:*Type_Info_Struct=null {
-    if struct_info.members.count < 2                                       return false;
-    tag_member, union_member:= *struct_info.members[0], *struct_info.members[1];
-    if tag_member.type.type != .ENUM || union_member.type.type != .STRUCT  return false;
-    tag_info :*Type_Info_Enum= xx tag_member.type;
-    union_info :*Type_Info_Struct= xx union_member.type;
-    if union_info.textual_flags & .UNION == 0                              return false;
-    if tag_info.values.count != union_info.members.count                   return false;
-    return true, tag_member, union_member, tag_info, union_info;
-}
-
-expect :: inline (given: Value.Type, expected: Value.Type, struct_name: string, member_name: string) #expand {
+expect :: inline (given: Value.Kind, expected: Value.Kind, struct_name: string, member_name: string) #expand {
     if given != expected { log_error("Wrong type for %.%, expected %, got % ", struct_name, member_name, expected, given); `return; }
 }
 

@@ -2,20 +2,19 @@
 // https://datatracker.ietf.org/doc/html/rfc3339
 // These types are to be removed when there is a commonly used datetime module in Jai
 
-Chrono :: struct @SumType {
-    type: Type;
-    union {
-        time:            Time;
-        date:            Date           = ---;
-        datetime:        DateTime       = ---;
-        datetime_offset: DateTimeOffset = ---;
-    };
-    Type :: enum u8 {
+Chrono :: struct {
+    Kind :: enum u8 {
         LOCAL_TIME;
         LOCAL_DATE;
         LOCAL_DATETIME;
         OFFSET_DATETIME;
     }
+    union kind := Kind.LOCAL_TIME {
+        time:            Time;
+        date:            Date           = ---;
+        datetime:        DateTime       = ---;
+        datetime_offset: DateTimeOffset = ---;
+    };
 }
 Time :: struct {
     hour:        u8;
@@ -43,10 +42,10 @@ DateTimeOffset :: struct {
 // Parses a datetime in the format "YYYY-MM-DDTHH:MM:SS[.SSS][Z|(+|-)HH:MM]"
 parse_datetime :: (input: string) -> ok:=false, value:Chrono=.{} {
     success, time := parse_time(input);
-    if success { return true, .{type=.LOCAL_TIME, time=time}; }
+    if success { return true, .{kind=.LOCAL_TIME, time=time}; }
 
     success =, date:= parse_date(input); if !success return;
-    if input.count == 10 { return true, .{type=.LOCAL_DATE, date=date}; }
+    if input.count == 10 { return true, .{kind=.LOCAL_DATE, date=date}; }
 
     // Must be datetime [offset]
     if input.count < 19 return;
@@ -56,7 +55,7 @@ parse_datetime :: (input: string) -> ok:=false, value:Chrono=.{} {
     if time_str[time_str.count-1] == "Z" || time_str[time_str.count-1] == "z" {
         // Datetime with Zulu time
         success, time = parse_time(slice(time_str, 0, time_str.count-1)); if !success return;
-        return true, .{type=.OFFSET_DATETIME, datetime_offset=.{date=date, time=time, offset_hour=0, offset_minute=0}};
+        return true, .{kind=.OFFSET_DATETIME, datetime_offset=.{date=date, time=time, offset_hour=0, offset_minute=0}};
     } else if time_str[time_str.count-6] == "+" || time_str[time_str.count-6] == "-" {
         // Datetime with timezone by offset
         success, time = parse_time(slice(time_str, 0, time_str.count-6)); if !success return;
@@ -68,11 +67,11 @@ parse_datetime :: (input: string) -> ok:=false, value:Chrono=.{} {
 
         if offset_hour   > 23 { return_with_error("Invalid hour in timezone offset: %", offset_hour); }
         if offset_minute > 59 { return_with_error("Invalid minute in timezone offset: %", offset_minute); }
-        return true, .{type=.OFFSET_DATETIME, datetime_offset=.{date=date, time=time, offset_hour=offset_hour, offset_minute=offset_minute, offset_is_negative=offset_is_negative}};
+        return true, .{kind=.OFFSET_DATETIME, datetime_offset=.{date=date, time=time, offset_hour=offset_hour, offset_minute=offset_minute, offset_is_negative=offset_is_negative}};
     } else {
         // Datetime without timezone
         success, time = parse_time(time_str); if !success return;
-        return true, .{type=.LOCAL_DATETIME, datetime=.{date=date, time=time}};
+        return true, .{kind=.LOCAL_DATETIME, datetime=.{date=date, time=time}};
     }
 }
 
@@ -152,9 +151,9 @@ print_datetime_offset_to_builder :: (builder: *String_Builder, datetime_offset: 
     append(builder, ":");
     print_integer(builder, formatInt(datetime_offset.offset_minute, minimum_digits=2));
 }
-// Formats a chrono to a string based on its type
+// Formats a chrono to a string based on its kind
 print_datetime_to_builder :: (builder: *String_Builder, chrono: Chrono) {
-    if #complete chrono.type == {
+    if #complete chrono.kind == {
     case .LOCAL_TIME; print_time_to_builder(builder, chrono.time);
     case .LOCAL_DATE; print_date_to_builder(builder, chrono.date);
     case .LOCAL_DATETIME; print_datetime_to_builder(builder, chrono.datetime);
