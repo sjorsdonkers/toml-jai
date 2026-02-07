@@ -145,6 +145,7 @@ value_to_chrono ::  (toml: Value, slot: *void, info: *Type_Info) -> is_chrono:bo
 
 value_to_union :: (toml_table: []KeyValue, slot: *void, struct_info: *Type_Info_Struct, parent_name: string) -> done:= true, ok:=false {
     if !(struct_info.textual_flags & .UNION_IS_TAGGED) return false;
+    if toml_table.count == 0 && array_find(struct_info.notes, context.toml.optional_note) return true, true; // Since union behave like a value it can itself be optional: `union @TomlOptional kind:Type {}`
     if toml_table.count != 1  return_with_error("Tagged union % should have exactly one key-value pair", struct_info.name); // No superfluous values allowed here
 
     // Determine the active member

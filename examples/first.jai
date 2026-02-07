@@ -140,6 +140,30 @@ optionals :: () {
     }
     ok=, optionals := Toml.string_to_type("a=99", Optionals); assert(ok);
     assert(optionals.a == 99 && optionals.b == 18, "%", optionals);
+
+    Tags :: enum {
+        FIRST;
+        SECOND;
+    }
+    UnionRequired :: union tag:Tags=.SECOND {
+        .FIRST,, first: u8 = ---;
+        .SECOND,, second: u8 = 18;
+    }
+    UnionOptional :: union @TomlOptional tag:Tags=.SECOND {
+        .FIRST,, first: u8 = ---;
+        .SECOND,, second: u8 = 18;
+    }
+    ok=, union_required := Toml.string_to_type("", UnionRequired); assert(!ok);
+    ok=, union_optional := Toml.string_to_type("", UnionOptional); assert(ok);
+    assert(union_optional.second == 18);
+
+    UnionMember :: struct {
+        the_union: UnionRequired; @TomlOptional
+        the_other: s8;
+    }
+    ok=, union_member := Toml.string_to_type("the_other = 42", UnionMember); assert(ok);
+    assert(union_member.the_union.second == 18);
+
 }
 
 using_members :: () {
