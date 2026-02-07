@@ -9,8 +9,23 @@ main :: () {
         print("%\n", toml);
     } // `destroy_heap` is deferred to the end of the scope here. It will cleanup the memory allocated for `toml_value` and `toml`.
 
-    // We can also deserialize the TOML data into a struct. The struct must have the same fields as the TOML data.
+    // We can deserialize the TOML data into a struct. The struct must have the same fields as the TOML data.
     // The TOML can have additional fields that are not present in the struct, in this case the fields will be ignored.
+    SimpStruct :: struct {
+        a: u8;
+        b: string;
+    }
+    ok, simp_struct := Toml.string_to_type("a = 5 \n b = 'hello'", SimpStruct); assert(ok);
+    assert(simp_struct.a == 5 && simp_struct.b == "hello", "%", simp_struct);
+
+    // As with everything we can run at Compile-Time
+    serialize_ct :: SimpStruct.{a=7, b="type_to_string at compile-time"};
+    ok_ct, serialize_ct_str :: #run Toml.type_to_string(serialize_ct); #assert(ok_ct);
+    #run log(serialize_ct_str);
+    ok_ct2, deserialize_ct :: #run Toml.string_to_type("a = 3 \n b = 'string_to_type at compile-time'", SimpStruct); #assert(ok_ct2);
+    #run log("%", deserialize_ct);
+
+    // The data can be of arbitrary complexity
 THE_STRING :: #string DONE
 orange = false
 banana = 23.3
@@ -43,7 +58,7 @@ DONE
         horse :Filename;
     }
 
-    ok, my_struct := Toml.string_to_type(THE_STRING, MyStruct); assert(ok);
+    ok=, my_struct := Toml.string_to_type(THE_STRING, MyStruct); assert(ok);
     assert("{false, 23.299999, {32, \"Y\", Y}, [{2}, {-3}, {4}], \"Mai\"}" == tprint("%", my_struct), "%", my_struct);
     // The data can be serialized to a string builder instead of a string, to reduce copies.
     builder: String_Builder;
@@ -193,7 +208,7 @@ error_handling :: () {
     wrap:= Log_Wrap.{context.logger, context.logger_data, .{}};                                    // Store the current logger in the wrap
     Invalid :: struct { e: enum{}; }                                                               // Struct for which we know we can make an error occur
     inv_ok := Toml.type_to_string(Invalid.{e=xx,force 9},, logger=capture_log, logger_data=*wrap); // Call to serialize with the invalid struct and setting the context to the wrapped logger
-    if !inv_ok print("capture_log: %", builder_to_string(*wrap.capture));                          // The operation failed and the error message is captured in the wrap
+    if !inv_ok print("capture_log (error expected): %", builder_to_string(*wrap.capture));         // The operation failed and the error message is captured in the wrap
     else assert(false);
 }
 
