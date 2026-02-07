@@ -51,7 +51,7 @@ By default this Toml modules makes several choices like, enums as string, member
 These choices may be fine for the large majority of use-cases but not all. Custom handlers enable the user to modify the serialization/deserialization of types.
 Custom handlers follow the same design as `Print_Style.struct_printer`, except instead of writing to the builder it returns the Toml.Value to be written.
 
-Note that these custom handler drive "what" is (de)serialized, they do not help with formatting of the toml. Formatting can be controlled via `toml.default_format_int` / `toml.default_format_float` in the context, see the [formatting example](examples/formatting_control.jai).
+Note that these custom handler drive "what" is serialized, they do not help with formatting of the toml. Formatting can be controlled via `toml.default_format_int` / `toml.default_format_float` in the context, see the [formatting example](examples/formatting_control.jai).
 
 Serialization can be modified by changing the custom handler procedure in the context.
 ```jai

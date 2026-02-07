@@ -8,7 +8,7 @@
 // - Enable data tweaks during serialization as opposed to full copies of nested structure trees (separate structs for serialization and use within the application).
 // - The user should be able to opt-out of the default behavior of handling special types like Toml.Value, DateTimes. A user can opt-out by setting a procedure which is a no-op or any procedure that does not call the default_custom_handler.
 //
-// Note that these custom handler drive "what" is (de)serialized, they do not help with formatting of the toml.
+// Note that these custom handler drive "what" is serialized, they do not help with formatting of the toml.
 
 // The Toml module adds 2 procedure members to the context.toml:
 // - custom_type_to_value := (input: Any) -> done:bool, ok:bool, toml:Value;
@@ -16,7 +16,8 @@
 
 main :: () {
     enum_as_int();
-    member_modifications();
+    member_modifications();                 // TBD It is likely better to pass a custom type_info once at the root instead of modifying them on-the-fly. How to handle lifting `using` members?
+    integer_keys_for_anonymous_members();   // Not sure if that would be clearer, or just having 2 ways to do the same thing. Maybe just a handler with a Type_Info map would be better..
     arbitrary_binary_encoding();
     error_on_superfluous_keys();
     polymorphic_types_like_hashtable_support();
@@ -98,7 +99,7 @@ member_modifications :: () {
     custom_value_to_modified :: (toml: Value, output: Any, name:string, parent_name:string) -> done:=true, ok:=false {
         if output.type != type_info(ThreeNamed) return false;
         modified_info := two_renamed_type_info();
-        ok := Toml.value_to_type(toml, Any.{*modified_info, output.value_pointer}, parent_name, name);
+        ok := Toml.value_to_type_impl(toml, Any.{*modified_info, output.value_pointer}, parent_name, name);
         return true, ok;
     }
 
@@ -115,6 +116,58 @@ member_modifications :: () {
     ok4, three_named4 := Toml.string_to_type("alpha=4\ngamma=6\n", ThreeNamed,, toml = .{custom_value_to_type = custom_value_to_modified}); assert(ok4);
     assert(three_named3.a == 4 && three_named3.b == 5 && three_named3.c == 6, "%", three_named3);
     assert(three_named4.a == 4 && three_named4.b == 0 && three_named4.c == 6, "%", three_named4);
+}
+
+integer_keys_for_anonymous_members :: () {
+    StructHasAnonymous :: struct {
+        a: u8;
+        struct { b: u8; };
+    }
+    anonymous_named_type_info :: (original_info: *Type_Info_Struct) -> Type_Info_Struct {
+        renamed_info := original_info.*;
+        renamed_info.members = array_copy(renamed_info.members);
+        for *renamed_info.members if !it.name then it.name = sprint("%", it_index); // Name anonymous members by their index
+        return renamed_info;
+    }
+    anonymous_named_to_value :: (input: Any) -> done:=true, ok:=false, toml:Value=.{} {
+        if input.type.type != .STRUCT return false;
+        original_info: *Type_Info_Struct= xx input.type;
+        for original_info.members if !it.name {
+            named_info := anonymous_named_type_info(original_info);
+            ok, value := Toml.type_to_value_shared_memory(Any.{*named_info, input.value_pointer});
+            return true, ok, value;
+        }
+        return false;
+    }
+    anonymous_named_to_modified :: (toml: Value, output: Any, name:string, parent_name:string) -> done:=true, ok:=false {
+        if output.type.type != .STRUCT return false;
+        original_info: *Type_Info_Struct= xx output.type;
+        for original_info.members if !it.name {
+            named_info := anonymous_named_type_info(original_info);
+            ok := Toml.value_to_type_impl(toml, Any.{*named_info, output.value_pointer}, parent_name, name);
+            return true, ok;
+        }
+        return false;
+    }
+
+    // When serializing with the custom handler the anonymous member is renamed to a number
+    three_named := StructHasAnonymous.{a=6, b=8};
+    ok1, toml1 := Toml.type_to_string(three_named);                                                             assert(ok1);
+    ok2, toml2 := Toml.type_to_string(three_named,, toml = .{custom_type_to_value = anonymous_named_to_value}); assert(ok2);
+    assert(toml1 == #string DONE
+a=6
+"".b=8
+DONE, "%", toml1);
+    assert(toml2 == #string DONE
+a=6
+1.b=8
+DONE, "%", toml2);
+
+    // Similarly, when deserializing with the custom handler the anonymous member is renamed to a number
+    ok3, named3 := Toml.string_to_type("a=4\n\"\".b=5\n", StructHasAnonymous);                                                             assert(ok3);
+    ok4, named4 := Toml.string_to_type("a=4\n1.b=6\n", StructHasAnonymous,, toml = .{custom_value_to_type = anonymous_named_to_modified}); assert(ok4);
+    assert(named3.a == 4 && named3.b == 5, "%", named3);
+    assert(named4.a == 4 && named4.b == 6, "%", named4);
 }
 
 arbitrary_binary_encoding :: () {
@@ -142,7 +195,7 @@ arbitrary_binary_encoding :: () {
         ok = Toml.type_to_string(magic); assert(!ok);
     }
 
-    // Deserialize to the binary encoding with custom value_to_type
+    // Deserialize to the binary encoding with custom value_to_type_impl
     new_context.toml = .{custom_value_to_type = custom_value_to_magic};
 
     push_context new_context {
@@ -192,12 +245,12 @@ custom_value_to_magic :: (toml: Value, output: Any, name:string, parent_name:str
 
 
         Flag :: enum u8 { A :: 0; }
-        ok := Toml.value_to_type(toml.table[0].value, Any.{type_info(Flag), slot}, name, "flag"); if !ok return;
-        ok = Toml.value_to_type(toml.table[1].value, Any.{type_info(s16), slot+1}, name, "signed");
+        ok := Toml.value_to_type_impl(toml.table[0].value, Any.{type_info(Flag), slot}, name, "flag"); if !ok return;
+        ok = Toml.value_to_type_impl(toml.table[1].value, Any.{type_info(s16), slot+1}, name, "signed");
         return true, ok;
     case 1;
         if toml.table[0].key != "unaltered" { log_error("Expected key 'unaltered' for Magic_Bytes, got %", toml.table[0].key); return; }
-        ok := Toml.value_to_type(toml.table[0].value, Any.{type_info([3]u8), slot}, name, "unaltered"); if !ok return;
+        ok := Toml.value_to_type_impl(toml.table[0].value, Any.{type_info([3]u8), slot}, name, "unaltered"); if !ok return;
         if slot.(*Magic_Bytes).bytes[0] != 0x01 {
             log_error("Expected 0x01 for unaltered Magic_Bytes, got %", slot.(*Magic_Bytes).bytes[0]);
             return;
@@ -357,7 +410,7 @@ return_value_to_hashtable :: ($Table_Type: Type) #expand {
             key = outer.key;
         }
         value: Table_Type.Value_Type;
-        ok := Toml.value_to_type(keyvalue.value, Any.{type_info(Table_Type.Value_Type), *value}, `name, keyvalue.key); if !ok `return true, false;
+        ok := Toml.value_to_type_impl(keyvalue.value, Any.{type_info(Table_Type.Value_Type), *value}, `name, keyvalue.key); if !ok `return true, false;
         table_add(hash_table, key, value); // How to call table_add in the generic case when we only have an Any?
     }
     `return true, true;

@@ -82,36 +82,38 @@ DONE, StructMember); assert(ok);
     assert(smem.named.mytag == .BANANA && smem.named.banana.* == 987);
     assert(smem.tag == .B && smem.b.mytag == .APPLE && smem.b.apple.a == 3 && smem.b.apple.b == "peanut");
 
-    // Tagged union use the member_name as key (not the enum value's name), if the member is anonymous its index number is used: 0.q=42
-    // This is currently different from how other anonymous members are serialized. We should probably change those!
-    Has_Anonymous_Member :: union kind: Tags {
-        struct { q: u8; };
-        struct { t: string = ---; };
-    }
-    has_anon := Has_Anonymous_Member.{kind=.FIRST, q=42};
-    ok=, has_anon_toml := Toml.type_to_string(has_anon); assert(ok);
-    assert("0.q=42\n" == has_anon_toml, "%", has_anon_toml);
-    ok, has_anon = Toml.string_to_type("1.t = \"hello\"", Has_Anonymous_Member); assert(ok);
-    assert(has_anon.kind == .SECOND && has_anon.t == "hello");
+    // Tagged union use the member_name as key (not the enum value's name), if the member is anonymous it cannot be used (unless a modified Type_Info is used)
+    // (de)serializing anonymous members is explicitly forbidden, as serializing would seem to work for a "" key, but it may surprisingly deserialize to another anonymous member
+    // member_index base is not done by default due to the added complexity and processing for all normal cases
+    // index based serialization can be realized by modifying the Type_Info
+    // Has_Anonymous_Member :: union kind: Tags {
+    //     struct { q: u8; };
+    //     struct { t: string = ---; };
+    // }
+    // has_anon := Has_Anonymous_Member.{kind=.FIRST, q=42};
+    // ok=, has_anon_toml := Toml.type_to_string(has_anon); assert(ok);
+    // ok, has_anon = Toml.string_to_type("1.t = \"hello\"", Has_Anonymous_Member); assert(ok);
 }
 integer_union :: () {
     S8_Union :: union kind:s8= 4 {
         4,, a: u8;
-        7,, b: string      = ---;
+        b: string          = ---;
         struct { t: string = ---; };
         -12,, c: s16       = ---;
     }
     s8_union := S8_Union.{kind=4, a=42};
     ok, s8_union_toml := Toml.type_to_string(s8_union); assert(ok);
     assert("a=42\n" == s8_union_toml, "%", s8_union_toml);
-    ok, s8_union = Toml.string_to_type("b=\"balloon\"", S8_Union); assert(ok);
-    assert(s8_union.kind == 7 && s8_union.b == "balloon", "%", s8_union);
 
-    // If no integer is explicitly bound to member then the member index is used as value, starting from 0. So in this case a=0, b=1 and the anonymous struct is 2.
-    ok=, anonymous_2 := Toml.string_to_type("2.t=\"test\"", S8_Union); assert(ok);
-    assert(anonymous_2.kind == 2 && anonymous_2.t == "test", "%", anonymous_2);
-    ok=, anonymous_2_toml := Toml.type_to_string(anonymous_2); assert(ok);
-    assert("2.t=\"test\"\n" == anonymous_2_toml, "%", anonymous_2_toml);
+    // // If no integer is explicitly bound to member then the member index is used as value, starting from 0. So in this case a=0, b=1
+    ok, s8_union = Toml.string_to_type("b=\"balloon\"", S8_Union); assert(ok);
+    assert(s8_union.kind == 1 && s8_union.b == "balloon", "%", s8_union);
+
+    // (de)serializing anonymous members is explicitly forbidden, as serializing would seem to work for a "" key, but it may surprisingly deserialize to another anonymous member
+    // member_index base is not done by default due to the added complexity and processing for all normal cases
+    // index based serialization can be realized by modifying the Type_Info
+    // ok=, anonymous_2 := Toml.string_to_type("2.t=\"test\"", S8_Union); assert(ok);
+    // ok=, anonymous_2_toml := Toml.type_to_string(anonymous_2); assert(ok);
 
     // Negative integers are supported as well, in this case c=-12
     ok=, c := Toml.string_to_type("c=-33", S8_Union); assert(ok);

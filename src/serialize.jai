@@ -147,10 +147,9 @@ union_to_value :: (slot: *void, struct_info: *Type_Info_Struct) -> done:=true, o
     }
 
     active_member := *struct_info.members[active_member_idx];
-    ok, value := type_to_value_shared_memory(Any.{active_member.type, slot + active_member.offset_in_bytes}); if !ok return;
-
     name := active_member.name;
-    if !name then name = sprint("%", active_member_idx-1,, print_style = .{default_format_int=context.toml.default_format_int}); // TBD does it make sense to use the context default_format_int here?
+    if !name then return_with_error("Active member of union % may not be anonymous, name the member or use a modified Type_Info", ifx struct_info.name then struct_info.name else "anonymous");
+    ok, value := type_to_value_shared_memory(Any.{active_member.type, slot + active_member.offset_in_bytes}); if !ok return;
 
     table: [..]KeyValue;
     array_add(*table, .{key=name, value=value});

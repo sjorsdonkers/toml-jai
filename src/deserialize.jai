@@ -10,13 +10,14 @@ string_to_type :: (contents: string, $Target: Type) -> ok:=false, value:Target=.
 value_to_type :: (value: Value, $Target: Type) -> ok:=false, value:Target {
     info :: type_info(Target);
     target: Target;
-    ok := value_to_type(value, target, info.name); // For zero-copy set a custom_value_to_type that does not copy string/Table. Make sure the Value is not deleted, before the Target is used!
+    root_name := ifx info.type == .STRUCT then info.(*Type_Info_Struct).name else "root";
+    ok := value_to_type_impl(value, target, root_name); // For zero-copy set a custom_value_to_type that does not copy string/Table. Make sure the Value is not deleted, before the Target is used!
     return ok, target;
 }
 
 // Note meant to be called by the user directly, but instead to be used inside custom deserializers
 // output is an already default initialized instance
-value_to_type :: (toml: Value, output: Any, name:string="", parent_name:string="") -> ok:=false {
+value_to_type_impl :: (toml: Value, output: Any, name:string="", parent_name:string="") -> ok:=false {
     done, ok := context.toml.custom_value_to_type(toml, output, name, parent_name);
     if done return ok;
 
@@ -46,7 +47,7 @@ value_to_type :: (toml: Value, output: Any, name:string="", parent_name:string="
         memory := alloc(pointer_info.pointer_to.runtime_size);
         initialize_memory(memory, pointer_info.pointer_to);
         cast(**void, slot).* = memory;
-        return value_to_type(toml, Any.{pointer_info.pointer_to, memory}, name, parent_name);
+        return value_to_type_impl(toml, Any.{pointer_info.pointer_to, memory}, name, parent_name);
     case .VOID;
         expect(toml.kind, .TABLE, parent_name, name);
         if toml.table.count != 0 { return_with_error("Expected empty table for %.%, got %", parent_name, name, toml.table.count);  }
@@ -60,9 +61,9 @@ value_to_type :: (toml: Value, output: Any, name:string="", parent_name:string="
             if member.flags & (.CONSTANT |.IMPORTED) continue;
             found, value_ptr := table_find_value_by_key(*toml, member.name);
             if found {
-                ok:= value_to_type(value_ptr.*, Any.{member.type, slot + member.offset_in_bytes}, member.name, name);  if !ok return;
+                ok:= value_to_type_impl(value_ptr.*, Any.{member.type, slot + member.offset_in_bytes}, member.name, name);  if !ok return;
             } else if !array_find(member.notes, context.toml.optional_note) && !(member.flags & .OVERLAY) {
-                return_with_error("Missing field %.%", struct_info.name, member.name);
+                return_with_error("Missing field %.%", struct_info.name, ifx member.name then member.name else "anonymous");
             }
         }
     case .ARRAY;
@@ -73,7 +74,7 @@ value_to_type :: (toml: Value, output: Any, name:string="", parent_name:string="
         fill_array :: (toml_array: []Value, slot: *void, item_info: *Type_Info, parent_name:string) -> ok:=false {
             for idx: 0..toml_array.count-1 {
                 item_slot := slot + item_info.runtime_size * idx;
-                ok := value_to_type(toml_array[idx], Any.{item_info, item_slot}, "[item]", parent_name); if !ok return;
+                ok := value_to_type_impl(toml_array[idx], Any.{item_info, item_slot}, "[item]", parent_name); if !ok return;
             }
             return true;
         }
@@ -110,7 +111,7 @@ value_to_type :: (toml: Value, output: Any, name:string="", parent_name:string="
         Reflection.set_enum_value(slot, enum_info, enum_info.values[index]);
     case .VARIANT;
         variant_info :*Type_Info_Variant= xx info;
-        return value_to_type(toml, Any.{variant_info.variant_of, slot}, name, parent_name);
+        return value_to_type_impl(toml, Any.{variant_info.variant_of, slot}, name, parent_name);
     case .PROCEDURE; #through; case .OVERLOAD_SET; #through; case .POLYMORPHIC_VARIABLE; #through;
     case .TYPE;      #through; case .CODE;         #through; case .UNTYPED_LITERAL;      #through;
     case .UNTYPED_ENUM; return_with_error("Deserialization to type % is not supported", info.type);
@@ -146,25 +147,18 @@ value_to_chrono ::  (toml: Value, slot: *void, info: *Type_Info) -> is_chrono:bo
 value_to_union :: (toml_table: []KeyValue, slot: *void, struct_info: *Type_Info_Struct, parent_name: string) -> done:= true, ok:=false {
     if !(struct_info.textual_flags & .UNION_IS_TAGGED) return false;
     if toml_table.count == 0 && array_find(struct_info.notes, context.toml.optional_note) return true, true; // Since union behave like a value it can itself be optional: `union @TomlOptional kind:Type {}`
-    if toml_table.count != 1  return_with_error("Tagged union % should have exactly one key-value pair", struct_info.name); // No superfluous values allowed here
+    if toml_table.count != 1  return_with_error("Tagged union %.% should have exactly one key-value pair", parent_name, struct_info.name); // No superfluous values allowed here
+    if !toml_table[0].key return_with_error("Tagged union %.% requires a non-empty key, name the member or use a modified Type_Info", parent_name, struct_info.name);
 
     // Determine the active member
     found := false;
     active_member_idx :s64;
-    for array_view(struct_info.members, 1) {
-        if it.name == toml_table[0].key {
+    for array_view(struct_info.members, 1) if it.name == toml_table[0].key {
         active_member_idx = it_index + 1;
         found = true;
         break;
-    }}
-    if !found {
-        tag_value, ok, remainder := string_to_int_checked(toml_table[0].key, 10, s64);
-        if !ok return_with_error("Cannot find member for union tag % for %.%", toml_table[0].key, parent_name, struct_info.name);
-        if remainder return_with_error("Failed to parse tagged union tag % as integer for %.%, unexpected trailing characters: %", toml_table[0].key, parent_name, struct_info.name, remainder);
-        // Int tagged union, the value simply indicates the active member index
-        active_member_idx = tag_value + 1; // +1 as first member is the tag
-        if active_member_idx < 0 || active_member_idx >= struct_info.members.count then return_with_error("Tagged Union tag index % out of bounds for union with % members", active_member_idx, struct_info.members.count - 1);
     }
+    if !found then return_with_error("Key % not found in tagged union %", toml_table[0].key, struct_info.name);
     active_member := *struct_info.members[active_member_idx]; // We set the members's value at the end so that the tag is set before we recurse into the value
 
     // Find the corresponding tag value
@@ -173,8 +167,7 @@ value_to_union :: (toml_table: []KeyValue, slot: *void, struct_info: *Type_Info_
         for struct_info.tagged_union_bindings if it.member_index == active_member_idx {
             ok, tag_value := get_integer_value(*it.constant_value, int_info); // Works for negative values as well
             return ok, tag_value, true;
-        }
-        // If there is no binding, use the member index as tag VALUE (not as enum.values.index)
+        } // If there is no binding, use the member index as tag VALUE (not as enum.values.index)
         return true, (active_member_idx - 1), false; // -1 as first member is the tag
     }
 
@@ -194,7 +187,7 @@ value_to_union :: (toml_table: []KeyValue, slot: *void, struct_info: *Type_Info_
     }
 
     // Deserialize the active member's value
-    ok := value_to_type(toml_table[0].value, Any.{active_member.type, slot + active_member.offset_in_bytes}, toml_table[0].key, parent_name);
+    ok := value_to_type_impl(toml_table[0].value, Any.{active_member.type, slot + active_member.offset_in_bytes}, toml_table[0].key, parent_name);
     return true, ok;
 }
 
