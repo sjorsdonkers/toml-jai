@@ -15,8 +15,8 @@ value_to_type :: (value: Value, $Target: Type) -> ok:=false, value:Target {
     return ok, target;
 }
 
-// Note meant to be called by the user directly, but instead to be used inside custom deserializers
-// output is an already default initialized instance
+// Note meant to be called by the user directly, but instead to be used inside custom handlers
+// output must hold a default initialized instance
 value_to_type_impl :: (toml: Value, output: Any, name:string="", parent_name:string="") -> ok:=false {
     done, ok := context.toml.custom_value_to_type(toml, output, name, parent_name);
     if done return ok;
@@ -53,8 +53,7 @@ value_to_type_impl :: (toml: Value, output: Any, name:string="", parent_name:str
         if toml.table.count != 0 { return_with_error("Expected empty table for %.%, got %", parent_name, name, toml.table.count);  }
     case .STRUCT;
         expect(toml.kind, .TABLE, parent_name, name);
-        struct_info :*Type_Info_Struct= xx info;
-
+        struct_info := custom_type_info(xx info);
         done, ok := value_to_union(toml.table, slot, struct_info, name); if done return ok;
 
         for member: struct_info.members {
