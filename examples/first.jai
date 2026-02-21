@@ -18,7 +18,7 @@ main :: () {
     ok, simp_struct := Toml.string_to_type("a = 5 \n b = 'hello'", SimpStruct); assert(ok);
     assert(simp_struct.a == 5 && simp_struct.b == "hello", "%", simp_struct);
 
-    // As with everything we can run at Compile-Time
+    // As with everything we can run at Compile-Time, if these fail. Comment them out to find the compile error.
     serialize_ct :: SimpStruct.{a=7, b="type_to_string at compile-time"};
     ok_ct, serialize_ct_str :: #run Toml.type_to_string(serialize_ct); #assert(ok_ct);
     #run log(serialize_ct_str);
@@ -167,18 +167,23 @@ optionals :: () {
 }
 
 using_members :: () {
-    // When a named member is declared `using` the member name is still required.
+    // The default custom handlers flatten `using` members such that they do not appear in the TOML.
+    // This means that the children of a `using` member are serialized as if they were direct members of the parent struct.
+    // Similarly, when deserializing the children of a `using` member must be set without specifying the `using` member.
+    // This behavior can be changed by replacing the custom handlers, see examples/custom_handlers.jai for examples of how to do this.
+
+    // When a named member is declared `using` the member name "hi" may not be used.
     Named_Using :: struct {
         using hi: struct { q: u8; };
     }
-    ok, named_using1:= Toml.string_to_type("hi = { q=98 }", Named_Using); assert(ok);
-    assert(named_using1.hi.q == 98, "%", named_using1.hi.q);
-    // When a struct members is declared with `using` the member name cannot be omitted in the TOML to set the data
-    // This is to prevent having multiple ways to define the same data. It also reduced the amount of recursion we have to do when deserializing.
-    ok = Toml.string_to_type("q = 99", Named_Using); assert(!ok);
-    // When serializing a using member it will also write the member name.
+    ok := Toml.string_to_type("hi.q=98", Named_Using); assert(!ok); // NOT ok
+
+    // When a struct members is declared with `using` the member name must be omitted in the TOML to set the data
+    ok=, named_using1 := Toml.string_to_type("q = 99", Named_Using); assert(ok);
+    assert(named_using1.q == 99, "%", named_using1.hi.q);
+    // When serializing a using member it will also omit the `using` member name.
     ok=, named_using_str := Toml.type_to_string(named_using1); assert(ok);
-    assert(named_using_str == "hi.q=98\n", "%", named_using_str);
+    assert(named_using_str == "q=99\n", "%", named_using_str);
 
     // A pointer member that is declared `using` is the same.
     Q :: struct {
@@ -199,14 +204,14 @@ using_members :: () {
         struct { q: u8; };
         struct { t: string; };
     }
-    ok=, anonymous_using:= Toml.string_to_type("'' = { q = 96, t = 'hello' }", Anonymous_Using); assert(ok);
+    ok=, anonymous_using:= Toml.string_to_type("q = 96\n t = 'hello'", Anonymous_Using); assert(ok);
     assert(anonymous_using.q == 96, "%", anonymous_using.q);
     assert(anonymous_using.t == "hello", "%", anonymous_using.t);
     // When serializing an anonymous using member it will not omit the empty member name, consistent with deserialization.
     ok=, anonymous_using_str := Toml.type_to_string(anonymous_using); assert(ok);
     assert(anonymous_using_str == #string DONE
-"".q=96
-"".t="hello"
+q=96
+t="hello"
 DONE, "%", anonymous_using_str);
 }
 
