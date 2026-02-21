@@ -1,26 +1,42 @@
 deserialize :: inline (contents: string, $Target: Type) -> ok:=false, value:Target=.{} #deprecated "Renamed string_to_type" { ok, value := string_to_type(contents, Target); return ok, value; }
 string_to_type :: (contents: string, $Target: Type) -> ok:=false, value:Target=.{} {
     auto_release_temp_maybe();
+
     ok, value := string_to_value_shared_memory(contents,, temp); if !ok return;
-    defer context.toml.index_maps = [..]Table(string, s64).{}; // Reset the index as the memory is on the pool
     ok=, target := value_to_type(value, Target);
     return ok, target;
 }
 
-value_to_type :: (value: Value, $Target: Type) -> ok:=false, value:Target {
+value_to_type :: (toml: Value, $Target: Type) -> ok:=false, value:Target {
+    auto_release_temp_maybe();
+
     info :: type_info(Target);
     target: Target;
     root_name := ifx info.type == .STRUCT then info.(*Type_Info_Struct).name else "root";
-    ok := value_to_type_impl(value, target, root_name); // For zero-copy set a custom_value_to_type that does not copy string/Table. Make sure the Value is not deleted, before the Target is used!
+    ok := context.toml.custom_value_to_type(toml, target, root_name, "");
     return ok, target;
+}
+
+default_value_to_type :: (toml: Value, output: Any, name:string, parent_name:string) -> ok:=false {
+    slot := output.value_pointer;
+    info := output.type;
+
+    if output.type.type == .STRUCT {
+        struct_info :*Type_Info_Struct= xx output.type;
+        if struct_info == type_info(Value) { cast(*Value, slot).* = copy(toml); return true; }
+        if value_to_chrono(toml, slot, struct_info) return true;
+
+        info = xx modify_type_info_cached(struct_info,, temp);
+
+        expect(toml.kind, .TABLE, parent_name, name);
+        done, ok := value_to_union(toml.table, slot, xx info, name); if done return ok;
+    }
+    return value_to_type_impl(toml, Any.{info, slot}, name, parent_name);
 }
 
 // Note meant to be called by the user directly, but instead to be used inside custom handlers
 // output must hold a default initialized instance
-value_to_type_impl :: (toml: Value, output: Any, name:string="", parent_name:string="") -> ok:=false {
-    done, ok := context.toml.custom_value_to_type(toml, output, name, parent_name);
-    if done return ok;
-
+value_to_type_impl :: (toml: Value, output: Any, name:string, parent_name:string) -> ok:=false {
     slot := output.value_pointer;
     info := output.type;
 
@@ -42,25 +58,22 @@ value_to_type_impl :: (toml: Value, output: Any, name:string="", parent_name:str
         cast(*string, slot).* = copy_string(toml.string_value);
     case .POINTER;
         if toml == context.toml.null_value return true; // Null pointer
-
         pointer_info :*Type_Info_Pointer= xx info;
         memory := alloc(pointer_info.pointer_to.runtime_size);
         initialize_memory(memory, pointer_info.pointer_to);
         cast(**void, slot).* = memory;
-        return value_to_type_impl(toml, Any.{pointer_info.pointer_to, memory}, name, parent_name);
+        return context.toml.custom_value_to_type(toml, Any.{pointer_info.pointer_to, memory}, name, parent_name);
     case .VOID;
         expect(toml.kind, .TABLE, parent_name, name);
         if toml.table.count != 0 { return_with_error("Expected empty table for %.%, got %", parent_name, name, toml.table.count);  }
     case .STRUCT;
         expect(toml.kind, .TABLE, parent_name, name);
-        struct_info := custom_type_info_cached(xx info);
-        done, ok := value_to_union(toml.table, slot, struct_info, name); if done return ok;
-
+        struct_info :*Type_Info_Struct= xx info;
         for member: struct_info.members {
             if member.flags & (.CONSTANT |.IMPORTED) continue;
             found, value_ptr := table_find_value_by_key(*toml, member.name);
             if found {
-                ok:= value_to_type_impl(value_ptr.*, Any.{member.type, slot + member.offset_in_bytes}, member.name, name);  if !ok return;
+                ok:= context.toml.custom_value_to_type(value_ptr.*, Any.{member.type, slot + member.offset_in_bytes}, member.name, name);  if !ok return;
             } else if !(member.flags & .OVERLAY) && !array_find(member.notes, context.toml.optional_note) {
                 return_with_error("Missing field %.%", struct_info.name, ifx member.name then member.name else "anonymous");
             }
@@ -69,11 +82,10 @@ value_to_type_impl :: (toml: Value, output: Any, name:string="", parent_name:str
         expect(toml.kind, .ARRAY, parent_name, name);
         array_info :*Type_Info_Array= xx info;
         element_type := array_info.element_type;
-
         fill_array :: (toml_array: []Value, slot: *void, item_info: *Type_Info, parent_name:string) -> ok:=false {
             for idx: 0..toml_array.count-1 {
                 item_slot := slot + item_info.runtime_size * idx;
-                ok := value_to_type_impl(toml_array[idx], Any.{item_info, item_slot}, "[item]", parent_name); if !ok return;
+                ok := context.toml.custom_value_to_type(toml_array[idx], Any.{item_info, item_slot}, "[item]", parent_name); if !ok return;
             }
             return true;
         }
@@ -96,7 +108,6 @@ value_to_type_impl :: (toml: Value, output: Any, name:string="", parent_name:str
         }
     case .ANY;
         if toml == context.toml.null_value return true; // Similar to null pointer
-
         any_value :*Any_Struct= xx slot;
         any_value.type = type_info(Value);
         any_value.value_pointer = alloc(any_value.type.runtime_size);
@@ -104,30 +115,17 @@ value_to_type_impl :: (toml: Value, output: Any, name:string="", parent_name:str
     case .ENUM;
         expect(toml.kind, .STRING, parent_name, name);
         enum_info :*Type_Info_Enum= xx info;
-
         found, index := array_find(enum_info.names, toml.string_value);
         if !found { return_with_error("String % is not a variant of enum %", toml.string_value, enum_info.name); }
         Reflection.set_enum_value(slot, enum_info, enum_info.values[index]);
     case .VARIANT;
         variant_info :*Type_Info_Variant= xx info;
-        return value_to_type_impl(toml, Any.{variant_info.variant_of, slot}, name, parent_name);
+        return context.toml.custom_value_to_type(toml, Any.{variant_info.variant_of, slot}, name, parent_name);
     case .PROCEDURE; #through; case .OVERLOAD_SET; #through; case .POLYMORPHIC_VARIABLE; #through;
     case .TYPE;      #through; case .CODE;         #through; case .UNTYPED_LITERAL;      #through;
     case .UNTYPED_ENUM; return_with_error("Deserialization to type % is not supported", info.type);
     }
     return true;
-}
-
-default_custom_value_to_type :: (toml: Value, output: Any, name:string, parent_name:string) -> done:=true, ok:=false {
-    slot := output.value_pointer;
-
-    if output.type.type != .STRUCT return false, true;
-    struct_info :*Type_Info_Struct= xx output.type;
-
-    if struct_info == type_info(Value) { cast(*Value, slot).* = copy(toml); return true, true; }
-    if value_to_chrono(toml, slot, struct_info) return true, true;
-
-    return false, true;
 }
 
 value_to_chrono ::  (toml: Value, slot: *void, info: *Type_Info) -> is_chrono:bool {
@@ -186,7 +184,7 @@ value_to_union :: (toml_table: []KeyValue, slot: *void, struct_info: *Type_Info_
     }
 
     // Deserialize the active member's value
-    ok := value_to_type_impl(toml_table[0].value, Any.{active_member.type, slot + active_member.offset_in_bytes}, toml_table[0].key, parent_name);
+    ok := context.toml.custom_value_to_type(toml_table[0].value, Any.{active_member.type, slot + active_member.offset_in_bytes}, toml_table[0].key, parent_name);
     return true, ok;
 }
 
@@ -272,4 +270,8 @@ auto_release_temp_maybe :: (loc := #caller_location) #expand {
     is_temp := context.allocator.proc == temporary_allocator_proc;
     __mark := get_temporary_storage_mark();
     `defer if !is_temp set_temporary_storage_mark(__mark, loc);
+
+    // Toml specific
+    `defer context.toml.type_info_cache = .{};
+    `defer context.toml.index_maps = [..]Table(string, s64).{};
 }
