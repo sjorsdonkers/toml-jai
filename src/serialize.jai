@@ -9,7 +9,7 @@ serialize_to_builder :: inline (builder: *String_Builder, input: Any) -> ok:=fal
 type_to_builder :: (builder: *String_Builder, input: Any) -> ok:=false {
     auto_release_temp_maybe();
 
-    ok, value := type_to_value_shared_memory(input,, temp); if !ok return;
+    ok, value := context.toml.custom_type_to_value(input,, temp); if !ok return;
     if !builder.initialized init_string_builder(builder); // Initialize the builder to make sure it does not use `temp`.
     table_to_builder(builder, value,, temp);
     return true;
@@ -18,16 +18,39 @@ type_to_builder :: (builder: *String_Builder, input: Any) -> ok:=false {
 type_to_value :: (input: Any) -> ok:=false, value:Value=.{} {
     auto_release_temp_maybe();
 
-    ok, value := type_to_value_shared_memory(input,, temp); if !ok return;
+    ok, value := context.toml.custom_type_to_value(input,, temp); if !ok return;
     return ok, copy(value); // Would be nice if we could just copy the reused strings and Value arrays and tables.
+}
+
+default_type_to_value :: (input: Any) -> ok:=false, toml:Value=.{} {
+    slot := input.value_pointer;
+    info := input.type;
+
+    if input.type.type == .STRUCT {
+        struct_info :*Type_Info_Struct= xx input.type;
+
+        slot := input.value_pointer;
+        if struct_info == {
+        case type_info(Value);          return true, cast(*Value, slot).*; // No deep copy!
+        case type_info(Chrono);         return true, .{kind=.DATETIME, datetime=cast(*Chrono, slot).*};
+        case type_info(Time);           return true, .{kind=.DATETIME, datetime=.{kind=.LOCAL_TIME,      time=           cast(*Time, slot).*}};
+        case type_info(Date);           return true, .{kind=.DATETIME, datetime=.{kind=.LOCAL_DATE,      date=           cast(*Date, slot).*}};
+        case type_info(DateTime);       return true, .{kind=.DATETIME, datetime=.{kind=.LOCAL_DATETIME,  datetime=       cast(*DateTime, slot).*}};
+        case type_info(DateTimeOffset); return true, .{kind=.DATETIME, datetime=.{kind=.OFFSET_DATETIME, datetime_offset=cast(*DateTimeOffset, slot).*}};
+        case type_info(FormatInt);      return true, .{kind=.FORMAT_INT,   format_int  =cast(*FormatInt,   slot)};
+        case type_info(FormatFloat);    return true, .{kind=.FORMAT_FLOAT, format_float=cast(*FormatFloat, slot)};
+        }
+
+        info = xx modify_type_info_cached(xx info);
+        done, ok, union_value := union_to_value(slot, xx info); if done return ok, union_value;
+    }
+    ok, value := type_to_value_shared_memory(Any.{info, slot});
+    return ok, value;
 }
 
 // NOTE: Does not deep copy!
 // Not meant to be called directly by the user, but instead to be used inside custom serializers.
 type_to_value_shared_memory :: (input: Any) -> ok:=false, toml:Value=.{} {
-    done, ok, value := context.toml.custom_type_to_value(input);
-    if done return ok, value;
-
     slot := input.value_pointer;
     info := input.type;
 
@@ -43,17 +66,15 @@ type_to_value_shared_memory :: (input: Any) -> ok:=false, toml:Value=.{} {
     case .STRING; return true, .{kind=.STRING, string_value=cast(*string, slot).*}; // No deep copy!
     case .POINTER;
         if cast(**void, slot).* == null return true, context.toml.null_value; // User can change default null value as module parameter
-        ok, value := type_to_value_shared_memory(Any.{cast(*Type_Info_Pointer, info).pointer_to, cast(**void, slot).*});
+        ok, value := context.toml.custom_type_to_value(Any.{cast(*Type_Info_Pointer, info).pointer_to, cast(**void, slot).*});
         return ok, value;
     case .VOID;  return true, .{};
     case .STRUCT;
-        struct_info := modify_type_info_cached(xx info);
-        done, ok, union_value := union_to_value(slot, struct_info); if done return ok, union_value;
-
+        struct_info :*Type_Info_Struct= xx info;
         table: [..]KeyValue;
         for member: struct_info.members {
             if member.flags & (.CONSTANT | .IMPORTED | .OVERLAY) continue; // We don't print overlay members, just the primary variables they overlay
-            ok, member_value:= type_to_value_shared_memory(Any.{member.type, slot + member.offset_in_bytes});  if !ok return;
+            ok, member_value:= context.toml.custom_type_to_value(Any.{member.type, slot + member.offset_in_bytes});  if !ok return;
             array_add(*table, KeyValue.{key=member.name, value=member_value});
         }
         return true, .{kind=.TABLE, table=table};
@@ -66,14 +87,14 @@ type_to_value_shared_memory :: (input: Any) -> ok:=false, toml:Value=.{} {
         array_reserve(*array, array_count);
         for idx: 0..array_count-1 {
             element_slot:= array_slot + array_info.element_type.runtime_size * idx;
-            ok, record_value:= type_to_value_shared_memory(Any.{array_info.element_type, element_slot}); if !ok return;
+            ok, record_value:= context.toml.custom_type_to_value(Any.{array_info.element_type, element_slot}); if !ok return;
             array_add(*array, record_value);
         }
         return true, .{kind=.ARRAY, array=array};
     case .ANY;
         any_value :*Any_Struct= xx slot;
         if any_value.value_pointer == null return true, context.toml.null_value; // Similar to null pointer
-        ok, value:= type_to_value_shared_memory(Any.{any_value.type, any_value.value_pointer});
+        ok, value:= context.toml.custom_type_to_value(Any.{any_value.type, any_value.value_pointer});
         return ok, value;
     case .ENUM;
         enum_info :*Type_Info_Enum= xx info;
@@ -83,31 +104,13 @@ type_to_value_shared_memory :: (input: Any) -> ok:=false, toml:Value=.{} {
         }
         return_with_error("Enum value % not found in enum %", enum_value, enum_info.name);
     case .VARIANT;
-        ok, value:= type_to_value_shared_memory(Any.{cast(*Type_Info_Variant, info).variant_of, slot});
+        ok, value:= context.toml.custom_type_to_value(Any.{cast(*Type_Info_Variant, info).variant_of, slot});
         return ok, value;
     case .PROCEDURE; #through;  case .OVERLOAD_SET; #through;  case .POLYMORPHIC_VARIABLE; #through;
     case .TYPE;      #through;  case .CODE;         #through;  case .UNTYPED_LITERAL;      #through;
     case .UNTYPED_ENUM;
     }
     return_with_error("Parsing of type % is not supported", info.type);
-}
-
-default_custom_type_to_value :: (input: Any) -> done:=true, ok:=false, toml:Value=.{} {
-    if input.type.type != .STRUCT return false, true, .{};
-    struct_info :*Type_Info_Struct= xx input.type;
-
-    slot := input.value_pointer;
-    if struct_info == {
-    case type_info(Value);          return true, true, cast(*Value, slot).*; // No deep copy!
-    case type_info(Chrono);         return true, true, .{kind=.DATETIME, datetime=cast(*Chrono, slot).*};
-    case type_info(Time);           return true, true, .{kind=.DATETIME, datetime=.{kind=.LOCAL_TIME,      time=           cast(*Time, slot).*}};
-    case type_info(Date);           return true, true, .{kind=.DATETIME, datetime=.{kind=.LOCAL_DATE,      date=           cast(*Date, slot).*}};
-    case type_info(DateTime);       return true, true, .{kind=.DATETIME, datetime=.{kind=.LOCAL_DATETIME,  datetime=       cast(*DateTime, slot).*}};
-    case type_info(DateTimeOffset); return true, true, .{kind=.DATETIME, datetime=.{kind=.OFFSET_DATETIME, datetime_offset=cast(*DateTimeOffset, slot).*}};
-    case type_info(FormatInt);      return true, true, .{kind=.FORMAT_INT,   format_int  =cast(*FormatInt,   slot)};
-    case type_info(FormatFloat);    return true, true, .{kind=.FORMAT_FLOAT, format_float=cast(*FormatFloat, slot)};
-    }
-    return false, true, .{};
 }
 
 union_to_value :: (slot: *void, struct_info: *Type_Info_Struct) -> done:=true, ok:=false, value:Value=.{} {
@@ -150,7 +153,7 @@ union_to_value :: (slot: *void, struct_info: *Type_Info_Struct) -> done:=true, o
     active_member := *struct_info.members[active_member_idx];
     name := active_member.name;
     if !name then return_with_error("Active member of union % may not be anonymous, name the member or use a modified Type_Info", ifx struct_info.name then struct_info.name else "anonymous");
-    ok, value := type_to_value_shared_memory(Any.{active_member.type, slot + active_member.offset_in_bytes}); if !ok return;
+    ok, value := context.toml.custom_type_to_value(Any.{active_member.type, slot + active_member.offset_in_bytes}); if !ok return;
 
     table: [..]KeyValue;
     array_add(*table, .{key=name, value=value});

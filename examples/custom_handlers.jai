@@ -11,8 +11,8 @@
 // Note that these custom handler drive "what" is serialized, they do not help with formatting of the toml.
 
 // The Toml module adds 2 procedure members to the context.toml:
-// - custom_type_to_value := (input: Any) -> done:bool, ok:bool, toml:Value;
-// - custom_value_to_type := (toml: Value, output: Any, parent_name:string, name:string) -> done:bool, ok:bool;
+// - custom_type_to_value := (input: Any) -> ok:bool, toml:Value;
+// - custom_value_to_type := (toml: Value, output: Any, parent_name:string, name:string) -> ok:bool;
 
 main :: () {
     enum_as_int();
@@ -33,11 +33,13 @@ enum_as_int :: () {
 
     // The user writes a procedure to handle the serialization of the enum
     // from the data stored in slot and returns a Toml Value.
-    custom_enum_to_value :: (input: Any) -> done:=true, ok:=false, toml:Value=.{} {
-        if input.type.type != .ENUM return false; // Alternatively we could check specifically for `input.type != type_info(Paprika)`
+    custom_enum_to_value :: (input: Any) -> ok:=false, toml:Value=.{} {
+        if input.type.type != .ENUM { // Alternatively we could check specifically for `input.type != type_info(Paprika)`
+            ok, value := Toml.default_type_to_value(input); // Types we do not handle here continue in normal flow
+            return ok, value;
+        }
         enum_value := Reflection.get_enum_value(input.value_pointer, xx input.type);
-        ok, value  := Toml.type_to_value_shared_memory(enum_value);
-        return true, ok, value; // By returning done=true we signal that the returned value should be used and to skip default serialization.
+        return true, Toml.Value.{kind=.INT, int_value=enum_value};
     }
 
     // The user can then choose to set the custom handler at the call site.
@@ -52,7 +54,7 @@ enum_as_int :: () {
     // For deserialization it works the same way, but in opposite direction.
     // The custom procedure receives a Toml Value and writes into the slot.
     custom_value_to_enum :: (toml: Value, output: Any, name:string, parent_name:string) -> ok:=false {
-        if output.type.type != .ENUM return Toml.default_custom_value_to_type(toml, output, name, parent_name);
+        if output.type.type != .ENUM return Toml.default_value_to_type(toml, output, name, parent_name);
         expect(toml.kind, .INT, parent_name, name);
         enum_info :*Type_Info_Enum = xx output.type;
 
@@ -90,16 +92,19 @@ member_modifications :: () {
         array_unordered_remove_by_index(*renamed_info.members, 1); // Omit
         return renamed_info;
     }
-    custom_modified_to_value :: (input: Any) -> done:=true, ok:=false, toml:Value=.{} {
-        if input.type != type_info(ThreeNamed) return false; // Use default serialization for everything else by returning done=false.
+    custom_modified_to_value :: (input: Any) -> ok:=false, toml:Value=.{} {
+        if input.type != type_info(ThreeNamed) { // Use default serialization for everything else by returning done=false.
+            ok, value := default_type_to_value(input);
+            return ok, value;
+        }
         modified_info := two_renamed_type_info();
-        ok, value := Toml.type_to_value_shared_memory(Any.{*modified_info, input.value_pointer});
-        return true, ok, value;
+        ok, value := Toml.default_type_to_value(Any.{*modified_info, input.value_pointer});
+        return ok, value;
     }
     custom_value_to_modified :: (toml: Value, output: Any, name:string, parent_name:string) -> ok:=false {
-        if output.type != type_info(ThreeNamed) return Toml.default_custom_value_to_type(toml, output, name, parent_name);
+        if output.type != type_info(ThreeNamed) return Toml.default_value_to_type(toml, output, name, parent_name);
         modified_info := two_renamed_type_info();
-        return Toml.default_custom_value_to_type(toml, Any.{*modified_info, output.value_pointer}, name, parent_name);
+        return Toml.default_value_to_type(toml, Any.{*modified_info, output.value_pointer}, name, parent_name);
     }
 
     // When serializing with the custom handler, the members are renamed and the middle member is omitted.
@@ -128,15 +133,20 @@ integer_keys_for_anonymous_members :: () {
         for *renamed_info.members if !it.name then it.name = sprint("%", it_index); // Name anonymous members by their index
         return renamed_info;
     }
-    anonymous_named_to_value :: (input: Any) -> done:=true, ok:=false, toml:Value=.{} {
-        if input.type.type != .STRUCT return false;
-        original_info: *Type_Info_Struct= xx input.type;
-        for original_info.members if !it.name {
-            named_info := anonymous_named_type_info(original_info);
-            ok, value := Toml.type_to_value_shared_memory(Any.{*named_info, input.value_pointer});
-            return true, ok, value;
+    anonymous_named_to_value :: (input: Any) -> ok:=false, toml:Value=.{} {
+        modified_type: Type_Info_Struct;
+        modified_input := input;
+
+        if input.type.type == .STRUCT {
+            original_info: *Type_Info_Struct= xx input.type;
+            for original_info.members if !it.name { // TODO general procedure should be able to handle TI that opt need to be changed
+                modified_type = anonymous_named_type_info(original_info);
+                modified_input.type = *modified_type;
+                break;
+            }
         }
-        return false;
+        ok, value := Toml.type_to_value_shared_memory(input);
+        return ok, value;
     }
     anonymous_named_to_modified :: (toml: Value, output: Any, name:string, parent_name:string) -> ok:=false {
         modified_type: Type_Info_Struct;
@@ -217,27 +227,30 @@ arbitrary_binary_encoding :: () {
 Magic_Bytes :: struct {
     bytes : [3]u8;
 };
-custom_magic_to_value :: (input: Any) -> done:=true, ok:=false, toml:Value=.{} {
-    if input.type != type_info(Magic_Bytes) return false;
+custom_magic_to_value :: (input: Any) -> ok:=false, toml:Value=.{} {
+    if input.type != type_info(Magic_Bytes) {
+        ok, value := Toml.default_type_to_value(input);
+        return ok, value;
+    }
 
     slot := input.value_pointer;
     ret: Toml.Value; // Defaults inits to Table
     if slot.(*u8).* == {
     case 0;
-        ok, flag    := Toml.type_to_value_shared_memory("A"); if !ok return;
-        ok=, signed := Toml.type_to_value_shared_memory(Any.{type_info(s16), slot+1}); if !ok return;
+        ok, flag    := Toml.type_to_value_shared_memory("A"); if !ok return false;
+        ok=, signed := Toml.type_to_value_shared_memory(Any.{type_info(s16), slot+1}); if !ok return false;
         array_add(*ret.table, .{key="flag", value=flag}, .{key="signed", value=signed});
     case 1;
-        ok, array := Toml.type_to_value_shared_memory(Any.{type_info([3]u8), slot}); if !ok return;
+        ok, array := Toml.type_to_value_shared_memory(Any.{type_info([3]u8), slot}); if !ok return false;
         array_add(*ret.table, .{key="unaltered", value=array});
     case;
         log_error("Invalid Magic_Bytes: %", slot.(*Magic_Bytes).*);
-        return;
+        return false;
     }
-    return true, true, ret;
+    return true, ret;
 }
 custom_value_to_magic :: (toml: Value, output: Any, name:string, parent_name:string) -> ok:=false {
-    if output.type != type_info(Magic_Bytes) return Toml.default_custom_value_to_type(toml, output, name, parent_name);
+    if output.type != type_info(Magic_Bytes) return Toml.default_value_to_type(toml, output, name, parent_name);
     slot := output.value_pointer;
 
     if toml.kind != .TABLE { log_error("Expected table for Magic_Bytes, got %", toml.kind); return false; }
@@ -269,7 +282,7 @@ error_on_superfluous_keys :: () {
     // By default the Toml module ignores superfluous keys in a table.
     // We can use a custom handler to error on superfluous keys.
     catch_superfluous_keys :: (toml: Value, output: Any, name:string, parent_name:string) -> ok:=false {
-        if output.type.type != .STRUCT || toml.kind != .TABLE return Toml.default_custom_value_to_type(toml, output, name, parent_name);
+        if output.type.type != .STRUCT || toml.kind != .TABLE return Toml.default_value_to_type(toml, output, name, parent_name);
         struct_info :*Type_Info_Struct = xx output.type;
 
         if (struct_info.textual_flags & .UNION_IS_TAGGED) && toml.table.count != 1 {
@@ -285,7 +298,7 @@ error_on_superfluous_keys :: () {
             log_error("Superfluous key `%` in %.%", keyvalue.key, parent_name, name);
             return false; // We are done, we found an error
         }
-        return Toml.default_custom_value_to_type(toml, output, name, parent_name); // We are not done since we are only validating here, the Value still needs to be deserialized
+        return Toml.default_value_to_type(toml, output, name, parent_name); // We are not done since we are only validating here, the Value still needs to be deserialized
     }
 
     OnlyA :: struct {
@@ -303,10 +316,12 @@ polymorphic_types_like_hashtable_support :: () {
     // By default the Toml module does not support Hash_Tables.
     // We can use custom handlers to serialize and deserialize them.
     // Hash_Table.Table is a polymorphic struct as such the size of the entries are not known at compile time.
-    custom_hashtable_to_value :: (input: Any) -> done:=true, ok:=false, toml:Value=.{} {
-        if input.type.type != .STRUCT then return false;
+    custom_hashtable_to_value :: (input: Any) -> ok:=false, toml:Value=.{} {
         struct_info :*Type_Info_Struct= xx input.type;
-        if struct_info.polymorph_source_struct != type_info(Table(u8, u8)).polymorph_source_struct then return false;
+        if input.type.type != .STRUCT || struct_info.polymorph_source_struct != type_info(Table(u8, u8)).polymorph_source_struct {
+            ok, value := Toml.default_type_to_value(input);
+            return ok, value;
+        }
 
         // Retrieve all relevant Type_Info for the specific Hash_Table.
         entries_member := struct_info.members[5]; assert(entries_member.name == "entries");
@@ -321,8 +336,8 @@ polymorphic_types_like_hashtable_support :: () {
             entry_slot := entries.data + it * entry_info.runtime_size;
             if entry_slot.(*u32).* < FIRST_VALID_HASH  continue;
 
-            ok, key_as_value := Toml.type_to_value_shared_memory(Any.{key_member.type, entry_slot + key_member.offset_in_bytes});     if !ok return;
-            ok=, value       := Toml.type_to_value_shared_memory(Any.{value_member.type, entry_slot + value_member.offset_in_bytes}); if !ok return;
+            ok, key_as_value := Toml.default_type_to_value(Any.{key_member.type, entry_slot + key_member.offset_in_bytes});     if !ok return false;
+            ok=, value       := Toml.default_type_to_value(Any.{value_member.type, entry_slot + value_member.offset_in_bytes}); if !ok return false;
 
             // Serialize the key as a string regardless of what type it is in the Hash_Table.
             builder: String_Builder;
@@ -332,7 +347,7 @@ polymorphic_types_like_hashtable_support :: () {
 
             array_add(*table, .{key=key, value=value});
         }
-        return true, true, .{kind=.TABLE, table=table};
+        return true, .{kind=.TABLE, table=table};
     }
     Str_To_U8 :: Table(string, u8);
     my_hash_table: Str_To_U8;
@@ -369,11 +384,11 @@ polymorphic_types_like_hashtable_support :: () {
         // return_value_to_hashtable(Table(u64, string));
 
         // Runtime check if we did not forget to add a Hash_Table specialization.
-        if output.type.type != .STRUCT return Toml.default_custom_value_to_type(toml, output, name, parent_name);
+        if output.type.type != .STRUCT return Toml.default_value_to_type(toml, output, name, parent_name);
         struct_info :*Type_Info_Struct= xx output.type;
         assert(struct_info.polymorph_source_struct != type_info(Table(u8, u8)).polymorph_source_struct,
             "Unsupported Hash_Table specialization: %", struct_info.name);
-        return Toml.default_custom_value_to_type(toml, output, name, parent_name);
+        return Toml.default_value_to_type(toml, output, name, parent_name);
     }
 
     // Deserialize the Hash_Table with a custom handler.

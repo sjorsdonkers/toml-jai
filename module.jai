@@ -16,8 +16,8 @@ Toml_Context :: struct {
 
     // Procedures to introduce custom (de)serialization logic for specific types.
     // The procedures set here by default handle: Value and DateTimes.
-    custom_type_to_value := default_custom_type_to_value;
-    custom_value_to_type := default_custom_value_to_type;
+    custom_type_to_value := default_type_to_value;
+    custom_value_to_type := default_value_to_type;
 
     // Index maps for fast table lookups when table has more keys than the threshold
     index_threshold := 16;                // Minimum number of keys in a table to start using a hashmap for lookups

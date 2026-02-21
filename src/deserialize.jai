@@ -17,7 +17,7 @@ value_to_type :: (toml: Value, $Target: Type) -> ok:=false, value:Target {
     return ok, target;
 }
 
-default_custom_value_to_type :: (toml: Value, output: Any, name:string, parent_name:string) -> ok:=false {
+default_value_to_type :: (toml: Value, output: Any, name:string, parent_name:string) -> ok:=false {
     slot := output.value_pointer;
     info := output.type;
 
