@@ -48,7 +48,7 @@ type_to_value_shared_memory :: (input: Any) -> ok:=false, toml:Value=.{} {
         return ok, value;
     case .VOID;  return true, .{};
     case .STRUCT;
-        struct_info := custom_type_info(xx info);
+        struct_info := custom_type_info_cached(xx info);
         done, ok, union_value := union_to_value(slot, struct_info); if done return ok, union_value;
 
         table: [..]KeyValue;

@@ -53,7 +53,7 @@ value_to_type_impl :: (toml: Value, output: Any, name:string="", parent_name:str
         if toml.table.count != 0 { return_with_error("Expected empty table for %.%, got %", parent_name, name, toml.table.count);  }
     case .STRUCT;
         expect(toml.kind, .TABLE, parent_name, name);
-        struct_info := custom_type_info(xx info);
+        struct_info := custom_type_info_cached(xx info);
         done, ok := value_to_union(toml.table, slot, struct_info, name); if done return ok;
 
         for member: struct_info.members {
@@ -61,7 +61,7 @@ value_to_type_impl :: (toml: Value, output: Any, name:string="", parent_name:str
             found, value_ptr := table_find_value_by_key(*toml, member.name);
             if found {
                 ok:= value_to_type_impl(value_ptr.*, Any.{member.type, slot + member.offset_in_bytes}, member.name, name);  if !ok return;
-            } else if !array_find(member.notes, context.toml.optional_note) && !(member.flags & .OVERLAY) {
+            } else if !(member.flags & .OVERLAY) && !array_find(member.notes, context.toml.optional_note) {
                 return_with_error("Missing field %.%", struct_info.name, ifx member.name then member.name else "anonymous");
             }
         }

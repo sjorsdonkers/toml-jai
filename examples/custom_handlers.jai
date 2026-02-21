@@ -152,11 +152,11 @@ integer_keys_for_anonymous_members :: () {
 
     // When serializing with the custom handler the anonymous member is renamed to a number
     three_named := StructHasAnonymous.{a=6, b=8};
-    ok1, toml1 := Toml.type_to_string(three_named);                                                             assert(ok1);
+    ok1, toml1 := Toml.type_to_string(three_named); assert(ok1);
     ok2, toml2 := Toml.type_to_string(three_named
         ,, toml = .{
             custom_type_to_value = anonymous_named_to_value,
-            type_info_modifiers[0] = Toml.flatten_unnamed_using_type_info, // For this to work we also need to disable the inlining of named using members which is done by default
+            custom_type_info = #bake_arguments Toml.flatten_usings(flatten_named=false), // For this to work we also need to disable the inlining of named using members which is done by default
         }); assert(ok2);
     assert(toml1 == #string DONE
 a=6
@@ -168,11 +168,11 @@ a=6
 DONE, "%", toml2);
 
     // Similarly, when deserializing with the custom handler the anonymous member is renamed to a number
-    ok3, named3 := Toml.string_to_type("a=4\nb=5\n", StructHasAnonymous);                                                                  assert(ok3);
+    ok3, named3 := Toml.string_to_type("a=4\nb=5\n", StructHasAnonymous); assert(ok3);
     ok4, named4 := Toml.string_to_type("a=4\n1.b=6\n", StructHasAnonymous
         ,, toml = .{
             custom_value_to_type = anonymous_named_to_modified,
-            type_info_modifiers[0] = null, // We can also disable it by setting it to null, or removing the using flag from the Type_Info
+            custom_type_info = null, // We can also disable it by setting it to null
         }); assert(ok4);
     assert(named3.a == 4 && named3.b == 5, "%", named3);
     assert(named4.a == 4 && named4.b == 6, "%", named4);
