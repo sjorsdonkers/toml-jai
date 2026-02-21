@@ -23,7 +23,6 @@ default_value_to_type :: (toml: Value, output: Any, name:string, parent_name:str
 
     if output.type.type == .STRUCT {
         struct_info :*Type_Info_Struct= xx output.type;
-
         if struct_info == type_info(Value) { cast(*Value, slot).* = copy(toml); return true; }
         if value_to_chrono(toml, slot, struct_info) return true;
 
@@ -59,7 +58,6 @@ value_to_type_impl :: (toml: Value, output: Any, name:string, parent_name:string
         cast(*string, slot).* = copy_string(toml.string_value);
     case .POINTER;
         if toml == context.toml.null_value return true; // Null pointer
-
         pointer_info :*Type_Info_Pointer= xx info;
         memory := alloc(pointer_info.pointer_to.runtime_size);
         initialize_memory(memory, pointer_info.pointer_to);
@@ -71,7 +69,6 @@ value_to_type_impl :: (toml: Value, output: Any, name:string, parent_name:string
     case .STRUCT;
         expect(toml.kind, .TABLE, parent_name, name);
         struct_info :*Type_Info_Struct= xx info;
-
         for member: struct_info.members {
             if member.flags & (.CONSTANT |.IMPORTED) continue;
             found, value_ptr := table_find_value_by_key(*toml, member.name);
@@ -85,7 +82,6 @@ value_to_type_impl :: (toml: Value, output: Any, name:string, parent_name:string
         expect(toml.kind, .ARRAY, parent_name, name);
         array_info :*Type_Info_Array= xx info;
         element_type := array_info.element_type;
-
         fill_array :: (toml_array: []Value, slot: *void, item_info: *Type_Info, parent_name:string) -> ok:=false {
             for idx: 0..toml_array.count-1 {
                 item_slot := slot + item_info.runtime_size * idx;
@@ -112,7 +108,6 @@ value_to_type_impl :: (toml: Value, output: Any, name:string, parent_name:string
         }
     case .ANY;
         if toml == context.toml.null_value return true; // Similar to null pointer
-
         any_value :*Any_Struct= xx slot;
         any_value.type = type_info(Value);
         any_value.value_pointer = alloc(any_value.type.runtime_size);
@@ -120,7 +115,6 @@ value_to_type_impl :: (toml: Value, output: Any, name:string, parent_name:string
     case .ENUM;
         expect(toml.kind, .STRING, parent_name, name);
         enum_info :*Type_Info_Enum= xx info;
-
         found, index := array_find(enum_info.names, toml.string_value);
         if !found { return_with_error("String % is not a variant of enum %", toml.string_value, enum_info.name); }
         Reflection.set_enum_value(slot, enum_info, enum_info.values[index]);

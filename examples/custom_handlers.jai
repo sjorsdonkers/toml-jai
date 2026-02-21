@@ -16,8 +16,8 @@
 
 main :: () {
     enum_as_int();
-    member_modifications();                 // TBD It is likely better to pass a custom type_info once at the root instead of modifying them on-the-fly. How to handle lifting `using` members?
-    integer_keys_for_anonymous_members();   // Not sure if that would be clearer, or just having 2 ways to do the same thing. Maybe just a handler with a Type_Info map would be better..
+    member_modifications();
+    integer_keys_for_anonymous_members();
     arbitrary_binary_encoding();
     error_on_superfluous_keys();
     polymorphic_types_like_hashtable_support();
@@ -127,40 +127,36 @@ integer_keys_for_anonymous_members :: () {
         a: u8;
         struct { b: u8; };
     }
-    anonymous_named_type_info :: (original_info: *Type_Info_Struct) -> Type_Info_Struct {
-        renamed_info := original_info.*;
-        renamed_info.members = array_copy(renamed_info.members);
-        for *renamed_info.members if !it.name then it.name = sprint("%", it_index); // Name anonymous members by their index
-        return renamed_info;
+    integer_named_type_info :: (struct_info: *Type_Info_Struct) {
+        // See Toml.modify_type_info_cached for an implementation that caches
+        for struct_info.members if !it.name {
+            struct_info.members = array_copy(struct_info.members);
+            for *struct_info.members if !it.name then it.name = sprint("%", it_index); // Name anonymous members by their index
+            return;
+        }
     }
     anonymous_named_to_value :: (input: Any) -> ok:=false, toml:Value=.{} {
-        modified_type: Type_Info_Struct;
+        modified_info: Type_Info_Struct;
         modified_input := input;
 
         if input.type.type == .STRUCT {
-            original_info: *Type_Info_Struct= xx input.type;
-            for original_info.members if !it.name { // TODO general procedure should be able to handle TI that opt need to be changed
-                modified_type = anonymous_named_type_info(original_info);
-                modified_input.type = *modified_type;
-                break;
-            }
+            modified_info = cast(*Type_Info_Struct, input.type).*;
+            integer_named_type_info(*modified_info);
+            modified_input.type = xx *modified_info;
         }
-        ok, value := Toml.type_to_value_shared_memory(input);
+        ok, value := Toml.type_to_value_shared_memory(input); // We avoid default_type_to_value as it inlines `using` members
         return ok, value;
     }
     anonymous_named_to_modified :: (toml: Value, output: Any, name:string, parent_name:string) -> ok:=false {
-        modified_type: Type_Info_Struct;
+        modified_info: Type_Info_Struct;
         modified_output := output;
 
         if output.type.type == .STRUCT {
-            original_info: *Type_Info_Struct= xx output.type;
-            for original_info.members if !it.name {
-                modified_type = anonymous_named_type_info(original_info);
-                modified_output.type = *modified_type;
-                break;
-            }
+            modified_info = cast(*Type_Info_Struct, output.type).*;
+            integer_named_type_info(*modified_info);
+            modified_output.type = *modified_info;
         }
-        return Toml.value_to_type_impl(toml, modified_output, name, parent_name);
+        return Toml.value_to_type_impl(toml, modified_output, name, parent_name); // We avoid default_type_to_value as it inlines `using` members
     }
 
     // When serializing with the custom handler the anonymous member is renamed to a number
