@@ -19,11 +19,11 @@ main :: () {
     assert(simp_struct.a == 5 && simp_struct.b == "hello", "%", simp_struct);
 
     // As with everything we can run at Compile-Time, if these fail. Comment them out to find the compile error.
-    // serialize_ct :: SimpStruct.{a=7, b="type_to_string at compile-time"};
-    // ok_ct, serialize_ct_str :: #run Toml.type_to_string(serialize_ct); #assert(ok_ct);
-    // #run log(serialize_ct_str);
-    // ok_ct2, deserialize_ct :: #run Toml.string_to_type("a = 3 \n b = 'string_to_type at compile-time'", SimpStruct); #assert(ok_ct2);
-    // #run log("%", deserialize_ct);
+    serialize_ct :: SimpStruct.{a=7, b="type_to_string at compile-time"};
+    ok_ct, serialize_ct_str :: #run Toml.type_to_string(serialize_ct); #assert(ok_ct);
+    #run log(serialize_ct_str);
+    ok_ct2, deserialize_ct :: #run Toml.string_to_type("a = 3 \n b = 'string_to_type at compile-time'", SimpStruct); #assert(ok_ct2);
+    #run log("%", deserialize_ct);
 
     // The data can be of arbitrary complexity
 THE_STRING :: #string DONE
