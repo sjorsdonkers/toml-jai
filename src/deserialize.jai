@@ -1,7 +1,6 @@
 deserialize :: inline (contents: string, $Target: Type) -> ok:=false, value:Target=.{} #deprecated "Renamed string_to_type" { ok, value := string_to_type(contents, Target); return ok, value; }
 string_to_type :: (contents: string, $Target: Type) -> ok:=false, value:Target=.{} {
     auto_release_temp_maybe();
-    defer context.toml.index_maps = [..]Table(string, s64).{}; // Reset the index as the memory is on the pool
 
     ok, value := string_to_value_shared_memory(contents,, temp); if !ok return;
     ok=, target := value_to_type(value, Target);
@@ -10,7 +9,6 @@ string_to_type :: (contents: string, $Target: Type) -> ok:=false, value:Target=.
 
 value_to_type :: (toml: Value, $Target: Type) -> ok:=false, value:Target {
     auto_release_temp_maybe();
-    defer context.toml.type_info_cache = .{}; // Reset the table as the memory is on temp
 
     info :: type_info(Target);
     target: Target;
@@ -29,7 +27,7 @@ default_custom_value_to_type :: (toml: Value, output: Any, name:string, parent_n
         if struct_info == type_info(Value) { cast(*Value, slot).* = copy(toml); return true; }
         if value_to_chrono(toml, slot, struct_info) return true;
 
-        info = xx custom_type_info_cached(struct_info,, temp);
+        info = xx modify_type_info_cached(struct_info,, temp);
 
         expect(toml.kind, .TABLE, parent_name, name);
         done, ok := value_to_union(toml.table, slot, xx info, name); if done return ok;
@@ -278,4 +276,8 @@ auto_release_temp_maybe :: (loc := #caller_location) #expand {
     is_temp := context.allocator.proc == temporary_allocator_proc;
     __mark := get_temporary_storage_mark();
     `defer if !is_temp set_temporary_storage_mark(__mark, loc);
+
+    // Toml specific
+    `defer context.toml.type_info_cache = .{};
+    `defer context.toml.index_maps = [..]Table(string, s64).{};
 }

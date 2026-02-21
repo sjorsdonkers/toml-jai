@@ -30,7 +30,7 @@ Toml_Context :: struct {
 #load "src/deserialize.jai";
 #load "src/parser.jai";
 #load "src/lexer.jai";
-#load "src/customization.jai";
+#load "src/modify_type_info.jai";
 
 #scope_module // Scope is needed to avoid exposing named imports
 #import "Basic";
