@@ -13,7 +13,6 @@ Toml_Context :: struct {
     // List of procedures that will be used to modify the Type_Info, to do things like renaming, omitting, reordering, flattening using members.
     // If you need more than 10 use a  procedure that calls several modifiers, maybe that is just how it should work..
     type_info_cache: Table(*Type_Info_Struct, *Type_Info_Struct); // INTERNAL, tho you can prefill it, which may change
-    custom_type_info := default_custom_type_info;
 
     // Procedures to introduce custom (de)serialization logic for specific types.
     // The procedures set here by default handle: Value and DateTimes.

@@ -1,16 +1,12 @@
-default_custom_type_info :: (info:*Type_Info_Struct) {
-    flatten_usings(info, flatten_named=true);
-}
-
 custom_type_info_cached :: (info: *Type_Info_Struct) -> *Type_Info_Struct {
-    if context.toml.custom_type_info == null then return info; // If no modifiers are set, we can skip the cache and modification logic entirely
     assert(context.toml.type_info_cache.allocator.proc == null || context.toml.type_info_cache.allocator.proc == context.allocator.proc);
 
     modified_info_entry, is_new := find_or_add(*context.toml.type_info_cache, info); if !is_new return modified_info_entry.*;
     modified_info_entry.* = New(Type_Info_Struct, false);
     modified_info_entry.*.* = info.*;
 
-    context.toml.custom_type_info(modified_info_entry.*);
+    flatten_usings(modified_info_entry.*, flatten_named=true);
+
     return modified_info_entry.*;
 }
 

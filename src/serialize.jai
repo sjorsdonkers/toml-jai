@@ -8,7 +8,7 @@ type_to_string :: (input: Any) -> ok:=false, toml:string="" {
 serialize_to_builder :: inline (builder: *String_Builder, input: Any) -> ok:=false #deprecated "Renamed type_to_builder" { return type_to_builder(builder, input); }
 type_to_builder :: (builder: *String_Builder, input: Any) -> ok:=false {
     auto_release_temp_maybe();
-    defer context.toml.type_info_cache = .{}; // Reset the index as the memory is on temp
+    defer context.toml.type_info_cache = .{}; // Reset the table as the memory is on temp
     ok, value := type_to_value_shared_memory(input,, temp); if !ok return;
 
     if !builder.initialized init_string_builder(builder); // Initialize the builder to make sure it does not use `temp`.
@@ -18,7 +18,7 @@ type_to_builder :: (builder: *String_Builder, input: Any) -> ok:=false {
 
 type_to_value :: (input: Any) -> ok:=false, value:Value=.{} {
     auto_release_temp_maybe();
-    defer context.toml.type_info_cache = .{}; // Reset the index as the memory is on temp
+    defer context.toml.type_info_cache = .{}; // Reset the table as the memory is on temp
     ok, value := type_to_value_shared_memory(input,, temp); if !ok return;
     return ok, copy(value); // Would be nice if we could just copy the reused strings and Value arrays and tables.
 }
