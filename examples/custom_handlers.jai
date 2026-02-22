@@ -144,7 +144,7 @@ integer_keys_for_anonymous_members :: () {
             integer_named_type_info(*modified_info);
             modified_input.type = xx *modified_info;
         }
-        ok, value := Toml.type_to_value_shared_memory(input); // We avoid default_type_to_value as it inlines `using` members
+        ok, value := Toml.type_to_value_shared_memory(modified_input); // We avoid default_type_to_value as it inlines `using` members
         return ok, value;
     }
     anonymous_named_to_modified :: (toml: Value, output: Any, name:string, parent_name:string) -> ok:=false {
@@ -167,10 +167,10 @@ integer_keys_for_anonymous_members :: () {
 a=6
 b=8
 DONE, "%", toml1); // NOTE b's parent's name is "", so you may expect "".b=8 here. However the default custom handler flattens `using` members such that they do not appear in the toml
-//     assert(toml2 == #string DONE
-// a=6
-// 1.b=8
-// DONE, "%", toml2);
+    assert(toml2 == #string DONE
+a=6
+1.b=8
+DONE, "%", toml2);
 
     // Similarly, when deserializing with the custom handler the anonymous member is renamed to a number
     ok3, named3 := Toml.string_to_type("a=4\nb=5\n", StructHasAnonymous); assert(ok3);
