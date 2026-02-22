@@ -65,7 +65,7 @@ DONE
     ok = Toml.type_to_builder(*builder, my_struct); assert(ok);
     print("%\n", builder_to_string(*builder));
 
-    // By default all members are required to be present in the TOML. @TomlOptional or a custom handler can be used to make them optional or ignored.
+    // By default all members are required to be present in the TOML. @serialize:default or a custom handler can be used to make them optional or ignored.
     optionals();
 
     // When struct or pointer members of a struct are declared with `using` the member name are required in the TOML data.
@@ -132,11 +132,11 @@ optionals :: () {
     // To always keep a member at the default value thus prevent attempting to read a field at all,
     // even if it is present we can remove it from the Type_Info, see custom_handlers.jai,
 
-    // If however we to allow a field to be missing, but read it if it is present the member can be annotated with @TomlOptional
+    // If however we to allow a field to be missing, but read it if it is present the member can be annotated with @serialize:default
     // The default value will be used if the field is missing.
     Optionals :: struct {
-        a: u8 = 17; @TomlOptional // @TomlOptional may be removed in the future in favor of a convenience procedure to use in a custom handler.
-        b: u8 = 18; @TomlOptional
+        a: u8 = 17; @serialize:default
+        b: u8 = 18; @serialize:default
     }
     ok=, optionals := Toml.string_to_type("a=99", Optionals); assert(ok);
     assert(optionals.a == 99 && optionals.b == 18, "%", optionals);
@@ -149,7 +149,7 @@ optionals :: () {
         .FIRST,, first: u8 = ---;
         .SECOND,, second: u8 = 18;
     }
-    UnionOptional :: union @TomlOptional tag:Tags=.SECOND {
+    UnionOptional :: union @serialize:default tag:Tags=.SECOND {
         .FIRST,, first: u8 = ---;
         .SECOND,, second: u8 = 18;
     }
@@ -158,7 +158,7 @@ optionals :: () {
     assert(union_optional.second == 18);
 
     UnionMember :: struct {
-        the_union: UnionRequired; @TomlOptional
+        the_union: UnionRequired; @serialize:default
         the_other: s8;
     }
     ok=, union_member := Toml.string_to_type("the_other = 42", UnionMember); assert(ok);
@@ -271,7 +271,7 @@ reference_types :: () {
 
     // Optional pointer
     My_Optional_Pointer :: struct {
-        ptr: *u8; @TomlOptional
+        ptr: *u8; @serialize:default
     }
     // Optional values are always serialized so it just uses the toml.null_value
     ok=, optional_toml := Toml.type_to_string(My_Optional_Pointer.{ptr=null}); assert(ok);
@@ -284,8 +284,8 @@ reference_types :: () {
 
     // Pointer to fixed array with initializer
     Vingt :: struct       {
-        number : s8=20; @TomlOptional
-        getal: Getal= 23; @TomlOptional
+        number : s8=20; @serialize:default
+        getal: Getal= 23; @serialize:default
     }
     Fixed_Array :: struct {
         p_quatre: *[4]Vingt;
@@ -297,7 +297,7 @@ reference_types :: () {
 
     // Pointer to variant
     DefaultStruct :: struct {
-        a: string="Anton"; @TomlOptional
+        a: string="Anton"; @serialize:default
         b: s8;
     }
     DefaultVariant :: #type,distinct DefaultStruct;

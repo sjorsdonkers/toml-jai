@@ -22,7 +22,7 @@ enum_unions :: () {
             .BANANA,, banana: *s64                        = ---;
             .APPLE,,  apple:  struct { a: u8; b: string;} = ---;
             .ORANGE,, orange: string="default";
-        } @TomlOptional
+        } @serialize:default
     }
     ok, apple := Toml.string_to_type("scared.apple = {a = 32, b = 'Y'}", Guy); assert(ok);
     print("struct_apple: %\n", apple);

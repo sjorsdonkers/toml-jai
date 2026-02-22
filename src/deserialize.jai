@@ -73,7 +73,7 @@ value_to_type_impl :: (toml: Value, output: Any, name:string, parent_name:string
             found, value_ptr := table_find_value_by_key(*toml, member.name);
             if found {
                 ok:= context.toml.custom_value_to_type(value_ptr.*, Any.{member.type, slot + member.offset_in_bytes}, member.name, name);  if !ok return;
-            } else if !(member.flags & .OVERLAY) && !array_find(member.notes, context.toml.optional_note) {
+            } else if !(member.flags & .OVERLAY) && !array_find(member.notes, "serialize:default") {
                 return_with_error("Missing field %.%", struct_info.name, ifx member.name then member.name else "anonymous");
             }
         }
@@ -142,7 +142,7 @@ value_to_chrono ::  (toml: Value, slot: *void, info: *Type_Info) -> is_chrono:bo
 
 value_to_union :: (toml_table: []KeyValue, slot: *void, struct_info: *Type_Info_Struct, parent_name: string) -> done:= true, ok:=false {
     if !(struct_info.textual_flags & .UNION_IS_TAGGED) return false;
-    if toml_table.count == 0 && array_find(struct_info.notes, context.toml.optional_note) return true, true; // Since union behave like a value it can itself be optional: `union @TomlOptional kind:Type {}`
+    if toml_table.count == 0 && array_find(struct_info.notes, "serialize:default") return true, true; // Since union behave like a value it can itself be optional: `union @serialize:default kind:Type {}`
     if toml_table.count != 1  return_with_error("Tagged union %.% should have exactly one key-value pair", parent_name, struct_info.name); // No superfluous values allowed here
     if !toml_table[0].key return_with_error("Tagged union %.% requires a non-empty key, name the member or use a modified Type_Info", parent_name, struct_info.name);
 

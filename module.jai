@@ -2,8 +2,6 @@
 Toml_Context :: struct {
     // The Value used to represent null values in the toml.
     null_value    := Value.{kind=.STRING, string_value="~null~"};
-    // The note used to indicate optional fields in structs
-    optional_note := "TomlOptional";
 
     // The default formatting for int and float values, per-member formatting can override these.
     default_format_int:   FormatInt;

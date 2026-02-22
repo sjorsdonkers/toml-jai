@@ -15,7 +15,7 @@ A module for `TOML v1.0.0` support. It provides functionality to read/write TOML
 ok, my_struct := Toml.string_to_type(toml_string, My_Struct);
 ```
 - Read TOML directly into any (nested) struct or generic `Toml.Value`.
-- Any field missing in the TOML fails unless annotated with `@TomlOptional` or `#overlay` members. Any superfluous fields in the TOML are ignored.
+- Any field missing in the TOML fails unless annotated with `@serialize:default` or `#overlay` members. Any superfluous fields in the TOML are ignored.
 - Compile-time constants are ignored and not compared.
 - The parser assures the input is fully [TOML spec](https://toml.io/en/v1.0.0) compliant.
 
@@ -94,10 +94,10 @@ Custom handlers have several design goals:
  - Enable data tweaks during serialization as opposed to full data copies of nested structure trees (separate structs for serialization and usage within the application).
  - The user should be able to opt-out of the default behavior of handling special types like Toml.Value, Chrono. A user can opt-out by setting a procedure that does not call the default_custom_handler.
 
-In addition to handlers we currently also support making struct members optional through a `@TomlOptional` note. This means there are 2 ways to do the same thing, the note also requires the original Type(_Info) to be modified. It is likely this note will be removed when these kinds of operations are better supported through custom handlers.
+In addition to handlers we currently also support making struct members optional through a `@serialize:default` note. This means there are 2 ways to do the same thing, the note also requires the original Type(_Info) to be modified. It is likely this note will be removed when these kinds of operations are better supported through custom handlers.
 
 The context member `toml.null_value` is introduced as a customization point as it would otherwise be relatively complicated to catch all cases where pointers can occur. toml.null_value can be any kind of Toml.Value, by default it is a string of value `"~null~"`. Deserialization of the value `"~null~"` for a `*string` member can be surprising as it would result into a null pointer instead of a string with value `"~null~"`. The `~`s are added to make it a string that is less likely to occur naturally.
-Alternative sentinel values like the empty table `{}` which is the equivalent of a struct without members are not chosen as due to `@TomlOptional` it is also equivalent to a struct with all optional members.
+Alternative sentinel values like the empty table `{}` which is the equivalent of a struct without members are not chosen as due to `@serialize:default` it is also equivalent to a struct with all optional members.
 
 ### Lexer
-The tokenization/lexer phase completes before the parser starts. As a result memory needs to be allocated to store the tokens. There is no particular reason for this implementation other than that I wanted to experiment with this type of lexer. Unlike traditional lexers the one implemented here does not parse the tokens into literals like int/float/etc it just determines a token starts and ends. It is the responsibility of the parser to interpret the string when it has more context.
+The tokenization/lexer phase completes before the parser starts. As a result memory needs to be allocated to store the tokens. There is no particular reason for this implementation other than that I wanted to experiment with this type of lexer. Unlike traditional lexers the one implemented here does not parse the tokens into literals like int/float/etc it just determines the ranges for strings and token scopes. It is the responsibility of the parser to interpret the string when it has more context.
