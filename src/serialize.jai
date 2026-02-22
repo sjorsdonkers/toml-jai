@@ -1,11 +1,9 @@
-serialize :: inline (input: Any) -> ok:=false, toml:string="" #deprecated "Renamed type_to_string" { ok, toml := type_to_string(input); return ok, toml; }
 type_to_string :: (input: Any) -> ok:=false, toml:string="" {
     builder: String_Builder;
     ok := type_to_builder(*builder, input); if !ok return;
     return true, builder_to_string(*builder);
 }
 
-serialize_to_builder :: inline (builder: *String_Builder, input: Any) -> ok:=false #deprecated "Renamed type_to_builder" { return type_to_builder(builder, input); }
 type_to_builder :: (builder: *String_Builder, input: Any) -> ok:=false {
     auto_release_temp_maybe();
 

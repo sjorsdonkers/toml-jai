@@ -1,4 +1,3 @@
-deserialize :: inline (contents: string, $Target: Type) -> ok:=false, value:Target=.{} #deprecated "Renamed string_to_type" { ok, value := string_to_type(contents, Target); return ok, value; }
 string_to_type :: (contents: string, $Target: Type) -> ok:=false, value:Target=.{} {
     auto_release_temp_maybe();
 
