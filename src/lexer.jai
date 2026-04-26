@@ -18,7 +18,7 @@ Token :: struct {
         SCOPE_BRACE          :: #char "{";  // scope
         SCOPE_DOUBLE_BRACKET :: 5;          // scope // Only for headers, not nested arrays
     }
-    union kind := Kind.RAW {
+    union kind: Kind {
         str  : string;        // View into `data`
         scope: []Token = ---; // View into `tokens` starting at the next token
     };

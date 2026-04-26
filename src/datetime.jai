@@ -10,10 +10,10 @@ Chrono :: struct {
         OFFSET_DATETIME;
     }
     union kind := Kind.LOCAL_TIME {
-        time:            Time;
-        date:            Date           = ---;
-        datetime:        DateTime       = ---;
-        datetime_offset: DateTimeOffset = ---;
+        .LOCAL_TIME,, time                : Time;
+        .LOCAL_DATE,, date                : Date;
+        .LOCAL_DATETIME,, datetime        : DateTime;
+        .OFFSET_DATETIME,, datetime_offset: DateTimeOffset;
     };
 }
 Time :: struct {

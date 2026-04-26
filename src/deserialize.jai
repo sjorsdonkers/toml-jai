@@ -159,26 +159,32 @@ value_to_union :: (toml_table: []KeyValue, slot: *void, struct_info: *Type_Info_
 
     // Find the corresponding tag value
     tag_member := *struct_info.members[0];
-    intlike_uniontag_from_member_index :: (struct_info: *Type_Info_Struct, active_member_idx: s64, int_info: *Type_Info_Integer) -> ok:=false, tag_value:s64, requires_check:bool {
+    intlike_uniontag_from_member_index :: (struct_info: *Type_Info_Struct, active_member_idx: s64, int_info: *Type_Info_Integer) -> ok:=false, tag_value:s64=-1 {
         for struct_info.tagged_union_bindings if it.member_index == active_member_idx {
             ok, tag_value := get_integer_value(*it.constant_value, int_info); // Works for negative values as well
-            return ok, tag_value, true;
-        } // If there is no binding, use the member index as tag VALUE (not as enum.values.index)
-        return true, (active_member_idx - 1), false; // -1 as first member is the tag
+            return ok, tag_value;
+        }
+        return_with_error("Tagged Union active index % does not have a binding in union %", active_member_idx, struct_info.name);
     }
 
     if tag_member.type.type == {
     case .ENUM;
         tag_info :*Type_Info_Enum= xx tag_member.type;
-        ok, tag_value, requires_check := intlike_uniontag_from_member_index(struct_info, active_member_idx, xx tag_info.internal_type); if !ok return_with_error("Tagged Union tag constant value % cannot be represented in s64 for %.%", tag_value, parent_name, struct_info.name);
-        if requires_check && !(array_find(tag_info.values, tag_value)) return_with_error("Tagged Union tag value % not found in enum %", tag_value, tag_info.name);
+        ok, tag_value := intlike_uniontag_from_member_index(struct_info, active_member_idx, xx tag_info.internal_type); if !ok return_with_error("Tagged Union tag constant value % cannot be represented in s64 for %.%", tag_value, parent_name, struct_info.name);
         Reflection.set_enum_value(slot + tag_member.offset_in_bytes, tag_info, tag_value);
     case .INTEGER;
-        ok, tag_value, requires_check := intlike_uniontag_from_member_index(struct_info, active_member_idx, xx tag_member.type); if !ok return_with_error("Tagged Union tag constant value % cannot be represented in s64 for %.%", tag_value, parent_name, struct_info.name);
+        ok, tag_value := intlike_uniontag_from_member_index(struct_info, active_member_idx, xx tag_member.type); if !ok return_with_error("Tagged Union tag constant value % cannot be represented in s64 for %.%", tag_value, parent_name, struct_info.name);
         valid, low, high := range_check_and_store(tag_value, xx tag_member.type, slot + tag_member.offset_in_bytes);
         if !valid { return_with_error("Tag for %.% is out of range. Given % expected min % max %", toml_table[0].key, parent_name, tag_value, low, high); }
     case .TYPE;
-        cast(**Type_Info, slot + tag_member.offset_in_bytes).* = active_member.type;
+        found := false;
+        for struct_info.tagged_union_bindings if it.member_index == active_member_idx {
+            found = true;
+            tag_value := cast(*Type_Info, it.constant_value);
+            cast(**Type_Info, slot + tag_member.offset_in_bytes).* = tag_value;
+            break;
+        }
+        if !found return_with_error("Tagged Union tag value for member % no binding found in union %", toml_table[0].key, struct_info.name);
     case; return_with_error("Tagged Union tag type % not supported", tag_member.type.type);
     }
 
