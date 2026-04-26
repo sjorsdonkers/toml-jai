@@ -11,15 +11,15 @@ Value :: struct {
         FORMAT_FLOAT; // Only for serialization
     }
     union kind := Kind.TABLE {
-        bool_value   : bool         = ---;
-        int_value    : s64          = ---;
-        float_value  : float64      = ---;
-        string_value : string       = ---;
-        datetime     : Chrono       = ---;
-        array        : [..]Value    = ---;
-        table        : [..]KeyValue;
-        format_int   : *FormatInt   = ---; // Only for serialization, * to reduce size
-        format_float : *FormatFloat = ---; // Only for serialization, * to reduce size
+        .BOOL,, bool_value           : bool;
+        .INT,, int_value             : s64;
+        .FLOAT,, float_value         : float64;
+        .STRING,, string_value       : string;
+        .DATETIME,, datetime         : Chrono;
+        .ARRAY,, array               : [..]Value;
+        .TABLE,, table               : [..]KeyValue;
+        .FORMAT_INT,, format_int     : *FormatInt;   // Only for serialization, * to reduce size
+        .FORMAT_FLOAT,, format_float : *FormatFloat; // Only for serialization, * to reduce size
     };
     parsing_meta :[7]u8 = .[0, 0, 0, 0xFF, 0xFF, 0xFF, 0xFF]; // INTERNAL
 }

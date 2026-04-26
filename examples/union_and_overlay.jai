@@ -47,8 +47,8 @@ enum_unions :: () {
     };
     Group :: union tag: Tags {
             first:          string;
-            second:         Guy = ---; // For consistency the enum value name is never used as key
-            .THIRD,, third: Guy = ---;
+            .SECOND,, second: Guy = ---; // For consistency the enum value name is never used as key
+            .THIRD,,  third:  Guy = ---;
     }
 
     group:= Group.{tag=.SECOND, second=Guy.{mytag=.ORANGE, orange="color"}};
@@ -101,13 +101,12 @@ integer_union :: () {
         struct { t: string = ---; };
         -12,, c: s16       = ---;
     }
-    s8_union := S8_Union.{kind=4, a=42};
+    s8_union := S8_Union.{kind=cast(s8, 4), a=42}; // TODO remove cast when compiler is fixed
     ok, s8_union_toml := Toml.type_to_string(s8_union); assert(ok);
     assert("a=42\n" == s8_union_toml, "%", s8_union_toml);
 
-    // // If no integer is explicitly bound to member then the member index is used as value, starting from 0. So in this case a=0, b=1
-    ok, s8_union = Toml.string_to_type("b=\"balloon\"", S8_Union); assert(ok);
-    assert(s8_union.kind == 1 && s8_union.b == "balloon", "%", s8_union);
+    // // If no integer is explicitly bound to member then we do not match it
+    ok, s8_union = Toml.string_to_type("b=\"balloon\"", S8_Union); assert(!ok);
 
     // (de)serializing anonymous members is explicitly forbidden, as serializing would seem to work for a "" key, but it may surprisingly deserialize to another anonymous member
     // member_index base is not done by default due to the added complexity and processing for all normal cases
@@ -122,16 +121,16 @@ integer_union :: () {
 
 type_union :: () {
     Type_Union :: union kind:Type=u16 {
-        a: u8  = ---;
-        b: u16;
+        u16,, a: s8;
+        s32,, b: u16;
     }
 
-    type_union := Type_Union.{kind=u16, b=(300).(u16)};
+    type_union := Type_Union.{kind=s32, b=(300).(u16)};
     ok, type_union_toml := Toml.type_to_string(type_union); assert(ok);
     assert("b=300\n" == type_union_toml, "%", type_union_toml);
 
     ok, type_union = Toml.string_to_type("a=40", Type_Union); assert(ok);
-    assert(type_union.kind == u8 && type_union.a == 40, "%", type_union);
+    assert(type_union.kind == u16 && type_union.a == 40, "%", type_union);
 }
 
 overlays :: () {
