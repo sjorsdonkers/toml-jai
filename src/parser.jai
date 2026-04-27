@@ -141,7 +141,7 @@ parse_literal :: (scope: *Scope) -> ok:=false, literal:Value=.{} {
         }
 
         // Parse float
-        float_value:, ok, remainder = string_to_float64(clean_str);
+        ok, float_value:, remainder = string_to_float64_new(clean_str);
         if ok && remainder.count == 0 {
             is_dot_or_e :: inline (c: u8) -> bool { return c == "." || c == "e" || c == "E"; }
 
@@ -409,6 +409,7 @@ find_or_insert_key :: (table: *Value, key: string) -> is_new:bool, table:*Value 
         return true, *peek_pointer(table.table).value;                // Return the value that was added to the end
     } else if table.table.count == context.toml.index_threshold {
         new_index_map: Table(string, s64);                               // Create an index map for a table when it reaches the threshold
+        table_resize(*new_index_map, table.table.count);
         for table.table { table_add(*new_index_map, it.key, it_index); } // Populate the hash table with existing keys
         index_map_id(table, xx context.toml.index_maps.count);           // Set the ID into the index map id
         array_add(*context.toml.index_maps, new_index_map);              // Add the new index map to the context

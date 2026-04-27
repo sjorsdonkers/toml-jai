@@ -172,7 +172,7 @@ parse_typed_value :: (type_str: string, value_str: string) -> ok:=false, value:=
         case "-inf"; return true, Toml.Value.{kind = .FLOAT, float_value = -FLOAT64_INFINITY};
         case "nan";  return true, Toml.Value.{kind = .FLOAT, float_value =  FLOAT64_NAN};
         }
-        float_val, ok := string_to_float64(value_str);  if !ok return;
+        ok, float_val := string_to_float64_new(value_str);  if !ok return;
         return true, Toml.Value.{kind = .FLOAT, float_value = float_val};
     case "bool";
         if value_str == {
