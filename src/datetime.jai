@@ -120,7 +120,7 @@ parse_date :: (input: string) -> ok:=false, value:Date=.{} {
     return true, Date.{year=year, month=month, day=day};
 }
 
-// Formats a time to a string in the format "HH:MM:SS[.SSS]"
+// Formats a time to a string in the format "HH:MM:SS.SSS"
 print_time_to_builder :: (builder: *String_Builder, time: Time) {
     print_integer(builder, formatInt(time.hour, minimum_digits=2));
     append(builder, ":");
