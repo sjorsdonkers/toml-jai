@@ -49,7 +49,8 @@ tokenize :: (data: string) -> ok:=false, tokens:[..]Token=[..]Token.{} {
                 array_add(*lexer.tokens, .{ kind=.NEWLINE, loc=lexer.loc });
             } else {
                 scope := lexer.tokens[peek(lexer.scope_stack)];
-                if scope.kind == #char "{" || (lexer.at_root && scope.kind == #char "[") || scope.kind == .SCOPE_DOUBLE_BRACKET { return_with_error_line(lexer.data, lexer.loc, "Newline in header or inline-table"); }
+                if context.toml.version < Format_Version.V1_1_0 && scope.kind == #char "{" { return_with_error_line(lexer.data, lexer.loc, "Newline in inline-table"); }
+                else if (lexer.at_root && scope.kind == #char "[") || scope.kind == .SCOPE_DOUBLE_BRACKET { return_with_error_line(lexer.data, lexer.loc, "Newline in header"); }
             }
             if lexer.scope_stack.count == 0 { lexer.at_root = true; }
             if c == "\r" then eat_char(*lexer);

@@ -89,7 +89,8 @@ parse_inline_table :: (current_table: *Value, scope: Scope) -> ok:=false, table:
         ok, key_scope    := eat_scope_until_assign(*scope);             if !ok return;
         ok=, leaf_value  := parse_key(current_table, key_scope, false); if !ok return;
         ok=, leaf_value.* = parse_value(leaf_value, *scope);            if !ok return;
-        if has_next(scope, 2) { eat_expected(*scope, .COMMA); } // Inline tables are not allowed to have trailing commas
+        expected_count := ifx context.toml.version >= Format_Version.V1_1_0 then 1 else 2; // Inline tables are allowed to have trailing commas from v1.1.0
+        if has_next(scope, expected_count) { eat_expected(*scope, .COMMA); }
     }
     return true, current_table.*;
 }

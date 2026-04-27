@@ -1,5 +1,7 @@
 #add_context toml: Toml_Context;
 Toml_Context :: struct {
+    version := Format_Version.V1_1_0;
+
     // The Value used to represent null values in the toml.
     null_value    := Value.{kind=.STRING, string_value="~null~"};
 
