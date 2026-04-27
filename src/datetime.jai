@@ -86,7 +86,10 @@ parse_time :: (input: string) -> ok:=false, value:Time=.{} {
     if input.count > 8 {
         if input[8] != "." return;
         ms_digit_count := min(3, input.count - 9);
-        millisecond  = slice_to_int(input, 9, ms_digit_count, u16);
+        millisecond = slice_to_int(input, 9, ms_digit_count, u16);
+        // Scale fractional seconds to milliseconds: .6 (1 digit) = 600ms, .60 (2 digits) = 600ms
+        if ms_digit_count == 1      millisecond *= 100;
+        else if ms_digit_count == 2 millisecond *= 10;
         if ms_digit_count > 3 { // We only store the minimum required precision to support (milliseconds)
             ignored     := slice_to_int(input, 9 + ms_digit_count, input.count - 9 - ms_digit_count, u64);
         }
