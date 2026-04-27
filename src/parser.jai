@@ -208,6 +208,10 @@ unescape :: (basic_token: Token, source: string) -> ok:=false, unescaped:string=
         case "r";  buffer[buffer.count] = "\r";   buffer.count += 1; pos += 2;
         case "\""; buffer[buffer.count] = "\"";   buffer.count += 1; pos += 2;
         case "\\"; buffer[buffer.count] = "\\";   buffer.count += 1; pos += 2;
+        case "e";
+            if context.toml.version >= Format_Version.V1_1_0 {
+                buffer[buffer.count] = "\x1b"; buffer.count += 1; pos += 2;
+            } else return_with_error_line(source, basic_token.loc, "Invalid escape sequence \\e.");
         case "\r"; #through;
         case "\t"; #through;
         case " ";  #through;
