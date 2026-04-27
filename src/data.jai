@@ -1,3 +1,8 @@
+Format_Version :: enum {
+    V1_0_0;
+    V1_1_0;
+}
+
 Value :: struct {
     Kind :: enum u8 {
         BOOL;

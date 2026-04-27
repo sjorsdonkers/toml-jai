@@ -10,7 +10,8 @@ A perf app is implemented to run the performance test from `toml-test`.
 Test with the decoder and encoder:
 ```sh
 jai ./decoder.jai
-toml-test-v2.1.0 test -decoder="./decoder" -encoder="./encoder" -toml="1.0"
+jai ./encoder.jai
+toml-test-v2.1.0 test -decoder="./decoder --toml=1.0" -encoder="./encoder --toml=1.0" -toml="1.0"
 ```
 
 The `run_toml-tests` app is used for the test framework to compile and run both in sequence.

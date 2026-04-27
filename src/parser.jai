@@ -89,7 +89,8 @@ parse_inline_table :: (current_table: *Value, scope: Scope) -> ok:=false, table:
         ok, key_scope    := eat_scope_until_assign(*scope);             if !ok return;
         ok=, leaf_value  := parse_key(current_table, key_scope, false); if !ok return;
         ok=, leaf_value.* = parse_value(leaf_value, *scope);            if !ok return;
-        if has_next(scope, 2) { eat_expected(*scope, .COMMA); } // Inline tables are not allowed to have trailing commas
+        expected_count := ifx context.toml.version >= .V1_1_0 then 1 else 2; // Inline tables are allowed to have trailing commas from v1.1.0
+        if has_next(scope, expected_count) { eat_expected(*scope, .COMMA); }
     }
     return true, current_table.*;
 }
@@ -207,6 +208,10 @@ unescape :: (basic_token: Token, source: string) -> ok:=false, unescaped:string=
         case "r";  buffer[buffer.count] = "\r";   buffer.count += 1; pos += 2;
         case "\""; buffer[buffer.count] = "\"";   buffer.count += 1; pos += 2;
         case "\\"; buffer[buffer.count] = "\\";   buffer.count += 1; pos += 2;
+        case "e";
+            if context.toml.version >= .V1_1_0 {
+                buffer[buffer.count] = "\x1b"; buffer.count += 1; pos += 2;
+            } else return_with_error_line(source, basic_token.loc, "Invalid escape sequence \\e.");
         case "\r"; #through;
         case "\t"; #through;
         case " ";  #through;
@@ -219,22 +224,25 @@ unescape :: (basic_token: Token, source: string) -> ok:=false, unescaped:string=
                 pos += 1;
             }
             if !has_endline { return_with_error_line(source, basic_token.loc, "Escaped whitespace must be at the end of a line"); }
+        case "x";
+            if context.toml.version < .V1_1_0 then return_with_error_line(source, basic_token.loc, "Invalid escape sequence \\x.");
+            #through;
         case "u"; #through;
         case "U";
-            num_digits: s32 = xx ifx basic[pos + 1] == "u" then 4 else 8;
+            num_digits: s32 = xx ifx basic[pos + 1] == "U" then 8 else ifx basic[pos + 1] == "u" then 4 else 2;
             pos += 2;
 
             if pos + num_digits > basic.count {return_with_error_line(source, basic_token.loc, "Expected % characters in the unicode escape sequence", num_digits); }
             unicode_hex_str := slice(basic, pos, num_digits);
             hex_value, ok, remainder := string_to_int_checked(unicode_hex_str, 16, u32);
-            if !ok || remainder.count != 0 { return_with_error_line(source, basic_token.loc, "not valid unicode"); } // TODO improve loc, including \n
+            if !ok || remainder.count != 0 { return_with_error_line(source, basic_token.loc, "not valid unicode"); }
 
             utf8_slice := string.{4, buffer.data + buffer.count};
             Unicode.character_utf32_to_utf8(hex_value, *utf8_slice);
             if hex_value > 0x0010FFFF || !is_valid_utf8(utf8_slice) { return_with_error_line(source, basic_token.loc, "Invalid UTF-8 sequence in escape sequence."); }
             buffer.count += utf8_slice.count; // UTF-8 bytes are already in the buffer at the right position
             pos += num_digits;
-        case; return_with_error_line(source, basic_token.loc, "Invalid escape sequence."); // TODO improve loc, including \n
+        case; return_with_error_line(source, basic_token.loc, "Invalid escape sequence.");
         }
     }
     return true, buffer;

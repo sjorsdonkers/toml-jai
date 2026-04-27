@@ -113,7 +113,7 @@ end_lines :: () {
     // Between dotted keys
     ok:= Toml.string_to_type("a\n.\nb = 5", Value); assert(!ok);
     // In inline-tables
-    ok = Toml.string_to_type("a = {b \n = \n 5 \n , \n c=3}", Value); assert(!ok);
+    ok = Toml.string_to_type("a = {b \n = \n 5 \n , \n c=3}", Value,, toml=.{version=.V1_0_0}); assert(!ok);
     // Surrounding assignments
     ok = Toml.string_to_type("a \n = \n 5", Value); assert(!ok);
     // Within headers

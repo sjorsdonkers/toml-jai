@@ -1,6 +1,15 @@
 main :: () {
     push_allocator(temp);
 
+    // Parse command-line arguments for --toml=1.0 or --toml=1.1
+    toml_version: Toml.Format_Version = .V1_1_0;
+    args := get_command_line_arguments();
+    for arg: args if starts_with(arg, "--toml=") {
+        version_str := slice(arg, 7, arg.count - 7);
+        if version_str == "1.0" then toml_version = .V1_0_0;
+        else if version_str == "1.1" then toml_version = .V1_1_0;
+    }
+
     json_data := stdinput();
     parser := JSON_Parser.{data = json_data};
     ok, toml_value := parse_json_to_toml(*parser);
@@ -10,7 +19,7 @@ main :: () {
     }
 
     builder: String_Builder;
-    ok = Toml.type_to_builder(*builder, toml_value,, toml=.{default_format_float=.{mode=.SCIENTIFIC, trailing_width=15}});
+    ok = Toml.type_to_builder(*builder, toml_value,, toml=.{version=toml_version, default_format_float=.{mode=.SCIENTIFIC, trailing_width=15}});
     if !ok {
         print("Failed to serialize TOML\n", to_standard_error=true);
         exit(1);
