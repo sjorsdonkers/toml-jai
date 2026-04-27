@@ -127,22 +127,8 @@ print_time_to_builder :: (builder: *String_Builder, time: Time) {
     print_integer(builder, formatInt(time.minute, minimum_digits=2));
     append(builder, ":");
     print_integer(builder, formatInt(time.second, minimum_digits=2));
-
-    // Only append fractional seconds if non-zero
-    if time.millisecond > 0 {
-        append(builder, ".");
-        // Remove trailing zeros by finding the number of significant digits
-        if time.millisecond % 100 == 0 {
-            // Divisible by 100: output only 1 digit
-            print_integer(builder, formatInt(time.millisecond / 100, minimum_digits=1));
-        } else if time.millisecond % 10 == 0 {
-            // Divisible by 10: output only 2 digits
-            print_integer(builder, formatInt(time.millisecond / 10, minimum_digits=2));
-        } else {
-            // Output all 3 digits
-            print_integer(builder, formatInt(time.millisecond, minimum_digits=3));
-        }
-    }
+    append(builder, ".");
+    print_integer(builder, formatInt(time.millisecond, minimum_digits=3));
 }
 // Formats a date to a string in the format "YYYY-MM-DD"
 print_date_to_builder :: (builder: *String_Builder, date: Date) {
