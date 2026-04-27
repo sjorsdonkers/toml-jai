@@ -127,6 +127,7 @@ parse_literal :: (scope: *Scope) -> ok:=false, literal:Value=.{} {
             for us_split if it.count == 0 then return_with_error_line(scope.source, token.loc, "Invalid placement of _ in integer literal %", token.str);
 
             without_base := slice(clean_str, 2, clean_str.count - 2);
+            if without_base.count > 0 && (without_base[0] == "+" || without_base[0] == "-") then return_with_error_line(scope.source, token.loc, "Invalid hex/binary/octal literal %", token.str);
             base := ifx clean_str[1] == "x" then 16 else ifx clean_str[1] == "b" then 2 else 8;
             value, ok, remainder := string_to_int_checked(without_base, base, s64);
             if !ok || remainder.count != 0 then return_with_error_line(scope.source, token.loc, "Invalid hex/binary/octal literal %", token.str);

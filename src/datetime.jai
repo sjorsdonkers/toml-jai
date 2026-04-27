@@ -86,7 +86,10 @@ parse_time :: (input: string) -> ok:=false, value:Time=.{} {
     if input.count > 8 {
         if input[8] != "." return;
         ms_digit_count := min(3, input.count - 9);
-        millisecond  = slice_to_int(input, 9, ms_digit_count, u16);
+        millisecond = slice_to_int(input, 9, ms_digit_count, u16);
+        // Scale fractional seconds to milliseconds: .6 (1 digit) = 600ms, .60 (2 digits) = 600ms
+        if ms_digit_count == 1      millisecond *= 100;
+        else if ms_digit_count == 2 millisecond *= 10;
         if ms_digit_count > 3 { // We only store the minimum required precision to support (milliseconds)
             ignored     := slice_to_int(input, 9 + ms_digit_count, input.count - 9 - ms_digit_count, u64);
         }
@@ -117,15 +120,29 @@ parse_date :: (input: string) -> ok:=false, value:Date=.{} {
     return true, Date.{year=year, month=month, day=day};
 }
 
-// Formats a time to a string in the format "HH:MM:SS.SSS"
+// Formats a time to a string in the format "HH:MM:SS[.SSS]"
 print_time_to_builder :: (builder: *String_Builder, time: Time) {
     print_integer(builder, formatInt(time.hour, minimum_digits=2));
     append(builder, ":");
     print_integer(builder, formatInt(time.minute, minimum_digits=2));
     append(builder, ":");
     print_integer(builder, formatInt(time.second, minimum_digits=2));
-    append(builder, ".");
-    print_integer(builder, formatInt(time.millisecond, minimum_digits=3));
+
+    // Only append fractional seconds if non-zero
+    if time.millisecond > 0 {
+        append(builder, ".");
+        // Remove trailing zeros by finding the number of significant digits
+        if time.millisecond % 100 == 0 {
+            // Divisible by 100: output only 1 digit
+            print_integer(builder, formatInt(time.millisecond / 100, minimum_digits=1));
+        } else if time.millisecond % 10 == 0 {
+            // Divisible by 10: output only 2 digits
+            print_integer(builder, formatInt(time.millisecond / 10, minimum_digits=2));
+        } else {
+            // Output all 3 digits
+            print_integer(builder, formatInt(time.millisecond, minimum_digits=3));
+        }
+    }
 }
 // Formats a date to a string in the format "YYYY-MM-DD"
 print_date_to_builder :: (builder: *String_Builder, date: Date) {
