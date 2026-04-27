@@ -27,7 +27,7 @@ main :: () {
         exit(2);
     }
 
-    result=, stdout, stderr := run_command(bin, "test", "-decoder=./decoder", "-encoder=./encoder", "-toml=1.0", capture_and_return_output=true);
+    result=, stdout, stderr := run_command(bin, "test", "-decoder=./decoder", "-encoder=./encoder", "-toml=1.1", capture_and_return_output=true);
     log("\n%", stdout);
     if stderr log_error(stderr);
     if result.type != .EXITED || result.exit_code != 0 exit(1);

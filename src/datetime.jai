@@ -48,7 +48,7 @@ parse_datetime :: (input: string) -> ok:=false, value:Chrono=.{} {
     if input.count == 10 { return true, .{kind=.LOCAL_DATE, date=date}; }
 
     // Must be datetime [offset]
-    if input.count < 19 return;
+    if input.count < 16 return;
     if input[10] != "T" && input[10] != "t" && input[10] != " " return; // NOTE: TOML does not allow lowercase T
     time_str := slice(input, 11, input.count-11);
 
@@ -56,7 +56,7 @@ parse_datetime :: (input: string) -> ok:=false, value:Chrono=.{} {
         // Datetime with Zulu time
         success, time = parse_time(slice(time_str, 0, time_str.count-1)); if !success return;
         return true, .{kind=.OFFSET_DATETIME, datetime_offset=.{date=date, time=time, offset_hour=0, offset_minute=0}};
-    } else if time_str[time_str.count-6] == "+" || time_str[time_str.count-6] == "-" {
+    } else if time_str.count >= 6 && (time_str[time_str.count-6] == "+" || time_str[time_str.count-6] == "-") {
         // Datetime with timezone by offset
         success, time = parse_time(slice(time_str, 0, time_str.count-6)); if !success return;
 
@@ -75,23 +75,31 @@ parse_datetime :: (input: string) -> ok:=false, value:Chrono=.{} {
     }
 }
 
-// Parses a time in the format "HH:MM:SS[.SSS]", extra characters may only be digits
+// Parses a time in the format "HH:MM[:SS[.SSS]]", extra characters may only be digits
 parse_time :: (input: string) -> ok:=false, value:Time=.{} {
-    if input.count < 8 return;
-    if input[2] != ":" || input[5] != ":" return;
+    if input.count < 5 return;
+    if input[2] != ":" return;
     hour   := slice_to_int(input, 0, 2, u8);
     minute := slice_to_int(input, 3, 2, u8);
-    second := slice_to_int(input, 6, 2, u8);
+    second      :u8= 0;
     millisecond :u16=0;
-    if input.count > 8 {
-        if input[8] != "." return;
-        ms_digit_count := min(3, input.count - 9);
-        millisecond = slice_to_int(input, 9, ms_digit_count, u16);
-        // Scale fractional seconds to milliseconds: .6 (1 digit) = 600ms, .60 (2 digits) = 600ms
-        if ms_digit_count == 1      millisecond *= 100;
-        else if ms_digit_count == 2 millisecond *= 10;
-        if ms_digit_count > 3 { // We only store the minimum required precision to support (milliseconds)
-            ignored     := slice_to_int(input, 9 + ms_digit_count, input.count - 9 - ms_digit_count, u64);
+    if input.count == 5 {
+        // Seconds were not optional before
+        if context.toml.version < Format_Version.V1_1_0 return;
+    } else {
+        if input.count < 8 return;
+        if input[5] != ":" return;
+        second = slice_to_int(input, 6, 2, u8);
+        if input.count > 8 {
+            if input[8] != "." return;
+            ms_digit_count := min(3, input.count - 9);
+            millisecond = slice_to_int(input, 9, ms_digit_count, u16);
+            // Scale fractional seconds to milliseconds: .6 (1 digit) = 600ms, .60 (2 digits) = 600ms
+            if ms_digit_count == 1      millisecond *= 100;
+            else if ms_digit_count == 2 millisecond *= 10;
+            if ms_digit_count > 3 { // We only store the minimum required precision to support (milliseconds)
+                ignored     := slice_to_int(input, 9 + ms_digit_count, input.count - 9 - ms_digit_count, u64);
+            }
         }
     }
     if hour   > 23 { return_with_error("Invalid hour in time: %", hour); }
