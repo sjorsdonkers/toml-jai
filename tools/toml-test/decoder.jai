@@ -1,8 +1,17 @@
 main :: () {
     push_allocator(temp);
 
+    // Parse command-line arguments for --toml=1.0 or --toml=1.1
+    toml_version: Toml.Format_Version = .V1_1_0;
+    args := get_command_line_arguments();
+    for arg: args if starts_with(arg, "--toml=") {
+        version_str := slice(arg, 7, arg.count - 7);
+        if version_str == "1.0" then toml_version = .V1_0_0;
+        else if version_str == "1.1" then toml_version = .V1_1_0;
+    }
+
     toml_data := stdinput();
-    ok, parsed_toml := Toml.string_to_value_shared_memory(toml_data);
+    ok, parsed_toml := Toml.string_to_value_shared_memory(toml_data,, toml=.{version=toml_version});
     if !ok {
         print("Failed to parse TOML data\n", to_standard_error=true);
         exit(1);
