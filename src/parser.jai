@@ -89,7 +89,7 @@ parse_inline_table :: (current_table: *Value, scope: Scope) -> ok:=false, table:
         ok, key_scope    := eat_scope_until_assign(*scope);             if !ok return;
         ok=, leaf_value  := parse_key(current_table, key_scope, false); if !ok return;
         ok=, leaf_value.* = parse_value(leaf_value, *scope);            if !ok return;
-        expected_count := ifx context.toml.version >= Format_Version.V1_1_0 then 1 else 2; // Inline tables are allowed to have trailing commas from v1.1.0
+        expected_count := ifx context.toml.version >= .V1_1_0 then 1 else 2; // Inline tables are allowed to have trailing commas from v1.1.0
         if has_next(scope, expected_count) { eat_expected(*scope, .COMMA); }
     }
     return true, current_table.*;
@@ -209,7 +209,7 @@ unescape :: (basic_token: Token, source: string) -> ok:=false, unescaped:string=
         case "\""; buffer[buffer.count] = "\"";   buffer.count += 1; pos += 2;
         case "\\"; buffer[buffer.count] = "\\";   buffer.count += 1; pos += 2;
         case "e";
-            if context.toml.version >= Format_Version.V1_1_0 {
+            if context.toml.version >= .V1_1_0 {
                 buffer[buffer.count] = "\x1b"; buffer.count += 1; pos += 2;
             } else return_with_error_line(source, basic_token.loc, "Invalid escape sequence \\e.");
         case "\r"; #through;
@@ -225,7 +225,7 @@ unescape :: (basic_token: Token, source: string) -> ok:=false, unescaped:string=
             }
             if !has_endline { return_with_error_line(source, basic_token.loc, "Escaped whitespace must be at the end of a line"); }
         case "x";
-            if context.toml.version < Format_Version.V1_1_0 then return_with_error_line(source, basic_token.loc, "Invalid escape sequence \\x.");
+            if context.toml.version < .V1_1_0 then return_with_error_line(source, basic_token.loc, "Invalid escape sequence \\x.");
             #through;
         case "u"; #through;
         case "U";

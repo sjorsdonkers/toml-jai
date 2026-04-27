@@ -255,7 +255,7 @@ escaped_to_builder :: (builder: *String_Builder, str: string, $is_key: bool) {
         case "\"";   append(builder, "\\\"");
         case "\\";   append(builder, "\\\\");
         case "\x1b";
-            if context.toml.version >= Format_Version.V1_1_0 {
+            if context.toml.version >= .V1_1_0 {
                 append(builder, "\\e");
                 continue;
             }

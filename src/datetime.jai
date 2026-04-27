@@ -85,7 +85,7 @@ parse_time :: (input: string) -> ok:=false, value:Time=.{} {
     millisecond :u16=0;
     if input.count == 5 {
         // Seconds were not optional before
-        if context.toml.version < Format_Version.V1_1_0 return;
+        if context.toml.version < .V1_1_0 return;
     } else {
         if input.count < 8 return;
         if input[5] != ":" return;
@@ -133,10 +133,14 @@ print_time_to_builder :: (builder: *String_Builder, time: Time) {
     print_integer(builder, formatInt(time.hour, minimum_digits=2));
     append(builder, ":");
     print_integer(builder, formatInt(time.minute, minimum_digits=2));
-    append(builder, ":");
-    print_integer(builder, formatInt(time.second, minimum_digits=2));
-    append(builder, ".");
-    print_integer(builder, formatInt(time.millisecond, minimum_digits=3));
+    if time.second > 0 || time.millisecond > 0 || context.toml.version < .V1_1_0 {
+        append(builder, ":");
+        print_integer(builder, formatInt(time.second, minimum_digits=2));
+    }
+    if time.millisecond > 0 {
+        append(builder, ".");
+        print_integer(builder, formatInt(time.millisecond, minimum_digits=3));
+    }
 }
 // Formats a date to a string in the format "YYYY-MM-DD"
 print_date_to_builder :: (builder: *String_Builder, date: Date) {

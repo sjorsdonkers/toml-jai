@@ -33,7 +33,7 @@ value_to_json :: (builder: *String_Builder, value: Toml.Value) {
             case .LOCAL_DATETIME;  append(builder, "{\"type\":\"datetime-local\",\"value\":\"");
             case .OFFSET_DATETIME; append(builder, "{\"type\":\"datetime\",\"value\":\"");
         }
-        print_datetime_to_builder(builder, value.datetime);
+        print_datetime_to_builder(builder, value.datetime,, toml = .{version=.V1_0_0}); // toml-test itself doesn't handle optional seconds yet
         append(builder, "\"}");
     case .ARRAY;
         append(builder, "[\n");
