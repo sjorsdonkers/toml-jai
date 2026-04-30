@@ -1,5 +1,5 @@
 ### Basic strings
-str = "I'm a string. \"You can quote me\". Name\tJos\u00E9\nLocation\tSF."
+str = "I'm a string. \"You can quote me\". Name\tJos\xE9\nLocation\tSF."
 
 ### Multi-line basic strings
 
