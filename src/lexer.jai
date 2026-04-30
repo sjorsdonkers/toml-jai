@@ -30,6 +30,8 @@ Location :: struct {
 }
 
 tokenize :: (data: string) -> ok:=false, tokens:[..]Token=[..]Token.{} {
+    valid, byte_index := is_valid_utf8(data); if !valid return_with_error("Invalid UTF-8 sequence in input at byte index %.", byte_index);
+
     lexer := Lexer.{data=data}; // Not freeing scope_stack as it will be in a Pool
     array_reserve(*lexer.tokens, data.count / 2); // Rough estimate of token count
 
@@ -73,7 +75,6 @@ tokenize :: (data: string) -> ok:=false, tokens:[..]Token=[..]Token.{} {
                 if is_control return_with_error_line(lexer.data, lexer.loc, "Illegal control character in comment: 0x%", formatInt(peek_char(lexer), 16));
                 eat_char(*lexer);
             }
-            if !is_valid_utf8(slice(lexer.data, start_pos, lexer.pos - start_pos)) return_with_error_line(lexer.data, lexer.loc, "Invalid UTF-8 sequence in comment.");
             continue;
         }
 
@@ -123,7 +124,6 @@ tokenize :: (data: string) -> ok:=false, tokens:[..]Token=[..]Token.{} {
 
                 token_kind :Token.Kind= ifx c == "\"" then .BASIC_MULTI else .LITERAL_MULTI;
                 token := Token.{ kind=token_kind, str=slice(data, start, lexer.pos - start), loc=Location.{lexer.loc.line, lexer.loc.char - xx (lexer.pos - start)} };
-                if !is_valid_utf8(token.str) return_with_error_line(lexer.data, lexer.loc, "Invalid UTF-8 sequence in string.");
                 array_add(*lexer.tokens, token);
                 eat_char(*lexer, 3);
                 continue;
@@ -147,7 +147,6 @@ tokenize :: (data: string) -> ok:=false, tokens:[..]Token=[..]Token.{} {
 
                 token_kind :Token.Kind= ifx c == "\"" then .BASIC else .LITERAL;
                 token := Token.{ kind=token_kind, str=slice(data, start, lexer.pos - start), loc=Location.{lexer.loc.line, lexer.loc.char - xx (lexer.pos - start)} };
-                if !is_valid_utf8(token.str) return_with_error_line(lexer.data, lexer.loc, "Invalid UTF-8 sequence in string.");
                 array_add(*lexer.tokens, token);
                 eat_char(*lexer);
                 continue;
@@ -218,32 +217,25 @@ eat_newline :: inline (lexer: *Lexer) {
     lexer.loc.line += 1;
 }
 
-get_line :: (data: string, line_number: s32) -> line: string, found:bool {
-    line: string;
-    found: bool;
-    for 1..line_number { line, found = Text_File_Handler.consume_next_line(*data); }
-    return line, found;
-}
-
-is_valid_utf8 :: (str: string) -> valid:=false {
+is_valid_utf8 :: (str: string) -> valid:=false, byte_index:=-1 {
     is_10xxxxxx :: inline (char: u8) -> bool { return (char & 0b1100_0000) == 0b1000_0000; }
     idx := 0;
     while idx < str.count {
         if str[idx] < 0b1000_0000 {        // 1-byte ASCII    (0xxxxxxx)
             idx += 1;
         } else if str[idx] < 0b1110_0000 { // 2-byte sequence (110xxxxx 10xxxxxx)
-            if idx + 1 >= str.count || !is_10xxxxxx(str[idx + 1]) return;
+            if idx + 1 >= str.count || !is_10xxxxxx(str[idx + 1]) return false, idx;
             if str[idx] < 0xC2 return; // Overlong encoding (codepoint ≤ 0x007F)
             idx += 2;
         } else if str[idx] < 0b1111_0000 { // 3-byte sequence (1110xxxx 10xxxxxx 10xxxxxx)
-            if idx + 2 >= str.count || !is_10xxxxxx(str[idx + 1]) || !is_10xxxxxx(str[idx + 2]) return;
-            if str[idx] == 0xE0 && str[idx + 1] < 0xA0 return; // Overlong encoding  (codepoint ≤ 0x07FF)
-            if str[idx] == 0xED && str[idx + 1] > 0x9F return; // Surrogate codepoints (0xD800 to 0xDFFF)
+            if idx + 2 >= str.count || !is_10xxxxxx(str[idx + 1]) || !is_10xxxxxx(str[idx + 2]) return false, idx;
+            if str[idx] == 0xE0 && str[idx + 1] < 0xA0 return false, idx; // Overlong encoding  (codepoint ≤ 0x07FF)
+            if str[idx] == 0xED && str[idx + 1] > 0x9F return false, idx; // Surrogate codepoints (0xD800 to 0xDFFF)
             idx += 3;
         } else if str[idx] < 0b1111_0101 { // 4-byte sequence (11110xxx 10xxxxxx 10xxxxxx 10xxxxxx)
-            if idx + 3 >= str.count || !is_10xxxxxx(str[idx + 1]) || !is_10xxxxxx(str[idx + 2]) || !is_10xxxxxx(str[idx + 3]) return;
-            if str[idx] == 0xF0 && str[idx + 1] < 0x90 return; // Overlong encoding (codepoint ≤ 0xFFFF)
-            if str[idx] == 0xF4 && str[idx + 1] > 0x8F return; // Above 0x10FFFF
+            if idx + 3 >= str.count || !is_10xxxxxx(str[idx + 1]) || !is_10xxxxxx(str[idx + 2]) || !is_10xxxxxx(str[idx + 3]) return false, idx;
+            if str[idx] == 0xF0 && str[idx + 1] < 0x90 return false, idx; // Overlong encoding (codepoint ≤ 0xFFFF)
+            if str[idx] == 0xF4 && str[idx + 1] > 0x8F return false, idx; // Above 0x10FFFF
             idx += 4;
         } else return; // Invalid lead byte (0b1111_0101 to 0b1111_1111)
     }
@@ -265,11 +257,8 @@ return_with_error :: (format: string, arguments: .. Any) #expand {
 }
 
 return_with_error_line :: (source: string, loc: Location, format: string, arguments: .. Any) #expand {
-    line, found := get_line(source, loc.line);
-    if !found {
-        log_error("Failed to read line % from file", loc.line);
-        `return;
-    }
+    line: string;
+    for 1..loc.line { line=, found := Text_File_Handler.consume_next_line(*source); assert(found, "Failed to read erroneous line % from input", loc.line); }
     message := tprint(format, ..arguments);
     log_error("Line % Char %: %", loc.line, loc.char, message);
     log_error(line);

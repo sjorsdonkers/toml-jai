@@ -17,7 +17,7 @@ ok, my_struct := Toml.string_to_type(toml_string, My_Struct);
 - Read TOML directly into any (nested) struct or generic `Toml.Value`.
 - Any field missing in the TOML fails unless annotated with `@serialize:default` or `#overlay` members. Any superfluous fields in the TOML are ignored.
 - Compile-time constants are ignored and not compared.
-- The parser assures the input is fully [TOML spec](https://toml.io/en/v1.0.0) compliant.
+- The parser assures the input is fully [TOML spec](https://toml.io/en/v1.1.0) compliant.
 
 ## Serialize
 ```jai
