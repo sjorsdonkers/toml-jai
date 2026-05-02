@@ -2,7 +2,7 @@
 
 ![](https://img.shields.io/badge/Jai-beta%200.2.029-blue.svg)
 
-A module for `TOML support. It provides functionality to read/write TOML files and convert them directly to/from Jai data structures.
+A module for TOML support. It provides functionality to read/write TOML files and convert them directly to/from Jai data structures.
 
 - Full TOML `v1.1.0` & `v1.0.0` support.
 - All run-time data types are supported (including `pointer`, `array`, `any`).
